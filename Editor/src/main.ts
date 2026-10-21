@@ -1,6 +1,7 @@
-import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
+import { defaultKeymap, history, historyKeymap, redo, selectAll, undo } from "@codemirror/commands";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
+import { findNext, findPrevious, openSearchPanel, search, searchKeymap } from "@codemirror/search";
 import { EditorState } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
@@ -28,7 +29,18 @@ const sourceHighlight = HighlightStyle.define([
 const noteTheme = EditorView.theme({
   ".cm-scroller": { fontFamily: "-apple-system, BlinkMacSystemFont, sans-serif", fontSize: "15px", lineHeight: "1.6" },
   ".cm-content": { maxWidth: "var(--line-width)", margin: "0 auto", padding: "2rem 1.5rem 40vh" },
+  ".cm-panels": {
+    backgroundColor: "var(--panel)",
+    color: "var(--text)",
+    fontFamily: "-apple-system, BlinkMacSystemFont, sans-serif",
+    fontSize: "13px",
+  },
+  ".cm-panels-top": { borderBottom: "1px solid var(--separator)" },
+  ".cm-search input, .cm-search button": { fontSize: "13px" },
 });
+
+/** The system's spelling, autocorrection and text replacements, as in any Mac text field. */
+const systemTextServices = EditorView.contentAttributes.of({ spellcheck: "true", autocorrect: "on" });
 
 /** How often, at most, the text is reported while the user types. The app saves after it. */
 const reportInterval = 250;
@@ -66,7 +78,9 @@ function initialState(text: string, editable: boolean) {
       syntaxHighlighting(sourceHighlight),
       EditorView.lineWrapping,
       history(),
-      keymap.of([...defaultKeymap, ...historyKeymap]),
+      search({ top: true }),
+      systemTextServices,
+      keymap.of([...searchKeymap, ...defaultKeymap, ...historyKeymap]),
       EditorView.editable.of(editable),
       reportChanges,
     ],
@@ -97,6 +111,24 @@ window.noteki = {
         view.setState(initialState("", false));
         return null;
       }
+      case "selectAll":
+      case "undo":
+      case "redo": {
+        // In the find bar's fields these act on the field, as in any text field.
+        const field = document.activeElement;
+        if (field instanceof HTMLInputElement) {
+          if (command.type === "selectAll") field.select();
+          else document.execCommand(command.type);
+          return null;
+        }
+        ({ selectAll, undo, redo })[command.type](view);
+        return null;
+      }
+      case "find":
+        if (command.step === "open") openSearchPanel(view);
+        else if (command.step === "next") findNext(view);
+        else findPrevious(view);
+        return null;
       case "flush": {
         const message = report();
         return message ? JSON.stringify(message) : null;

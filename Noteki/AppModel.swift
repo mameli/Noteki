@@ -16,9 +16,13 @@ final class AppModel {
     private(set) var vault: Vault?
     private(set) var tree: [VaultItem] = []
     /// The Note or Attachment selected, nil before the first choice.
-    private(set) var shown: Shown?
+    private(set) var shown: Shown? {
+        didSet { editor.isInFront = isShowingNote }
+    }
     /// Why the Vault or what is shown cannot be read, in words for the user.
-    private(set) var failure: String?
+    private(set) var failure: String? {
+        didSet { editor.isInFront = isShowingNote }
+    }
     /// Why the last save failed; cleared by the next one that works.
     private(set) var saveFailure: String?
 
@@ -84,6 +88,11 @@ final class AppModel {
     }
 
     static let chooseVaultMessage = "Choose the Vault: the folder of your notes. It can be an Obsidian vault."
+
+    /// A Note is in front, not an Attachment or a placeholder: the editor takes commands.
+    var isShowingNote: Bool {
+        if case .note? = shown, failure == nil { true } else { false }
+    }
 
     func open(_ folder: URL) {
         afterTransition { await self.switchVault(to: folder) }

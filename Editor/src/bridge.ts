@@ -8,7 +8,13 @@ export type EditorCommand =
   /** Report now any change not reported yet, before the app switches Note or quits. */
   | { type: "flush" }
   /** Show nothing and take no typing: no Note is open, as after switching Vault. */
-  | { type: "clear" };
+  | { type: "clear" }
+  /** From the Edit menu: WebKit's own versions see only the lines on screen. */
+  | { type: "selectAll" }
+  | { type: "undo" }
+  | { type: "redo" }
+  /** The Edit menu's Find items, over the whole Note. */
+  | { type: "find"; step: "open" | "next" | "previous" };
 
 /** From the editor to the app. */
 export type EditorMessage =

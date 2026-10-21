@@ -10,15 +10,15 @@ private let logger = Logger(subsystem: "app.noteki.noteki", category: "editor")
 struct EditorView: NSViewRepresentable {
     let editor: EditorController
 
-    func makeNSView(context: Context) -> WKWebView { editor.webView }
-    func updateNSView(_ webView: WKWebView, context: Context) {}
+    func makeNSView(context: Context) -> EditorWebView { editor.webView }
+    func updateNSView(_ webView: EditorWebView, context: Context) {}
 }
 
 /// The CodeMirror editor in a web view (ADR 0001), loaded once from the bundled editor.html,
 /// and the app's side of the bridge to it.
 @MainActor
 final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
-    let webView: WKWebView
+    let webView: EditorWebView
     /// The user typed: the whole text, tagged with the Note it was loaded as and a revision
     /// that grows with every report.
     var onChange: (_ noteID: String, _ revision: Int, _ text: String) -> Void = { _, _, _ in }
@@ -30,10 +30,32 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
     /// A flush that gets no answer in this time gives up: quitting must not hang on the editor.
     private static let flushTimeout: Duration = .seconds(2)
 
+    /// WebKit reads these from the app's preferences and leaves them off in a web view: on by
+    /// default as in any Mac text field, Edit → Spelling and Grammar turns them off. Registered
+    /// once, before any web view exists.
+    static func registerSpellingDefaults() {
+        UserDefaults.standard.register(defaults: [
+            "WebContinuousSpellCheckingEnabled": true,
+            "WebAutomaticSpellingCorrectionEnabled": true,
+        ])
+    }
+
+    /// Whether a Note is in front: otherwise the editor takes no commands and gives up the
+    /// keyboard, so ⌘Z cannot change a Note hidden behind an Attachment.
+    var isInFront = false {
+        didSet {
+            webView.takesCommands = isInFront
+            if !isInFront, webView.window?.firstResponder === webView {
+                webView.window?.makeFirstResponder(nil)
+            }
+        }
+    }
+
     override init() {
         let configuration = WKWebViewConfiguration()
-        webView = WKWebView(frame: .zero, configuration: configuration)
+        webView = EditorWebView(frame: .zero, configuration: configuration)
         super.init()
+        webView.onCommand = { [weak self] command in self?.perform(command) }
         // Through a weak proxy: the controller keeps its handlers alive.
         configuration.userContentController.add(WeakMessageHandler(self), name: "noteki")
         webView.underPageBackgroundColor = .textBackgroundColor
@@ -45,6 +67,20 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
         loaded = (noteID, text)
         guard isReady else { return }
         run(.load(noteID: noteID, text: text)) { _ in }
+    }
+
+    /// An editing command from the menus, when a Note is in front.
+    func perform(_ command: EditorCommand) {
+        guard isReady, isInFront else { return }
+        run(command) { _ in }
+    }
+
+    /// The Edit menu's Find items. Opening the search panel gives it the keyboard, as ⌘F does in
+    /// any app; Find Next and Find Previous leave the focus where it is.
+    func find(_ step: EditorCommand.FindStep) {
+        guard isReady, isInFront else { return }
+        run(.find(step)) { _ in }
+        if step == .open { webView.window?.makeFirstResponder(webView) }
     }
 
     /// Empties the editor and stops it taking typing: no Note is open.

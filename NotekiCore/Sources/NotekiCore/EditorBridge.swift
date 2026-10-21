@@ -12,11 +12,22 @@ public enum EditorCommand: Encodable, Sendable {
     case flush
     /// Show nothing and take no typing: no Note is open, as after switching Vault.
     case clear
+    /// From the Edit menu. The web view's own versions see only the lines on screen: CodeMirror
+    /// draws no more than those (ADR 0001).
+    case selectAll, undo, redo
+    /// The Edit menu's Find items, searching the whole Note.
+    case find(FindStep)
 
-    public static let types = ["load", "flush", "clear"]
+    public enum FindStep: String, Sendable {
+        /// Show the find bar, with the selection as the text to find.
+        case open
+        case next, previous
+    }
+
+    public static let types = ["load", "flush", "clear", "selectAll", "undo", "redo", "find"]
 
     private enum CodingKeys: String, CodingKey {
-        case type, noteID, text
+        case type, noteID, text, step
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -30,12 +41,23 @@ public enum EditorCommand: Encodable, Sendable {
             try container.encode("flush", forKey: .type)
         case .clear:
             try container.encode("clear", forKey: .type)
+        case .selectAll:
+            try container.encode("selectAll", forKey: .type)
+        case .undo:
+            try container.encode("undo", forKey: .type)
+        case .redo:
+            try container.encode("redo", forKey: .type)
+        case .find(let step):
+            try container.encode("find", forKey: .type)
+            try container.encode(step.rawValue, forKey: .step)
         }
     }
 
     /// The command as a JSON string, as the editor's `receive` takes it.
     public func json() throws -> String {
-        String(decoding: try JSONEncoder().encode(self), as: UTF8.self)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        return String(decoding: try encoder.encode(self), as: UTF8.self)
     }
 }
 

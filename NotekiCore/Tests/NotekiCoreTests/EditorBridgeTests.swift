@@ -29,6 +29,20 @@ struct EditorBridgeTests {
         #expect(json == ["type": "load", "noteID": "Meetings/Retro.md", "text": "# Retro\n"])
     }
 
+    @Test("editing commands from the app's menus need nothing else")
+    func editingCommands() throws {
+        #expect(try EditorCommand.selectAll.json() == #"{"type":"selectAll"}"#)
+        #expect(try EditorCommand.undo.json() == #"{"type":"undo"}"#)
+        #expect(try EditorCommand.redo.json() == #"{"type":"redo"}"#)
+    }
+
+    @Test("find says which step of the search to take")
+    func find() throws {
+        #expect(try EditorCommand.find(.open).json() == #"{"step":"open","type":"find"}"#)
+        #expect(try EditorCommand.find(.next).json() == #"{"step":"next","type":"find"}"#)
+        #expect(try EditorCommand.find(.previous).json() == #"{"step":"previous","type":"find"}"#)
+    }
+
     @Test("clearing the editor needs nothing else")
     func clear() throws {
         #expect(try EditorCommand.clear.json() == #"{"type":"clear"}"#)

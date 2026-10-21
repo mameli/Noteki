@@ -12,6 +12,7 @@ struct ContentView: View {
             detail
         }
         .navigationTitle(model.shown?.name ?? model.vault?.root.lastPathComponent ?? "Noteki")
+        .focusedSceneValue(\.noteEditor, model.isShowingNote ? model.editor : nil)
         .onAppear {
             if model.vault == nil { model.chooseVault() }
         }
