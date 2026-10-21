@@ -36,6 +36,10 @@ final class AppModel {
     private(set) var conflict: OpenNote.Conflict?
     /// The Note just left: keys typed in the instant before the switch still belong to it.
     private var previousNote: OpenNote?
+    /// What the editor tags its reports with: the open Note for as long as it stays open, under
+    /// whatever name another app gives it. Not its path, which a Followed rename changes.
+    private var openNoteID = ""
+    private var previousNoteID = ""
     /// The last revision applied per Note: a report that arrives after a later one is stale.
     private var revisions: [String: Int] = [:]
     private var pendingSave: Task<Void, Never>?
@@ -163,7 +167,9 @@ final class AppModel {
                 await listTree(of: vault, refresh: true)
             }
         }
-        if let open = openNote, paths.contains(open.note.path) {
+        // Case-insensitively: a rename that only changes letter case is reported under the new name.
+        if let open = openNote,
+           open.isDeleted || paths.contains(where: { $0.caseInsensitiveCompare(open.note.path) == .orderedSame }) {
             afterTransition { await self.noticeChanges(at: paths) }
         }
     }
@@ -189,9 +195,26 @@ final class AppModel {
                 logger.error("Cannot read a Note changed on disk: \(error.localizedDescription, privacy: .public)")
                 return
             }
+            let before = openNote?.note
             openNote = open
+            if let before, open.note != before, shown == .note(before) {
+                // A Followed rename of the Note in front: the window shows its new name and Files
+                // selects it. Behind an Attachment, or once the user chose another row, nothing moves.
+                shown = .note(open.note)
+                if selection == before.path { selection = open.note.path }
+            }
             switch change {
             case .unchanged:
+                // A Followed rename may have stopped a save at the old name: it goes to the new one.
+                if open.hasUnsavedEdits, !open.isDeleted, open.conflict == nil {
+                    saveFailure = nil
+                    scheduleSave()
+                }
+                return
+            case .deleted:
+                pendingSave?.cancel()
+                saveFailure = nil
+                logger.info("The open Note was deleted by another app")
                 return
             case .conflict:
                 pendingSave?.cancel()
@@ -200,7 +223,7 @@ final class AppModel {
                 return
             case .reload(let reload):
                 let shown = await editor.reload(
-                    noteID: open.note.path, revision: revisions[open.note.path, default: 0], text: reload.text
+                    noteID: openNoteID, revision: revisions[openNoteID, default: 0], text: reload.text
                 )
                 // Only what the editor shows becomes the base, and only if the user's text is
                 // still the one the merge started from.
@@ -216,6 +239,24 @@ final class AppModel {
             }
         }
         logger.error("A change on disk could not reach the editor, the next save tries again")
+    }
+
+    /// The open Note another app deleted: true while its text is only on screen.
+    var isOpenNoteDeleted: Bool { openNote?.isDeleted == true }
+
+    /// Writes the deleted Note again where it was, with the text on screen.
+    func saveAgain() {
+        afterTransition {
+            await self.editor.flush()
+            guard var open = self.openNote, open.isDeleted else { return }
+            do {
+                try open.saveAgain()
+                self.saveFailure = nil
+            } catch {
+                self.saveFailure = "Cannot save \(open.note.name): \(error.localizedDescription)"
+            }
+            self.openNote = open
+        }
     }
 
     /// Ends the Conflict with the user's version, written over the other app's change.
@@ -243,7 +284,7 @@ final class AppModel {
                 guard var open = self.openNote, open.conflict != nil else { return }
                 open.takeTheirs()
                 let shown = await self.editor.reload(
-                    noteID: open.note.path, revision: self.revisions[open.note.path, default: 0], text: open.text
+                    noteID: self.openNoteID, revision: self.revisions[self.openNoteID, default: 0], text: open.text
                 )
                 if shown {
                     self.openNote = open
@@ -274,7 +315,10 @@ final class AppModel {
             do {
                 let open = try vault.open(note)
                 openNote = open
-                editor.load(noteID: note.path, text: open.text)
+                openNoteID = UUID().uuidString
+                // Revisions matter only for the Note open and the one just left.
+                revisions = revisions.filter { $0.key == previousNoteID }
+                editor.load(noteID: openNoteID, text: open.text)
                 failure = nil
             } catch {
                 openNote = nil
@@ -295,11 +339,11 @@ final class AppModel {
             return
         }
         revisions[noteID] = revision
-        if openNote?.note.path == noteID {
+        if openNote != nil, noteID == openNoteID {
             openNote?.edit(text)
             pendingSave?.cancel()
             scheduleSave()
-        } else if var previous = previousNote, previous.note.path == noteID {
+        } else if var previous = previousNote, noteID == previousNoteID {
             // Never into the Note now open, never into a file reopened from scratch.
             previous.edit(text)
             do {
@@ -320,8 +364,29 @@ final class AppModel {
         await editor.flush()
         pendingSave?.cancel()
         await saveNow()
+        if var open = openNote, open.isDeleted {
+            // Its text is only on screen: leaving would lose it unless the user says so.
+            switch askAboutDeletedNote(open) {
+            case .stay:
+                return false
+            case .discard:
+                break
+            case .replace:
+                do {
+                    try open.saveAgain()
+                    openNote = open
+                } catch {
+                    saveFailure = "Cannot save \(open.note.name): \(error.localizedDescription)"
+                    return false
+                }
+            }
+            previousNote = nil
+            saveFailure = nil
+            return true
+        }
         guard var open = openNote, open.hasUnsavedEdits else {
             previousNote = openNote
+            previousNoteID = openNoteID
             return true
         }
         switch askAboutUnsavedEdits(in: open) {
@@ -337,6 +402,7 @@ final class AppModel {
                 saveFailure = nil
                 openNote = open
                 previousNote = open
+                previousNoteID = openNoteID
                 return true
             } catch {
                 saveFailure = "Cannot save \(open.note.name): \(error.localizedDescription)"
@@ -346,6 +412,21 @@ final class AppModel {
     }
 
     private enum UnsavedChoice { case stay, discard, replace }
+
+    private func askAboutDeletedNote(_ open: OpenNote) -> UnsavedChoice {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "\(open.note.name) was deleted by another app"
+        alert.informativeText = "Its text is only in Noteki. Leaving it without saving it again loses it."
+        alert.addButton(withTitle: "Keep Editing")
+        alert.addButton(withTitle: "Discard")
+        alert.addButton(withTitle: "Save Again")
+        switch alert.runModal() {
+        case .alertSecondButtonReturn: return .discard
+        case .alertThirdButtonReturn: return .replace
+        default: return .stay
+        }
+    }
 
     private func askAboutUnsavedEdits(in open: OpenNote) -> UnsavedChoice {
         let inConflict = open.conflict != nil
@@ -384,8 +465,10 @@ final class AppModel {
             saveFailure = nil
         } catch OpenNote.SaveError.changedOnDisk {
             changedOnDisk = true
-        } catch OpenNote.SaveError.conflict {
+        } catch OpenNote.SaveError.conflict, OpenNote.SaveError.deleted {
             // The banner is up: nothing to add.
+        } catch OpenNote.SaveError.missing {
+            // Renamed or deleted: the file event follows, and with it the save or the banner.
         } catch {
             logger.error("Cannot save a Note: \(error.localizedDescription, privacy: .public)")
             saveFailure = "Cannot save \(open.note.name): \(error.localizedDescription)"

@@ -54,7 +54,9 @@ struct ContentView: View {
                     }
                 }
                 .overlay(alignment: .bottom) {
-                    if model.conflict != nil, case .note(let note)? = model.shown {
+                    if model.isOpenNoteDeleted, case .note(let note)? = model.shown {
+                        DeletedBanner(noteName: note.name, saveAgain: model.saveAgain)
+                    } else if model.conflict != nil, case .note(let note)? = model.shown {
                         ConflictBanner(
                             noteName: note.name,
                             keepMine: model.keepMine,

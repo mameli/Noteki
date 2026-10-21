@@ -161,6 +161,18 @@ struct VaultTests {
         ]) == ["Meetings/Retro.md", "Meetings/New.md"])
     }
 
+    @Test("the event of a file that is gone, under a Vault opened through a symbolic link, is in the Vault")
+    func goneFileEvent() throws {
+        let folder = try TemporaryVault(files: ["Meetings/Kept.md": ""])
+        let vault = Vault(root: folder.url)
+        // FSEvents reports /private/var/… for the Vault opened as /var/…, also for a file just
+        // renamed or deleted.
+        let events = folder.url.resolvingSymlinksInPath().path(percentEncoded: false)
+        let gone = URL(filePath: (events.hasPrefix("/private") ? events : "/private" + events) + "/Meetings/Gone.md")
+
+        #expect(vault.changedPaths([gone]) == ["Meetings/Gone.md"])
+    }
+
     @Test("reads the text of a Note as written")
     func text() throws {
         let content = "---\ntags: [meeting]\n---\n# Retro\r\n\r\nàèìòù [[Other]]\n"

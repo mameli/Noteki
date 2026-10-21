@@ -30,6 +30,21 @@ final class TemporaryVault {
         try Data(contentsOf: url.appending(path: path))
     }
 
+    func move(_ path: String, to newPath: String) throws {
+        let destination = url.appending(path: newPath)
+        try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.moveItem(at: url.appending(path: path), to: destination)
+    }
+
+    func delete(_ path: String) throws {
+        try FileManager.default.removeItem(at: url.appending(path: path))
+    }
+
+    /// As most editors save: a new file put in place of the old one.
+    func replace(_ path: String, with content: String) throws {
+        try Data(content.utf8).write(to: url.appending(path: path), options: .atomic)
+    }
+
     /// Every file under the Vault with its content, to check nothing changed.
     func snapshot() throws -> [String: Data] {
         var files: [String: Data] = [:]

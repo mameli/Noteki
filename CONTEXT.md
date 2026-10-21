@@ -110,6 +110,10 @@ _Avoid_: reconcile, sync
 An External change and the user's edits that touch the same lines, or adjacent ones, so the Merge cannot put them together. The user's text is kept and the user decides.
 _Avoid_: clash, collision
 
+**Deleted Note** (`OpenNote.isDeleted`):
+An open Note whose file another app deleted or moved out of the Vault: its text is only on screen, nothing is saved until the user saves it again.
+_Avoid_: orphan, missing note
+
 **Followed rename** (`FollowedRename`):
 A Note renamed or moved by something other than Noteki while open: its Tab follows it to the new name instead of saying it was deleted.
 _Avoid_: tracking, relink

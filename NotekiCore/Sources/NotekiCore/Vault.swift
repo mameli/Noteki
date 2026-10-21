@@ -33,21 +33,32 @@ public struct Vault: Sendable {
     /// Vault. Those outside it or in an Excluded folder (a `.git` written by obsidian-git, say)
     /// are left out. The Vault does not watch: the app's watcher calls this (ticket 06).
     public func changedPaths(_ urls: [URL]) -> Set<String> {
-        Set(urls.compactMap(path(ofChangeAt:)))
+        let rootPath = Self.realPath(root) + "/"
+        return Set(urls.compactMap { path(ofChangeAt: $0, under: rootPath) })
     }
 
-    private func path(ofChangeAt url: URL) -> String? {
-        let roots = [root, root.resolvingSymlinksInPath()].map { $0.path(percentEncoded: false) }
-        let candidates = [url.standardizedFileURL, url.resolvingSymlinksInPath()].map { $0.path(percentEncoded: false) }
-        for candidate in candidates {
-            for rootPath in roots {
-                let prefix = rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
-                guard candidate.hasPrefix(prefix) else { continue }
-                let path = String(candidate.dropFirst(prefix.count))
-                return isInExcludedFolder(path) ? nil : path
-            }
+    private func path(ofChangeAt url: URL, under rootPath: String) -> String? {
+        let candidate = Self.realPath(url)
+        guard candidate.hasPrefix(rootPath) else { return nil }
+        let path = String(candidate.dropFirst(rootPath.count))
+        return isInExcludedFolder(path) ? nil : path
+    }
+
+    /// The path with every symbolic link resolved (/var → /private/var), also for a file that is
+    /// gone: Foundation's own resolution keeps /private only for files that exist, so the event of
+    /// a renamed or deleted file would not match the Vault's root.
+    private static func realPath(_ url: URL) -> String {
+        var existing = url.standardizedFileURL
+        var rest: [String] = []
+        while !FileManager.default.fileExists(atPath: existing.path(percentEncoded: false)), existing.pathComponents.count > 1 {
+            rest.insert(existing.lastPathComponent, at: 0)
+            existing.deleteLastPathComponent()
         }
-        return nil
+        guard let resolved = realpath(existing.path(percentEncoded: false), nil) else {
+            return url.standardizedFileURL.path(percentEncoded: false)
+        }
+        defer { free(resolved) }
+        return ([String(cString: resolved)] + rest).joined(separator: "/")
     }
 
     /// Whether any folder on the way to this path, or the path itself, is an Excluded folder.

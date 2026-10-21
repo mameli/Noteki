@@ -80,3 +80,27 @@ struct DifferencesView: View {
         return lines.enumerated().map { ($0.element, added.contains($0.offset)) }
     }
 }
+
+/// Shown while the open Note's file is gone, deleted or moved out of the Vault by another app:
+/// its text is only on screen until the user saves it again.
+struct DeletedBanner: View {
+    let noteName: String
+    let saveAgain: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Label(
+                "\(noteName) was deleted, or moved out of the Vault, by another app. Its text is only here.",
+                systemImage: "trash.fill"
+            )
+            .foregroundStyle(.white)
+            Spacer(minLength: 8)
+            Button("Save Again", action: saveAgain)
+                .buttonStyle(.borderedProminent)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background(.gray.opacity(0.95), in: .rect(cornerRadius: 8))
+        .padding()
+    }
+}
