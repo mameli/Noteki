@@ -42,6 +42,79 @@ public struct Vault: Sendable {
         rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
     }
 
+    public enum CreateError: Error, Equatable {
+        /// An Attachment's name (`photo.png`): only Notes are created.
+        case notANote
+        /// A file is already there, under this name (perhaps in other letter case): never
+        /// overwritten.
+        case exists(Note)
+        /// Above the Vault's root, or in an Excluded folder.
+        case outside
+        /// No name, or a character Obsidian refuses on a Mac: `\\` or `:`.
+        case invalidName
+    }
+
+    /// Creates the empty Note an Unresolved link names. A bare name goes in the linking Note's
+    /// folder: Noteki's choice (SPEC), Obsidian's "same folder as current file" (its default is
+    /// the Vault's root). A path goes from the Vault's root, as in Obsidian; `./` and `../` from
+    /// the linking Note's folder. No source: the Vault's root.
+    public func createNote(for target: String, from source: Note?) throws -> Note {
+        let path = try newNotePath(for: target, from: source)
+        if let existing = existingFile(at: path) { throw CreateError.exists(Note(path: existing)) }
+        let file = fileURL(path)
+        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        do {
+            try Data().write(to: file, options: .withoutOverwriting)
+        } catch CocoaError.fileWriteFileExists {
+            // Another app wrote it in between.
+            throw CreateError.exists(Note(path: existingFile(at: path) ?? path))
+        }
+        return Note(path: path)
+    }
+
+    /// Where `createNote` puts the Note an Unresolved link names, without creating it.
+    public func newNotePath(for target: String, from source: Note?) throws -> String {
+        guard Attachment(path: target) == nil else { throw CreateError.notANote }
+        guard !target.hasSuffix("/"), !target.contains(":"), !target.contains("\\") else { throw CreateError.invalidName }
+        let sourceFolder = source.map { ($0.path as NSString).deletingLastPathComponent } ?? ""
+        let start: String
+        if target.hasPrefix("./") || target.hasPrefix("../") || !target.contains("/") {
+            start = sourceFolder.isEmpty ? target : sourceFolder + "/" + target
+        } else {
+            start = target
+        }
+        var components: [Substring] = []
+        for component in start.split(separator: "/") where component != "." {
+            if component == ".." {
+                guard components.popLast() != nil else { throw CreateError.outside }
+            } else {
+                components.append(component)
+            }
+        }
+        guard !components.isEmpty else { throw CreateError.invalidName }
+        var path = components.joined(separator: "/")
+        // `.md` in any case becomes `.md`, the one extension listed as a Note.
+        if (path as NSString).pathExtension.lowercased() == Note.fileExtension {
+            path = (path as NSString).deletingPathExtension
+        }
+        path += "." + Note.fileExtension
+        guard !isInExcludedFolder(path) else { throw CreateError.outside }
+        return path
+    }
+
+    /// The path of the file at `path` as it is named on disk, which may differ in letter case on
+    /// a case-insensitive volume; nil when there is none.
+    private func existingFile(at path: String) -> String? {
+        let file = fileURL(path)
+        guard FileManager.default.fileExists(atPath: file.path(percentEncoded: false)) else { return nil }
+        let folder = file.deletingLastPathComponent()
+        let name = file.lastPathComponent
+        let onDisk = (try? FileManager.default.contentsOfDirectory(atPath: folder.path(percentEncoded: false)))?
+            .first { $0.caseInsensitiveCompare(name) == .orderedSame } ?? name
+        let parent = (path as NSString).deletingLastPathComponent
+        return parent.isEmpty ? onDisk : parent + "/" + onDisk
+    }
+
     /// Where a file or folder opened from the Finder or another app (Takku) is.
     public enum Place: Equatable, Sendable {
         case note(Note)

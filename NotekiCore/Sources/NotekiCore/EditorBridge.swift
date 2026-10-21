@@ -22,6 +22,8 @@ public enum EditorCommand: Encodable, Sendable {
     case selectAll, undo, redo
     /// The Edit menu's Find items, searching the whole Note.
     case find(FindStep)
+    /// Which of the Note's links lead nowhere: those `inners` are drawn as Unresolved links.
+    case unresolvedLinks(noteID: String, inners: [String])
 
     public enum FindStep: String, Sendable {
         /// Show the find bar, with the selection as the text to find.
@@ -29,10 +31,10 @@ public enum EditorCommand: Encodable, Sendable {
         case next, previous
     }
 
-    public static let types = ["load", "reload", "flush", "clear", "selectAll", "undo", "redo", "find"]
+    public static let types = ["load", "reload", "flush", "clear", "selectAll", "undo", "redo", "find", "unresolvedLinks"]
 
     private enum CodingKeys: String, CodingKey {
-        case type, noteID, revision, text, step
+        case type, noteID, revision, text, step, inners
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -60,6 +62,10 @@ public enum EditorCommand: Encodable, Sendable {
         case .find(let step):
             try container.encode("find", forKey: .type)
             try container.encode(step.rawValue, forKey: .step)
+        case .unresolvedLinks(let noteID, let inners):
+            try container.encode("unresolvedLinks", forKey: .type)
+            try container.encode(noteID, forKey: .noteID)
+            try container.encode(inners, forKey: .inners)
         }
     }
 
@@ -79,11 +85,13 @@ public enum EditorMessage: Decodable, Equatable, Sendable {
     case changed(noteID: String, revision: Int, text: String)
     /// The user clicked a Wikilink: what is between its brackets.
     case followLink(inner: String)
+    /// The Note's links, what is between their brackets: which lead nowhere?
+    case checkLinks(noteID: String, inners: [String])
 
-    public static let types = ["ready", "changed", "followLink"]
+    public static let types = ["ready", "changed", "followLink", "checkLinks"]
 
     private enum CodingKeys: String, CodingKey {
-        case type, noteID, revision, text, inner
+        case type, noteID, revision, text, inner, inners
     }
 
     public init(json: String) throws {
@@ -104,6 +112,11 @@ public enum EditorMessage: Decodable, Equatable, Sendable {
             )
         case "followLink":
             self = .followLink(inner: try container.decode(String.self, forKey: .inner))
+        case "checkLinks":
+            self = .checkLinks(
+                noteID: try container.decode(String.self, forKey: .noteID),
+                inners: try container.decode([String].self, forKey: .inners)
+            )
         default:
             throw DecodingError.dataCorruptedError(
                 forKey: .type, in: container, debugDescription: "Unknown editor message \(type)"

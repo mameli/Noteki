@@ -20,7 +20,9 @@ export type EditorCommand =
   | { type: "undo" }
   | { type: "redo" }
   /** The Edit menu's Find items, over the whole Note. */
-  | { type: "find"; step: "open" | "next" | "previous" };
+  | { type: "find"; step: "open" | "next" | "previous" }
+  /** Which of the Note's links lead nowhere: those are drawn as Unresolved links. */
+  | { type: "unresolvedLinks"; noteID: string; inners: string[] };
 
 /** From the editor to the app. */
 export type EditorMessage =
@@ -28,7 +30,9 @@ export type EditorMessage =
   /** The whole text after the user typed; `revision` grows with every report. */
   | { type: "changed"; noteID: string; revision: number; text: string }
   /** The user clicked a Wikilink: what is between its brackets. */
-  | { type: "followLink"; inner: string };
+  | { type: "followLink"; inner: string }
+  /** The Note's links, what is between their brackets: which lead nowhere? */
+  | { type: "checkLinks"; noteID: string; inners: string[] };
 
 declare global {
   interface Window {

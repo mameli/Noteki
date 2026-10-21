@@ -50,6 +50,13 @@ struct EditorBridgeTests {
         #expect(try command.json() == ##"{"noteID":"Meetings\/Retro.md","revision":4,"text":"# Retro\nTakku\n","type":"reload"}"##)
     }
 
+    @Test("the app tells the editor which of a Note's links are Unresolved")
+    func unresolvedLinks() throws {
+        let command = EditorCommand.unresolvedLinks(noteID: "n1", inners: ["Missing", "Other|alias"])
+
+        #expect(try command.json() == #"{"inners":["Missing","Other|alias"],"noteID":"n1","type":"unresolvedLinks"}"#)
+    }
+
     @Test("clearing the editor needs nothing else")
     func clear() throws {
         #expect(try EditorCommand.clear.json() == #"{"type":"clear"}"#)
@@ -62,5 +69,6 @@ struct EditorBridgeTests {
         #expect(try EditorMessage(json: json) == .changed(noteID: "Meetings/Retro.md", revision: 7, text: "# Retro\nnew\n"))
         #expect(try EditorMessage(json: #"{"type":"ready"}"#) == .ready)
         #expect(try EditorMessage(json: #"{"type":"followLink","inner":"Retro|the retro"}"#) == .followLink(inner: "Retro|the retro"))
+        #expect(try EditorMessage(json: #"{"type":"checkLinks","noteID":"n1","inners":["A","B|b"]}"#) == .checkLinks(noteID: "n1", inners: ["A", "B|b"]))
     }
 }

@@ -1,6 +1,7 @@
 import type { SyntaxNode } from "@lezer/common";
-import { syntaxTree } from "@codemirror/language";
-import { EditorView } from "@codemirror/view";
+import { ensureSyntaxTree, syntaxTree } from "@codemirror/language";
+import { type EditorState, RangeSetBuilder, StateEffect, StateField, type Text } from "@codemirror/state";
+import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import { styleTags, tags } from "@lezer/highlight";
 import type { InlineContext, MarkdownConfig } from "@lezer/markdown";
 
@@ -50,12 +51,17 @@ export const wikilinks: MarkdownConfig = {
   ],
 };
 
+/** What is between a Wikilink's or an Embed's brackets; null for any other node. */
+function innerOf(node: { name: string; from: number; to: number }, doc: Text): string | null {
+  if (node.name !== "Wikilink" && node.name !== "Embed") return null;
+  return doc.sliceString(node.from + (node.name === "Embed" ? 3 : 2), node.to - 2);
+}
+
 /** The Wikilink or Embed at a document position, with what is between its brackets. */
 function linkAt(view: EditorView, pos: number): { from: number; to: number; inner: string } | null {
   for (let node: SyntaxNode | null = syntaxTree(view.state).resolveInner(pos, 1); node; node = node.parent) {
-    if (node.name !== "Wikilink" && node.name !== "Embed") continue;
-    const open = node.name === "Embed" ? 3 : 2;
-    return { from: node.from, to: node.to, inner: view.state.doc.sliceString(node.from + open, node.to - 2) };
+    const inner = innerOf(node, view.state.doc);
+    if (inner !== null) return { from: node.from, to: node.to, inner };
   }
   return null;
 }
@@ -93,3 +99,80 @@ export function followWikilinks(follow: (inner: string) => void) {
     },
   });
 }
+
+/**
+ * Every Wikilink and Embed in the document, what is between their brackets, once each; null
+ * while the document is not parsed to the end (a very long Note): ask again later.
+ */
+export function linkInners(state: EditorState): string[] | null {
+  // At most a few milliseconds of parsing here: the rest goes on in the background.
+  const tree = ensureSyntaxTree(state, state.doc.length, 20);
+  if (!tree) return null;
+  const inners = new Set<string>();
+  tree.iterate({
+    enter(node) {
+      const inner = innerOf(node, state.doc);
+      if (inner === null) return;
+      inners.add(inner);
+      return false;
+    },
+  });
+  return [...inners].sort();
+}
+
+const setUnresolved = StateEffect.define<Set<string>>();
+
+/** The links the app said lead nowhere, by what is between their brackets. */
+const unresolved = StateField.define<Set<string>>({
+  create: () => new Set(),
+  update(value, transaction) {
+    for (const effect of transaction.effects) if (effect.is(setUnresolved)) value = effect.value;
+    return value;
+  },
+});
+
+export function markUnresolved(view: EditorView, inners: string[]) {
+  view.dispatch({ effects: setUnresolved.of(new Set(inners)) });
+}
+
+const unresolvedMark = Decoration.mark({ class: "cm-unresolved" });
+
+function unresolvedDecorations(view: EditorView): DecorationSet {
+  const set = view.state.field(unresolved);
+  if (set.size === 0) return Decoration.none;
+  const builder = new RangeSetBuilder<Decoration>();
+  for (const { from, to } of view.visibleRanges) {
+    syntaxTree(view.state).iterate({
+      from,
+      to,
+      enter(node) {
+        const inner = innerOf(node, view.state.doc);
+        if (inner === null) return;
+        if (set.has(inner)) builder.add(node.from, node.to, unresolvedMark);
+        return false;
+      },
+    });
+  }
+  return builder.finish();
+}
+
+/** Unresolved links drawn faded, as in Obsidian; the set comes from the app. */
+export const unresolvedLinks = [
+  unresolved,
+  ViewPlugin.fromClass(
+    class {
+      decorations: DecorationSet;
+      constructor(view: EditorView) {
+        this.decorations = unresolvedDecorations(view);
+      }
+      update(update: ViewUpdate) {
+        const changed = update.startState.field(unresolved) !== update.state.field(unresolved);
+        // Also as the background parse reaches further: links it finds get their mark.
+        const parsed = syntaxTree(update.startState) !== syntaxTree(update.state);
+        if (changed || parsed || update.docChanged || update.viewportChanged) this.decorations = unresolvedDecorations(update.view);
+      }
+    },
+    { decorations: (plugin) => plugin.decorations },
+  ),
+  EditorView.baseTheme({ ".cm-unresolved": { opacity: "0.55" } }),
+];

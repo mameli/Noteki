@@ -24,6 +24,8 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
     var onChange: (_ noteID: String, _ revision: Int, _ text: String) -> Void = { _, _, _ in }
     /// The user clicked a Wikilink: what is between its brackets.
     var onFollowLink: (_ inner: String) -> Void = { _ in }
+    /// The links of the Note loaded as `noteID`: which lead nowhere?
+    var onCheckLinks: (_ noteID: String, _ inners: [String]) -> Void = { _, _ in }
 
     private var isReady = false
     /// What the editor shows, or will show once it is ready.
@@ -99,6 +101,12 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
         return applied
     }
 
+    /// The links of the Note shown that lead nowhere, drawn as Unresolved links.
+    func markUnresolved(noteID: String, inners: [String]) {
+        guard isReady, loaded?.noteID == noteID else { return }
+        run(.unresolvedLinks(noteID: noteID, inners: inners)) { _ in }
+    }
+
     /// Empties the editor and stops it taking typing: no Note is open.
     func clear() {
         loaded = nil
@@ -157,6 +165,8 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
             onChange(noteID, revision, text)
         case .followLink(let inner):
             onFollowLink(inner)
+        case .checkLinks(let noteID, let inners):
+            onCheckLinks(noteID, inners)
         }
     }
 

@@ -16,7 +16,11 @@ final class AppModel {
     private(set) var vault: Vault?
     private(set) var tree: [VaultItem] = []
     /// The Vault's files by name, to resolve Wikilinks; rebuilt whenever Files is listed.
-    private var index: VaultIndex?
+    private var index: VaultIndex? {
+        didSet { markUnresolvedLinks() }
+    }
+    /// The links of the open Note, as the editor last reported them.
+    private var openNoteLinks: [String] = []
     /// The Note or Attachment selected, nil before the first choice.
     private(set) var shown: Shown? {
         didSet { editor.isInFront = isShowingNote }
@@ -115,6 +119,22 @@ final class AppModel {
             self?.edited(noteID: noteID, revision: revision, text: text)
         }
         editor.onFollowLink = { [weak self] inner in self?.followLink(inner) }
+        editor.onCheckLinks = { [weak self] noteID, inners in
+            guard let self, noteID == openNoteID else { return }
+            openNoteLinks = inners
+            markUnresolvedLinks()
+        }
+    }
+
+    /// Tells the editor which of the open Note's links lead nowhere: again whenever the index
+    /// changes, so a link turns resolved once its Note exists.
+    private func markUnresolvedLinks() {
+        guard let open = openNote else { return }
+        // Without an index (Files not listed yet, a Loose file) nothing is known to be missing.
+        let unresolved = index.map { index in
+            openNoteLinks.filter { index.resolve(Wikilink(inner: $0).target, from: open.note) == nil }
+        } ?? []
+        editor.markUnresolved(noteID: openNoteID, inners: unresolved)
     }
 
     /// Opens the Note or Attachment a clicked Wikilink leads to, resolved from the open Note as
@@ -123,12 +143,24 @@ final class AppModel {
         // Before Files is listed, or in a Loose file, there is nothing to resolve against: not
         // an Unresolved link.
         guard let index else { return }
-        guard let item = index.resolve(Wikilink(inner: inner).target, from: openNote?.note) else {
-            // An Unresolved link: creating its Note is ticket 12.
-            NSSound.beep()
+        let target = Wikilink(inner: inner).target
+        if let item = index.resolve(target, from: openNote?.note) {
+            reveal(item.path)
             return
         }
-        reveal(item.path)
+        // An Unresolved link: its Note is created where Obsidian would put it, then opened.
+        guard let vault else { return }
+        do {
+            let created = try vault.createNote(for: target, from: openNote?.note)
+            reveal(created.path)
+        } catch Vault.CreateError.exists(let note) {
+            // Created a moment ago, by a click before Files listed it or by another app.
+            reveal(note.path)
+        } catch {
+            // An Attachment's name, or outside the Vault: nothing to create.
+            logger.info("Unresolved link not created: \(String(describing: error), privacy: .public)")
+            NSSound.beep()
+        }
     }
 
     /// A Note, Attachment or folder of the Vault opened from the Finder or Takku: selected in
@@ -183,9 +215,9 @@ final class AppModel {
         pendingReveal = nil
         watcher = VaultWatcher(root: vault.root) { [weak self] change in self?.filesChanged(change) }
         tree = []
-        index = nil
         shown = nil
         openNote = nil
+        index = nil
         previousNote = nil
         revisions = [:]
         editor.clear()
@@ -406,6 +438,7 @@ final class AppModel {
             let open = try vault.open(note)
             openNote = open
             openNoteID = UUID().uuidString
+            openNoteLinks = []
             // Revisions matter only for the Note open and the one just left.
             revisions = revisions.filter { $0.key == previousNoteID }
             editor.load(noteID: openNoteID, text: open.text)

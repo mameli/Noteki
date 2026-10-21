@@ -7,7 +7,7 @@ import { EditorView, keymap } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import { type EditorCommand, type EditorMessage, send } from "./bridge";
 import { frontmatter } from "./frontmatter";
-import { followWikilinks, wikilinks } from "./wikilink";
+import { followWikilinks, linkInners, markUnresolved, unresolvedLinks, wikilinks } from "./wikilink";
 
 // Colours come from the CSS variables in editor.css, so light and dark follow the system.
 const sourceHighlight = HighlightStyle.define([
@@ -74,12 +74,41 @@ const reportChanges = EditorView.updateListener.of((update) => {
   }, reportInterval);
 });
 
+/** How long after the last change the editor asks which links are Unresolved. */
+const checkDelay = 400;
+let checkTimer: ReturnType<typeof setTimeout> | undefined;
+/** The links last sent to the app, so an unchanged list is not sent again. */
+let checkedInners = "";
+
+function checkLinks(force = false) {
+  clearTimeout(checkTimer);
+  if (noteID === null) return;
+  const inners = linkInners(view.state);
+  if (inners === null) {
+    // A long Note still parsing: ask again once more of it is parsed.
+    checkTimer = setTimeout(() => checkLinks(force), checkDelay);
+    return;
+  }
+  const key = JSON.stringify(inners);
+  if (!force && key === checkedInners) return;
+  checkedInners = key;
+  send({ type: "checkLinks", noteID, inners });
+}
+
+const checkLinksAfterChanges = EditorView.updateListener.of((update) => {
+  if (!update.docChanged) return;
+  clearTimeout(checkTimer);
+  checkTimer = setTimeout(() => checkLinks(), checkDelay);
+});
+
 function initialState(text: string, editable: boolean) {
   return EditorState.create({
     doc: text,
     extensions: [
       markdown({ base: markdownLanguage, extensions: [frontmatter, wikilinks] }),
       followWikilinks((inner) => send({ type: "followLink", inner })),
+      unresolvedLinks,
+      checkLinksAfterChanges,
       noteTheme,
       syntaxHighlighting(sourceHighlight),
       EditorView.lineWrapping,
@@ -108,6 +137,7 @@ window.noteki = {
         noteID = command.noteID;
         view.setState(initialState(command.text, true));
         view.scrollDOM.scrollTop = 0;
+        checkLinks(true);
         return null;
       }
       case "clear": {
@@ -130,6 +160,9 @@ window.noteki = {
         ({ selectAll, undo, redo })[command.type](view);
         return null;
       }
+      case "unresolvedLinks":
+        if (command.noteID === noteID) markUnresolved(view, command.inners);
+        return null;
       case "find":
         if (command.step === "open") openSearchPanel(view);
         else if (command.step === "next") findNext(view);
