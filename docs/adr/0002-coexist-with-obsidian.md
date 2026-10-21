@@ -1,6 +1,6 @@
 # Noteki opens an Obsidian vault as it is and leaves it as Obsidian expects
 
-The user keeps one **Vault** (`~/Documents/Agile`) and still needs Obsidian for what Noteki will never do: git through obsidian-git, Excalidraw, the occasional plugin. Both apps must work on the same folder, in turn or at the same time. Noteki therefore writes nothing in the Vault but Notes and Attachments: never in `.obsidian/`, no index or cache file, no settings. Its settings and anything it remembers live in `~/Library/Application Support/Noteki/`. What it writes in a Note follows Obsidian's format: Wikilinks by name, Embeds as `![[file]]`, Tags in the `tags` Property, Pasted images named `Pasted image YYYYMMDDHHmmss.png`.
+The user keeps one **Vault** (`~/Documents/Agile`) and still needs Obsidian for what Noteki will never do: git through obsidian-git, Excalidraw, the occasional plugin. Both apps must work on the same folder, in turn or at the same time. Noteki therefore writes nothing in the Vault but Notes and Attachments: never in `.obsidian/`, no index or cache file, no settings. Its settings and anything it remembers live outside the Vault, in the app's preferences (`UserDefaults`) and in `~/Library/Application Support/Noteki/`. What it writes in a Note follows Obsidian's format: Wikilinks by name, Embeds as `![[file]]`, Tags in the `tags` Property, Pasted images named `Pasted image YYYYMMDDHHmmss.png`.
 
 ## Consequences
 

@@ -1,0 +1,41 @@
+:root {
+  color-scheme: light dark;
+  --text: #1d1d1f;
+  --background: #ffffff;
+  --syntax: #a1a1a6;
+  --link: #0064d1;
+  --quote: #6e6e73;
+  --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --line-width: 46rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --text: #e8e8ed;
+    --background: #1e1e1e;
+    --syntax: #6e6e73;
+    --link: #5aa9ff;
+    --quote: #a1a1a6;
+  }
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--background);
+  color: var(--text);
+}
+
+#editor,
+.cm-editor {
+  height: 100%;
+}
+
+.cm-editor.cm-focused {
+  outline: none;
+}
+
+.cm-content {
+  caret-color: var(--text);
+}

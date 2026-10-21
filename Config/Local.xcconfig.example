@@ -1,0 +1,4 @@
+// Copy to Config/Local.xcconfig (ignored by git) to sign with your Developer ID.
+CODE_SIGN_STYLE = Manual
+CODE_SIGN_IDENTITY = Developer ID Application
+DEVELOPMENT_TEAM = XXXXXXXXXX

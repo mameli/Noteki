@@ -1,0 +1,6 @@
+#!/bin/sh
+# Prints one hash of the editor's sources (everything that goes into editor.html), the same
+# on every clone: file paths and contents, not modification times.
+set -e
+cd "$(dirname "$0")/../Editor"
+find src build.mjs package.json package-lock.json tsconfig.json -type f | LC_ALL=C sort | xargs shasum -a 256 | shasum -a 256 | cut -d' ' -f1

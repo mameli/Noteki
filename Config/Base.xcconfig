@@ -1,0 +1,30 @@
+// Shared settings of the Noteki target.
+PRODUCT_NAME = Noteki
+PRODUCT_BUNDLE_IDENTIFIER = app.noteki.noteki
+MARKETING_VERSION = 0.1.0
+CURRENT_PROJECT_VERSION = 1
+
+MACOSX_DEPLOYMENT_TARGET = 15.0
+SWIFT_VERSION = 6.0
+
+GENERATE_INFOPLIST_FILE = YES
+INFOPLIST_KEY_CFBundleDisplayName = Noteki
+INFOPLIST_KEY_LSApplicationCategoryType = public.app-category.productivity
+INFOPLIST_KEY_NSHumanReadableCopyright =
+LD_RUNPATH_SEARCH_PATHS = $(inherited) @executable_path/../Frameworks
+COMBINE_HIDPI_IMAGES = YES
+
+// The "Check editor bundle" phase reads Editor/, outside the target's declared inputs.
+ENABLE_USER_SCRIPT_SANDBOXING = NO
+
+// Not sandboxed (personal app, outside the App Store): the Vault is read and watched
+// directly, without security-scoped bookmarks.
+ENABLE_APP_SANDBOX = NO
+ENABLE_HARDENED_RUNTIME[config=Release] = YES
+
+// Without Local.xcconfig the app is signed ad hoc.
+CODE_SIGN_STYLE = Manual
+CODE_SIGN_IDENTITY = -
+DEVELOPMENT_TEAM =
+
+#include? "Local.xcconfig"

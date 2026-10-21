@@ -3,3 +3,7 @@ xcuserdata/
 build/
 DerivedData/
 node_modules/
+.build/
+.swiftpm/
+*.xcuserstate
+Config/Local.xcconfig

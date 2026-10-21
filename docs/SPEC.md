@@ -34,7 +34,7 @@ A feature that breaks the budget waits until it fits.
 ## Vault
 
 - At first launch Noteki asks for the Vault folder and remembers it. *File → Open Vault…* changes it. One Vault at a time.
-- Noteki writes nothing in the Vault but Notes and Attachments ([ADR 0002](adr/0002-coexist-with-obsidian.md)). Settings live in `~/Library/Application Support/Noteki/`.
+- Noteki writes nothing in the Vault but Notes and Attachments ([ADR 0002](adr/0002-coexist-with-obsidian.md)). Settings live outside the Vault, in the app's preferences and in `~/Library/Application Support/Noteki/`.
 - **Listed and indexed**: `.md` Notes; images (`png`, `jpg`, `jpeg`, `gif`, `webp`, `svg`, `heic`) and `pdf` as **Attachments**. Every other file is ignored, in the sidebar too.
 - **Excluded folders**: every folder whose name starts with `.`; `node_modules`, `.venv`, `venv`, `__pycache__`; every folder that contains a `.git` of its own (a repository inside the Vault), the Vault's own root excepted; the folders the user adds in *Settings*. In the user's Vault this leaves out about 13,000 SVG files and the code repositories under `Projects/` and `Sandbox/`.
 
@@ -131,7 +131,7 @@ Noteki works with Takku without changes to Takku:
 
 - `NotekiCore/`: Swift package, no AppKit. Vault scanning and Excluded folders, Frontmatter parsing, Tags, Wikilink resolution, the index, search, three-way Merge. Everything here is unit tested.
 - `Noteki/`: the SwiftUI + AppKit app. Windows, sidebars, Tabs, the editor's web view and its bridge, file watching, image and PDF views, settings.
-- `Editor/`: TypeScript, CodeMirror 6 and the Live preview extensions, built into one `index.html` committed in the app's resources ([ADR 0004](adr/0004-committed-editor-bundle.md)).
+- `Editor/`: TypeScript, CodeMirror 6 and the Live preview extensions, built into one `editor.html` committed in the app's resources, with a hash of its sources that the build checks ([ADR 0004](adr/0004-committed-editor-bundle.md)).
 - The bridge between `Noteki` and `Editor` is a typed message enum on each side, written by hand ([ADR 0001](adr/0001-codemirror-in-wkwebview.md)). A test checks that the names match.
 - `THIRD_PARTY.md`: every piece of code borrowed from MarkEdit, SilverBullet, MarkEdit-preview and others, with licence and changes ([ADR 0007](adr/0007-from-scratch-borrowing-mit-code.md)).
 

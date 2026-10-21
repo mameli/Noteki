@@ -1,0 +1,12 @@
+#!/bin/sh
+# Xcode build phase: fails when the committed editor.html was not rebuilt after a change to
+# the editor's sources (ADR 0004).
+set -e
+root="$(dirname "$0")/.."
+bundle="$root/Noteki/Resources/editor.html"
+expected="$("$root/scripts/editor-sources-hash")"
+built="$(sed -n 's/^<!-- noteki-editor-sources: \([0-9a-f]*\) -->$/\1/p' "$bundle" 2>/dev/null || true)"
+if [ "$expected" != "$built" ]; then
+    echo "error: editor.html is out of date with Editor/. Run: cd Editor && npm run build" >&2
+    exit 1
+fi
