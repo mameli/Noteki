@@ -6,7 +6,8 @@ import os
 private let logger = Logger(subsystem: "app.noteki.noteki", category: "vault")
 
 /// The open Vault and what it shows: a Note or an Attachment. The Vault's location is
-/// remembered in the app's preferences, outside the Vault (ADR 0002).
+/// remembered in the app's preferences, outside the Vault (ADR 0002). The Note shown is open
+/// for writing and saved by itself about a second after the last change.
 @MainActor
 @Observable
 final class AppModel {
@@ -16,10 +17,24 @@ final class AppModel {
     private(set) var tree: [VaultItem] = []
     /// The Note or Attachment selected, nil before the first choice.
     private(set) var shown: Shown?
-    /// The text of the last Note read: the editor keeps it while an Attachment is in front.
-    private(set) var noteText = ""
     /// Why the Vault or what is shown cannot be read, in words for the user.
     private(set) var failure: String?
+    /// Why the last save failed; cleared by the next one that works.
+    private(set) var saveFailure: String?
+
+    /// The window's editor: one web view per window (ADR 0003), one window until ticket 25.
+    let editor = EditorController()
+    /// The Note in the editor, kept while an Attachment is in front.
+    private var openNote: OpenNote?
+    /// The Note just left: keys typed in the instant before the switch still belong to it.
+    private var previousNote: OpenNote?
+    /// The last revision applied per Note: a report that arrives after a later one is stale.
+    private var revisions: [String: Int] = [:]
+    private var lastSaveError: (any Error)?
+    private var pendingSave: Task<Void, Never>?
+    /// Switching Note, Vault or quitting waits for the previous switch: each one saves first.
+    private var transition: Task<Void, Never>?
+    private static let saveDelay: Duration = .seconds(1)
 
     enum Shown: Equatable {
         case note(Note)
@@ -36,14 +51,21 @@ final class AppModel {
 
     /// The path of the row selected in the Files pane: a Note, an Attachment or a folder.
     var selection: String? {
-        didSet { if selection != oldValue { showSelection() } }
+        didSet {
+            guard selection != oldValue, let selection else { return }
+            afterTransition { await self.show(selection) }
+        }
     }
 
     init() {
+        editor.onChange = { [weak self] noteID, revision, text in
+            self?.edited(noteID: noteID, revision: revision, text: text)
+        }
         guard let path = UserDefaults.standard.string(forKey: Self.vaultPathKey) else { return }
         var isFolder: ObjCBool = false
         if FileManager.default.fileExists(atPath: path, isDirectory: &isFolder), isFolder.boolValue {
-            open(URL(filePath: path, directoryHint: .isDirectory))
+            // At once: nothing is open yet to save, and the window must not ask for a Vault.
+            activate(Vault(root: URL(filePath: path, directoryHint: .isDirectory)))
         } else {
             // Moved or deleted since last time: ask again, as at first launch.
             logger.info("The remembered Vault is gone, asking for another")
@@ -64,11 +86,29 @@ final class AppModel {
     static let chooseVaultMessage = "Choose the Vault: the folder of your notes. It can be an Obsidian vault."
 
     func open(_ folder: URL) {
-        let vault = Vault(root: folder)
+        afterTransition { await self.switchVault(to: folder) }
+    }
+
+    /// Saves what the user typed before the app quits. False when edits could not be saved and
+    /// the user chose to stay.
+    func prepareToQuit() async -> Bool {
+        await transition?.value
+        return await leaveOpenNote()
+    }
+
+    private func switchVault(to folder: URL) async {
+        guard await leaveOpenNote() else { return }
+        activate(Vault(root: folder))
+    }
+
+    private func activate(_ vault: Vault) {
         self.vault = vault
         tree = []
         shown = nil
-        noteText = ""
+        openNote = nil
+        previousNote = nil
+        revisions = [:]
+        editor.clear()
         selection = nil
         failure = nil
         UserDefaults.standard.set(vault.root.path(percentEncoded: false), forKey: Self.vaultPathKey)
@@ -86,10 +126,34 @@ final class AppModel {
         }
     }
 
-    private func showSelection() {
-        guard let vault, let selection else { return }
-        switch tree.item(at: selection) {
-        case .note(let note): show(note, in: vault)
+    private func show(_ path: String) async {
+        guard let vault else { return }
+        switch tree.item(at: path) {
+        case .note(let note):
+            guard openNote?.note != note else {
+                shown = .note(note)
+                return
+            }
+            guard await leaveOpenNote() else {
+                // The user stays with edits that could not be saved: back to that Note.
+                if let open = openNote {
+                    shown = .note(open.note)
+                    selection = open.note.path
+                }
+                return
+            }
+            shown = .note(note)
+            do {
+                let open = try vault.open(note)
+                openNote = open
+                editor.load(noteID: note.path, text: open.text)
+                failure = nil
+            } catch {
+                openNote = nil
+                editor.clear()
+                logger.error("Cannot read a Note: \(error.localizedDescription, privacy: .public)")
+                failure = "Cannot read \(note.name): \(error.localizedDescription)"
+            }
         case .attachment(let attachment):
             shown = .attachment(attachment)
             failure = nil
@@ -97,14 +161,108 @@ final class AppModel {
         }
     }
 
-    private func show(_ note: Note, in vault: Vault) {
-        shown = .note(note)
+    private func edited(noteID: String, revision: Int, text: String) {
+        guard revision > revisions[noteID, default: 0] else {
+            logger.info("Stale report from the editor, ignored")
+            return
+        }
+        revisions[noteID] = revision
+        if openNote?.note.path == noteID {
+            openNote?.edit(text)
+            pendingSave?.cancel()
+            pendingSave = Task {
+                try? await Task.sleep(for: Self.saveDelay)
+                guard !Task.isCancelled else { return }
+                save()
+            }
+        } else if var previous = previousNote, previous.note.path == noteID {
+            // Never into the Note now open, never into a file reopened from scratch.
+            previous.edit(text)
+            do {
+                try previous.save()
+            } catch {
+                logger.error("Cannot save the last keys of a Note: \(error.localizedDescription, privacy: .public)")
+                saveFailure = "The last keys typed in \(previous.note.name) could not be saved: \(error.localizedDescription)"
+            }
+            previousNote = previous
+        } else {
+            logger.error("Report for a Note no longer open, ignored")
+        }
+    }
+
+    /// Before the editor gets another Note, the Vault changes or the app quits: saves, and asks
+    /// the user when that fails. False when the user chose to stay with the edits.
+    private func leaveOpenNote() async -> Bool {
+        await editor.flush()
+        pendingSave?.cancel()
+        save()
+        guard var open = openNote, open.hasUnsavedEdits else {
+            previousNote = openNote
+            return true
+        }
+        switch askAboutUnsavedEdits(in: open) {
+        case .stay:
+            return false
+        case .discard:
+            previousNote = nil
+            saveFailure = nil
+            return true
+        case .replace:
+            do {
+                try open.saveReplacingChangesOnDisk()
+                saveFailure = nil
+                openNote = open
+                previousNote = open
+                return true
+            } catch {
+                saveFailure = "Cannot save \(open.note.name): \(error.localizedDescription)"
+                return false
+            }
+        }
+    }
+
+    private enum UnsavedChoice { case stay, discard, replace }
+
+    private func askAboutUnsavedEdits(in open: OpenNote) -> UnsavedChoice {
+        let changedOnDisk = (lastSaveError as? OpenNote.SaveError) == .changedOnDisk
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Your edits to \(open.note.name) are not saved"
+        alert.informativeText = changedOnDisk
+            ? "Another app changed the file while you were writing. Replacing it with your version erases that change."
+            : saveFailure ?? "The file could not be written."
+        alert.addButton(withTitle: "Keep Editing")
+        alert.addButton(withTitle: "Discard My Edits")
+        if changedOnDisk { alert.addButton(withTitle: "Replace With My Version") }
+        switch alert.runModal() {
+        case .alertSecondButtonReturn: return .discard
+        case .alertThirdButtonReturn: return .replace
+        default: return .stay
+        }
+    }
+
+    private func save() {
+        guard var open = openNote, open.hasUnsavedEdits else { return }
         do {
-            noteText = try vault.text(of: note)
-            failure = nil
+            try open.save()
+            saveFailure = nil
+            lastSaveError = nil
+        } catch OpenNote.SaveError.changedOnDisk {
+            lastSaveError = OpenNote.SaveError.changedOnDisk
+            saveFailure = "\(open.note.name) was changed by another app. Your edits are kept here, not saved."
         } catch {
-            logger.error("Cannot read a Note: \(error.localizedDescription, privacy: .public)")
-            failure = "Cannot read \(note.name): \(error.localizedDescription)"
+            logger.error("Cannot save a Note: \(error.localizedDescription, privacy: .public)")
+            lastSaveError = error
+            saveFailure = "Cannot save \(open.note.name): \(error.localizedDescription)"
+        }
+        openNote = open
+    }
+
+    private func afterTransition(_ work: @escaping @MainActor () async -> Void) {
+        let previous = transition
+        transition = Task {
+            await previous?.value
+            await work()
         }
     }
 }

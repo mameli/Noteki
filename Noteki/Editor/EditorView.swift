@@ -1,104 +1,154 @@
+import NotekiCore
 import SwiftUI
 import WebKit
 import os
 
 private let logger = Logger(subsystem: "app.noteki.noteki", category: "editor")
 
-/// The CodeMirror editor in a web view (ADR 0001), loaded once from the bundled editor.html.
+/// Shows the window's editor. The web view belongs to the EditorController, not to this view,
+/// so it lives as long as the window, one per window (ADR 0003).
 struct EditorView: NSViewRepresentable {
-    let text: String
+    let editor: EditorController
 
-    func makeCoordinator() -> Coordinator { Coordinator() }
+    func makeNSView(context: Context) -> WKWebView { editor.webView }
+    func updateNSView(_ webView: WKWebView, context: Context) {}
+}
 
-    func makeNSView(context: Context) -> WKWebView {
-        context.coordinator.webView
+/// The CodeMirror editor in a web view (ADR 0001), loaded once from the bundled editor.html,
+/// and the app's side of the bridge to it.
+@MainActor
+final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
+    let webView: WKWebView
+    /// The user typed: the whole text, tagged with the Note it was loaded as and a revision
+    /// that grows with every report.
+    var onChange: (_ noteID: String, _ revision: Int, _ text: String) -> Void = { _, _, _ in }
+
+    private var isReady = false
+    /// What the editor shows, or will show once it is ready.
+    private var loaded: (noteID: String, text: String)?
+    private let page = Bundle.main.url(forResource: "editor", withExtension: "html")
+    /// A flush that gets no answer in this time gives up: quitting must not hang on the editor.
+    private static let flushTimeout: Duration = .seconds(2)
+
+    override init() {
+        let configuration = WKWebViewConfiguration()
+        webView = WKWebView(frame: .zero, configuration: configuration)
+        super.init()
+        // Through a weak proxy: the controller keeps its handlers alive.
+        configuration.userContentController.add(WeakMessageHandler(self), name: "noteki")
+        webView.underPageBackgroundColor = .textBackgroundColor
+        webView.navigationDelegate = self
+        loadPage()
     }
 
-    func updateNSView(_ webView: WKWebView, context: Context) {
-        context.coordinator.show(text)
+    func load(noteID: String, text: String) {
+        loaded = (noteID, text)
+        guard isReady else { return }
+        run(.load(noteID: noteID, text: text)) { _ in }
     }
 
-    @MainActor
-    final class Coordinator: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
-        let webView: WKWebView
-        private var isReady = false
-        private var shownText: String?
-        private var pendingText: String?
-        private let page = Bundle.main.url(forResource: "editor", withExtension: "html")
+    /// Empties the editor and stops it taking typing: no Note is open.
+    func clear() {
+        loaded = nil
+        guard isReady else { return }
+        run(.clear) { _ in }
+    }
 
-        override init() {
-            let configuration = WKWebViewConfiguration()
-            webView = WKWebView(frame: .zero, configuration: configuration)
-            super.init()
-            // Through a weak proxy: the controller keeps its handlers alive.
-            configuration.userContentController.add(WeakMessageHandler(self), name: "noteki")
-            webView.underPageBackgroundColor = .textBackgroundColor
-            webView.navigationDelegate = self
-            loadPage()
-        }
-
-        private func loadPage() {
-            guard let page else {
-                logger.fault("editor.html is missing from the app")
-                return
+    /// Asks the editor for changes it has not reported yet, and hands them to `onChange`.
+    /// Waits at most `flushTimeout`; a reply that comes later is still handed over.
+    func flush() async {
+        guard isReady else { return }
+        await withCheckedContinuation { continuation in
+            let once = Once()
+            run(.flush) { [weak self] reply in
+                if let reply { self?.receive(reply) }
+                once.run { continuation.resume() }
             }
-            webView.loadFileURL(page, allowingReadAccessTo: page)
-        }
-
-        /// WebKit's process died (memory pressure, a crash): load the editor again and show the
-        /// same text once it is ready.
-        func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
-            logger.error("The editor's web process ended, reloading it")
-            isReady = false
-            pendingText = pendingText ?? shownText
-            shownText = nil
-            loadPage()
-        }
-
-        func show(_ text: String) {
-            guard text != shownText else { return }
-            guard isReady else {
-                pendingText = text
-                return
-            }
-            shownText = text
-            send(.load(text: text))
-        }
-
-        func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
-            guard let body = message.body as? String,
-                  let decoded = try? JSONDecoder().decode(EditorMessage.self, from: Data(body.utf8))
-            else {
-                logger.error("Unreadable message from the editor")
-                return
-            }
-            switch decoded {
-            case .ready:
-                isReady = true
-                if let pendingText {
-                    self.pendingText = nil
-                    show(pendingText)
+            Task {
+                try? await Task.sleep(for: Self.flushTimeout)
+                once.run {
+                    logger.error("The editor did not answer a flush in time")
+                    continuation.resume()
                 }
             }
         }
+    }
 
-        private func send(_ command: EditorCommand) {
-            let json: String
-            do {
-                json = String(decoding: try JSONEncoder().encode(command), as: UTF8.self)
-            } catch {
-                logger.error("Cannot encode an editor command: \(error.localizedDescription, privacy: .public)")
-                return
-            }
-            webView.callAsyncJavaScript(
-                "window.noteki.receive(JSON.parse(command))",
-                arguments: ["command": json], in: nil, in: .page
-            ) { result in
-                if case .failure(let error) = result {
-                    logger.error("Editor command failed: \(error.localizedDescription, privacy: .public)")
-                }
+    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard let body = message.body as? String else { return }
+        receive(body)
+    }
+
+    /// WebKit's process died (memory pressure, a crash): load the editor again and show the
+    /// same text once it is ready. Changes not reported yet are lost with the process.
+    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+        logger.error("The editor's web process ended, reloading it")
+        isReady = false
+        loadPage()
+    }
+
+    private func receive(_ json: String) {
+        let message: EditorMessage
+        do {
+            message = try EditorMessage(json: json)
+        } catch {
+            logger.error("Unreadable message from the editor: \(error.localizedDescription, privacy: .public)")
+            return
+        }
+        switch message {
+        case .ready:
+            isReady = true
+            if let loaded { load(noteID: loaded.noteID, text: loaded.text) }
+        case .changed(let noteID, let revision, let text):
+            // Late keys of the Note just left must not become what a reload shows.
+            if loaded?.noteID == noteID { loaded = (noteID, text) }
+            onChange(noteID, revision, text)
+        }
+    }
+
+    private func loadPage() {
+        guard let page else {
+            logger.fault("editor.html is missing from the app")
+            return
+        }
+        webView.loadFileURL(page, allowingReadAccessTo: page)
+    }
+
+    /// Sends a command; `reply` gets what the editor returned, nil for nothing.
+    private func run(_ command: EditorCommand, reply: @escaping @MainActor (String?) -> Void) {
+        let json: String
+        do {
+            json = try command.json()
+        } catch {
+            logger.error("Cannot encode an editor command: \(error.localizedDescription, privacy: .public)")
+            reply(nil)
+            return
+        }
+        webView.callAsyncJavaScript(
+            "return window.noteki.receive(JSON.parse(command))",
+            arguments: ["command": json], in: nil, in: .page
+        ) { result in
+            switch result {
+            case .success(let value):
+                reply(value as? String)
+            case .failure(let error):
+                logger.error("Editor command failed: \(error.localizedDescription, privacy: .public)")
+                reply(nil)
             }
         }
+    }
+}
+
+/// Runs the first closure it is given, ignores the others: one answer for a continuation that
+/// two things race to resume.
+@MainActor
+private final class Once {
+    private var done = false
+
+    func run(_ body: () -> Void) {
+        guard !done else { return }
+        done = true
+        body()
     }
 }
 

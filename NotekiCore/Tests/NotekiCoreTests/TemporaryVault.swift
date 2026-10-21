@@ -22,6 +22,14 @@ final class TemporaryVault {
         try Data(content.utf8).write(to: file)
     }
 
+    func read(_ path: String) throws -> String {
+        try String(contentsOf: url.appending(path: path), encoding: .utf8)
+    }
+
+    func data(_ path: String) throws -> Data {
+        try Data(contentsOf: url.appending(path: path))
+    }
+
     /// Every file under the Vault with its content, to check nothing changed.
     func snapshot() throws -> [String: Data] {
         var files: [String: Data] = [:]

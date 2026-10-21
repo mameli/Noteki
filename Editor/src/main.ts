@@ -1,9 +1,10 @@
+import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
-import { EditorView } from "@codemirror/view";
+import { EditorView, keymap } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
-import { type EditorCommand, send } from "./bridge";
+import { type EditorCommand, type EditorMessage, send } from "./bridge";
 import { frontmatter } from "./frontmatter";
 
 // Colours come from the CSS variables in editor.css, so light and dark follow the system.
@@ -29,7 +30,34 @@ const noteTheme = EditorView.theme({
   ".cm-content": { maxWidth: "var(--line-width)", margin: "0 auto", padding: "2rem 1.5rem 40vh" },
 });
 
-function initialState(text: string) {
+/** How often, at most, the text is reported while the user types. The app saves after it. */
+const reportInterval = 250;
+
+/** The Note shown, by its path; null before the first one. */
+let noteID: string | null = null;
+let unreported = false;
+let revision = 0;
+let reportTimer: ReturnType<typeof setTimeout> | undefined;
+
+function report(): EditorMessage | null {
+  clearTimeout(reportTimer);
+  reportTimer = undefined;
+  if (noteID === null || !unreported) return null;
+  unreported = false;
+  revision += 1;
+  return { type: "changed", noteID, revision, text: view.state.doc.toString() };
+}
+
+const reportChanges = EditorView.updateListener.of((update) => {
+  if (!update.docChanged) return;
+  unreported = true;
+  reportTimer ??= setTimeout(() => {
+    const message = report();
+    if (message) send(message);
+  }, reportInterval);
+});
+
+function initialState(text: string, editable: boolean) {
   return EditorState.create({
     doc: text,
     extensions: [
@@ -37,24 +65,42 @@ function initialState(text: string) {
       noteTheme,
       syntaxHighlighting(sourceHighlight),
       EditorView.lineWrapping,
-      EditorState.readOnly.of(true),
-      EditorView.editable.of(false),
+      history(),
+      keymap.of([...defaultKeymap, ...historyKeymap]),
+      EditorView.editable.of(editable),
+      reportChanges,
     ],
   });
 }
 
 const view = new EditorView({
-  state: initialState(""),
+  state: initialState("", false),
   parent: document.getElementById("editor")!,
 });
 
 window.noteki = {
   receive(command: EditorCommand) {
     switch (command.type) {
-      case "load":
-        view.setState(initialState(command.text));
+      case "load": {
+        // The app flushes before switching Note: this only catches what slipped through.
+        const pending = report();
+        if (pending) send(pending);
+        noteID = command.noteID;
+        view.setState(initialState(command.text, true));
         view.scrollDOM.scrollTop = 0;
-        break;
+        return null;
+      }
+      case "clear": {
+        const pending = report();
+        if (pending) send(pending);
+        noteID = null;
+        view.setState(initialState("", false));
+        return null;
+      }
+      case "flush": {
+        const message = report();
+        return message ? JSON.stringify(message) : null;
+      }
     }
   },
 };

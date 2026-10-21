@@ -2,7 +2,8 @@ import SwiftUI
 
 @main
 struct NotekiApp: App {
-    @State private var model = AppModel()
+    @NSApplicationDelegateAdaptor private var appDelegate: AppDelegate
+    private var model: AppModel { appDelegate.model }
 
     var body: some Scene {
         // One window until Noteki has its own Tabs and windows (ticket 25).
@@ -17,6 +18,25 @@ struct NotekiApp: App {
             }
             ZoomCommands()
         }
+    }
+}
+
+/// Owns the model so that quitting can wait for the last edits to be saved.
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    let model = AppModel()
+    private var isQuitting = false
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        // A second ⌘Q while the first one saves waits for it rather than asking twice.
+        guard !isQuitting else { return .terminateLater }
+        isQuitting = true
+        Task {
+            let canQuit = await model.prepareToQuit()
+            isQuitting = false
+            sender.reply(toApplicationShouldTerminate: canQuit)
+        }
+        return .terminateLater
     }
 }
 

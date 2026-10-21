@@ -8,6 +8,7 @@
 
 - [ ] Edits in different parts of the Note are merged and saved, nothing lost
 - [ ] Edits to the same lines raise a Conflict: the user's text stays, the file on disk is not overwritten
+- [ ] Replaces the interim guard from ticket 04 (a save refused with `changedOnDisk` and an alert on leaving the Note)
 - [ ] *Keep mine* saves the user's text; *Take theirs* loads the file's
 - [ ] *Show differences* shows both versions
 - [ ] Tested at Seam 1, including a replay of Takku's Processing writes while the user keeps typing in Personal notes

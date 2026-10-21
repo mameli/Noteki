@@ -30,7 +30,7 @@ struct ContentView: View {
         } else {
             // The editor stays alive under the placeholders: its web view lives as long as the
             // window (ADR 0003) instead of loading again after every message.
-            EditorView(text: model.noteText)
+            EditorView(editor: model.editor)
                 .overlay {
                     if let failure = model.failure {
                         placeholder(ContentUnavailableView(
@@ -41,6 +41,16 @@ struct ContentView: View {
                             .background(.background)
                     } else if model.shown == nil {
                         placeholder(ContentUnavailableView("No Note Selected", systemImage: "doc.text"))
+                    }
+                }
+                .overlay(alignment: .bottom) {
+                    if let saveFailure = model.saveFailure {
+                        Label(saveFailure, systemImage: "exclamationmark.triangle.fill")
+                            .padding(.horizontal, 12)
+                            .padding(.vertical, 8)
+                            .background(.red.opacity(0.9), in: .rect(cornerRadius: 8))
+                            .foregroundStyle(.white)
+                            .padding()
                     }
                 }
         }
