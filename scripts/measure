@@ -1,0 +1,109 @@
+#!/bin/sh
+# Measures Noteki against its budget (docs/SPEC.md, "Budget") on a generated Vault of 5,000
+# Notes: app size on disk, cold start to a Note shown, listing the Vault, memory at rest with one
+# window and one Note, WebKit's processes included. Run it at the end of every milestone and
+# note the results in CHANGELOG.md.
+#
+# It builds the Release app, keeps the generated Vault in a temporary folder, launches Noteki by
+# opening a Note (as Takku does), and puts back the remembered Vault when it is done, also on
+# ctrl-C. WebKit's processes are those that appear while Noteki starts: close other apps that
+# open web views (Mail, Safari) for an exact count. Noteki must not be running.
+set -e
+if pgrep -x Noteki >/dev/null; then
+    echo "Noteki is running: quit it first, so the measure starts it cold." >&2
+    exit 1
+fi
+root="$(cd "$(dirname "$0")/.." && pwd)"
+work="$(mktemp -d -t noteki-measure)"
+vault="$work/Vault"
+domain=app.noteki.noteki
+notes=${NOTES:-5000}
+
+echo "Building the Release app…"
+xcodebuild -project "$root/Noteki.xcodeproj" -scheme Noteki -configuration Release \
+    -derivedDataPath "$root/build/Release" build >"$work/build.log" 2>&1 || { tail -20 "$work/build.log"; exit 1; }
+app="$root/build/Release/Build/Products/Release/Noteki.app"
+
+echo "Generating a Vault of $notes Notes…"
+python3 -I - "$vault" "$notes" <<'PY'
+import os, random, sys
+vault, count = sys.argv[1], int(sys.argv[2])
+random.seed(42)
+names = [f"Note {i:04d}" for i in range(count)]
+for i, name in enumerate(names):
+    folder = os.path.join(vault, f"Folder {i % 50:02d}")
+    os.makedirs(folder, exist_ok=True)
+    links = " ".join(f"[[{random.choice(names)}]]" for _ in range(3))
+    body = "\n".join(f"- point {j} of {name}, with some **bold** and a link {links}" for j in range(15))
+    with open(os.path.join(folder, name + ".md"), "w") as f:
+        f.write(f"---\ntags: [meeting, client/{i % 7}]\nduration: {i % 90}m\n---\n# {name}\n\n## Summary\n\n{body}\n\n## Personal notes\n\n")
+PY
+note="$vault/Folder 00/Note 0000.md"
+
+previous="$(defaults read "$domain" vaultPath 2>/dev/null || true)"
+restore() {
+    trap - EXIT INT TERM HUP
+    osascript -e 'quit app "Noteki"' >/dev/null 2>&1 || true
+    # Noteki saves before it quits: the generated Vault goes only once it is gone.
+    for _ in $(seq 1 50); do pgrep -x Noteki >/dev/null || break; sleep 0.2; done
+    if [ -n "$previous" ]; then defaults write "$domain" vaultPath "$previous"; else defaults delete "$domain" vaultPath >/dev/null 2>&1 || true; fi
+    rm -rf "$work"
+}
+trap restore EXIT
+trap 'restore; exit 130' INT TERM HUP
+defaults write "$domain" vaultPath "$vault"
+
+webkit_pids() { pgrep -f 'com.apple.WebKit\.(WebContent|Networking|GPU)' | sort; }
+webkit_pids >"$work/webkit-before"
+
+/usr/bin/log stream --level info --style compact \
+    --predicate 'subsystem == "app.noteki.noteki" AND (eventMessage BEGINSWITH "Files listed" OR eventMessage == "Note shown")' \
+    >"$work/log" 2>&1 &
+logger=$!
+sleep 1.5
+started="$(python3 -I -c 'import time; print(time.time())')"
+open -a "$app" "$note"
+for _ in $(seq 1 100); do grep -q 'Note shown' "$work/log" && break; sleep 0.1; done
+sleep 5
+kill "$logger" 2>/dev/null || true
+wait "$logger" 2>/dev/null || true
+
+noteki="$(pgrep -x Noteki || true)"
+if [ -z "$noteki" ]; then
+    echo "Noteki is not running: it quit or crashed during the measure." >&2
+    exit 1
+fi
+webkit_pids >"$work/webkit-after"
+pids="$noteki $(comm -13 "$work/webkit-before" "$work/webkit-after" | tr '\n' ' ')"
+# One process at a time: given several, footprint adds a line with their sum.
+echo "Memory per process:"
+memory=0
+for pid in $pids; do
+    mb="$(footprint --noCategories -f bytes "$pid" 2>/dev/null | sed -n 's/^.*Footprint: *\([0-9][0-9]*\) B.*$/\1/p' | head -1 | awk '{ printf "%.0f", $1 / 1048576 }')"
+    printf "  %-34s %6s MB\n" "$(ps -o comm= -p "$pid" | sed 's|.*/||')" "$mb"
+    memory=$((memory + ${mb:-0}))
+done
+
+python3 -I - "$work/log" "$started" "$(du -sk "$app" | cut -f1)" "$memory" "$(echo $pids | wc -w | tr -d ' ')" <<'PY'
+import datetime, re, sys
+log, started, size_kb, memory, processes = sys.argv[1], float(sys.argv[2]), int(sys.argv[3]), sys.argv[4], sys.argv[5]
+listed = shown = None
+for line in open(log):
+    stamp = re.match(r"(\d{4}-\d\d-\d\d \d\d:\d\d:\d\d\.\d+)", line)
+    if not stamp: continue
+    at = datetime.datetime.strptime(stamp.group(1), "%Y-%m-%d %H:%M:%S.%f").timestamp()
+    if "Files listed" in line and listed is None:
+        listed = re.search(r"Files listed: (\d+) Notes in (\d+) ms", line).groups()
+    if "Note shown" in line and shown is None:
+        shown = at - started
+def row(name, value, limit, ok):
+    print(f"  {name:<34} {value:>12}   limit {limit:<10} {'ok' if ok else 'OVER'}")
+print("\nNoteki budget (docs/SPEC.md)")
+row("App on disk", f"{size_kb / 1024:.1f} MB", "20 MB", size_kb / 1024 < 20)
+row("Cold start to the Note shown", f"{shown:.2f} s" if shown else "not seen", "1 s", bool(shown) and shown < 1)
+if listed:
+    row(f"Listing {listed[0]} Notes (index: ticket 11)", f"{int(listed[1]) / 1000:.2f} s", "3 s", int(listed[1]) < 3000)
+else:
+    row("Listing the Vault", "not seen", "3 s", False)
+row(f"Memory at rest ({processes} processes)", f"{memory} MB" if memory else "not measured", "150 MB", bool(memory) and int(memory) < 150)
+PY

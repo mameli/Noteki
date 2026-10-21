@@ -227,4 +227,16 @@ struct FollowedRenameTests {
         #expect(open.conflict == nil)
         #expect(open.isDeleted)
     }
+
+    @Test("a text file opened on its own is followed when renamed, like a Note")
+    func textFileRename() throws {
+        let folder = try TemporaryVault(files: ["todo.txt": "buy milk\n"])
+        var open = try Vault(root: folder.url).open(Note(path: "todo.txt"))
+
+        try folder.move("todo.txt", to: "groceries.txt")
+        _ = try open.noticeChanges(at: ["todo.txt", "groceries.txt"])
+
+        #expect(open.note.path == "groceries.txt")
+        #expect(!open.isDeleted)
+    }
 }

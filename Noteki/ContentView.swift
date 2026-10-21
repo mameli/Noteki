@@ -3,76 +3,106 @@ import SwiftUI
 
 struct ContentView: View {
     @Bindable var model: AppModel
-    @State private var isShowingDifferences = false
+    /// Hands the app a way to bring this window back, once it exists.
+    let registerShowMainWindow: (@escaping () -> Void) -> Void
+    /// False while a Loose file opened at launch is on screen: no Vault is not a question then.
+    let shouldAskForVault: () -> Bool
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         NavigationSplitView {
             FilesPane(model: model)
                 .navigationSplitViewColumnWidth(min: 200, ideal: 260)
         } detail: {
-            detail
+            if model.vault == nil {
+                ContentUnavailableView {
+                    Label("No Vault", systemImage: "folder")
+                } description: {
+                    Text(AppModel.chooseVaultMessage)
+                } actions: {
+                    Button("Choose Vault…") { model.chooseVault() }
+                }
+            } else {
+                NoteDetail(model: model)
+            }
         }
         .navigationTitle(model.shown?.name ?? model.vault?.root.lastPathComponent ?? "Noteki")
         .focusedSceneValue(\.noteEditor, model.isShowingNote ? model.editor : nil)
-        .sheet(isPresented: $isShowingDifferences) {
-            if let conflict = model.conflict {
-                DifferencesView(conflict: conflict) { isShowingDifferences = false }
-            }
-        }
-        .onChange(of: model.conflict == nil) { _, resolved in
-            if resolved { isShowingDifferences = false }
-        }
         .onAppear {
-            if model.vault == nil { model.chooseVault() }
+            // Files opened from the Finder bring this window back even after it was closed.
+            registerShowMainWindow { openWindow(id: "main") }
+            guard model.vault == nil else { return }
+            Task {
+                // A file opened at launch arrives just after this window appears.
+                try? await Task.sleep(for: .milliseconds(400))
+                if model.vault == nil, shouldAskForVault() { model.chooseVault() }
+            }
         }
     }
+}
 
-    @ViewBuilder
-    private var detail: some View {
-        if model.vault == nil {
-            ContentUnavailableView {
-                Label("No Vault", systemImage: "folder")
-            } description: {
-                Text(AppModel.chooseVaultMessage)
-            } actions: {
-                Button("Choose Vault…") { model.chooseVault() }
+/// A Loose file in its own window: the editor without Files.
+struct LooseFileView: View {
+    @Bindable var model: AppModel
+    let file: URL
+
+    var body: some View {
+        NoteDetail(model: model)
+            .navigationTitle(model.shown?.name ?? file.deletingPathExtension().lastPathComponent)
+            .navigationDocument(model.looseFileNow ?? file)
+            .focusedSceneValue(\.noteEditor, model.isShowingNote ? model.editor : nil)
+            .frame(minWidth: 480, minHeight: 360)
+    }
+}
+
+/// The editor and what stands in front of it: placeholders, an Attachment, the banners.
+struct NoteDetail: View {
+    @Bindable var model: AppModel
+    @State private var isShowingDifferences = false
+
+    var body: some View {
+        // The editor stays alive under the placeholders: its web view lives as long as the
+        // window (ADR 0003) instead of loading again after every message.
+        EditorView(editor: model.editor)
+            .overlay {
+                if let failure = model.failure {
+                    placeholder(ContentUnavailableView(
+                        "Cannot Open", systemImage: "exclamationmark.triangle", description: Text(failure)
+                    ))
+                } else if case .attachment(let attachment)? = model.shown, let vault = model.vault {
+                    AttachmentView(attachment: attachment, url: vault.url(of: attachment))
+                        .background(.background)
+                } else if model.shown == nil {
+                    placeholder(ContentUnavailableView("No Note Selected", systemImage: "doc.text"))
+                }
             }
-        } else {
-            // The editor stays alive under the placeholders: its web view lives as long as the
-            // window (ADR 0003) instead of loading again after every message.
-            EditorView(editor: model.editor)
-                .overlay {
-                    if let failure = model.failure {
-                        placeholder(ContentUnavailableView(
-                            "Cannot Open", systemImage: "exclamationmark.triangle", description: Text(failure)
-                        ))
-                    } else if case .attachment(let attachment)? = model.shown, let vault = model.vault {
-                        AttachmentView(attachment: attachment, url: vault.url(of: attachment))
-                            .background(.background)
-                    } else if model.shown == nil {
-                        placeholder(ContentUnavailableView("No Note Selected", systemImage: "doc.text"))
-                    }
+            .overlay(alignment: .bottom) {
+                if model.isOpenNoteDeleted, case .note(let note)? = model.shown {
+                    DeletedBanner(noteName: note.name, saveAgain: model.saveAgain)
+                } else if model.conflict != nil, case .note(let note)? = model.shown {
+                    ConflictBanner(
+                        noteName: note.name,
+                        keepMine: model.keepMine,
+                        takeTheirs: model.takeTheirs,
+                        showDifferences: { isShowingDifferences = true }
+                    )
+                } else if let saveFailure = model.saveFailure {
+                    Label(saveFailure, systemImage: "exclamationmark.triangle.fill")
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(.red.opacity(0.9), in: .rect(cornerRadius: 8))
+                        .foregroundStyle(.white)
+                        .padding()
                 }
-                .overlay(alignment: .bottom) {
-                    if model.isOpenNoteDeleted, case .note(let note)? = model.shown {
-                        DeletedBanner(noteName: note.name, saveAgain: model.saveAgain)
-                    } else if model.conflict != nil, case .note(let note)? = model.shown {
-                        ConflictBanner(
-                            noteName: note.name,
-                            keepMine: model.keepMine,
-                            takeTheirs: model.takeTheirs,
-                            showDifferences: { isShowingDifferences = true }
-                        )
-                    } else if let saveFailure = model.saveFailure {
-                        Label(saveFailure, systemImage: "exclamationmark.triangle.fill")
-                            .padding(.horizontal, 12)
-                            .padding(.vertical, 8)
-                            .background(.red.opacity(0.9), in: .rect(cornerRadius: 8))
-                            .foregroundStyle(.white)
-                            .padding()
-                    }
+            }
+            .sheet(isPresented: $isShowingDifferences) {
+                if let conflict = model.conflict {
+                    DifferencesView(conflict: conflict) { isShowingDifferences = false }
                 }
-        }
+            }
+            .onChange(of: model.conflict == nil) { _, resolved in
+                if resolved { isShowingDifferences = false }
+            }
     }
 
     private func placeholder(_ content: some View) -> some View {

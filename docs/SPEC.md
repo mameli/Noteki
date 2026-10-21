@@ -123,8 +123,8 @@ The right sidebar lists the Notes with a Wikilink to the Note in front, each wit
 
 Noteki works with Takku without changes to Takku:
 
-- Its `Info.plist` declares the *Editor* role for `net.daringfireball.markdown` and `public.plain-text`, so Takku lists it among the Editors, and `public.folder`, so Takku's *Show all* hands it the Vault.
-- Opening a Note of the Vault opens it in a Tab. Opening a Note outside the Vault opens it in its own window without indexing anything around it. Opening a folder equal to or inside the Vault shows it in *Files*; any other folder asks whether to switch Vault.
+- Its `Info.plist` declares the *Editor* role for `net.daringfireball.markdown`, so Takku lists it among the Editors, and the *Viewer* role for `public.folder`, so Takku's *Show all* hands it the Vault. Not `public.plain-text`: that type covers every source file.
+- Opening a Note or Attachment of the Vault shows it; a folder equal to or inside the Vault is selected in *Files*; a file in an Excluded folder only brings the window forward. A Markdown or text file outside the Vault opens as a **Loose file** in its own window, without indexing anything around it. Any other folder asks whether to switch Vault.
 - During Processing Takku writes the Meeting note several times and renames it: [External changes](#external-changes) covers both.
 
 ## Project structure

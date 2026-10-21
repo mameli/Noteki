@@ -173,6 +173,21 @@ struct VaultTests {
         #expect(vault.changedPaths([gone]) == ["Meetings/Gone.md"])
     }
 
+    @Test("a file or folder opened from the Finder or Takku is placed in the Vault, or outside it")
+    func placeOpened() throws {
+        let folder = try TemporaryVault(files: ["Meetings/Retro.md": "", "Media/photo.png": "", ".obsidian/app.json": ""])
+        let vault = Vault(root: folder.url)
+        let elsewhere = FileManager.default.temporaryDirectory.appending(path: "Elsewhere-\(UUID().uuidString)")
+
+        #expect(vault.place(folder.url.appending(path: "Meetings/Retro.md")) == .note(Note(path: "Meetings/Retro.md")))
+        #expect(vault.place(folder.url.resolvingSymlinksInPath().appending(path: "Meetings")) == .folder("Meetings"))
+        #expect(vault.place(folder.url) == .folder(""))
+        #expect(vault.place(folder.url.appending(path: "Media/photo.png")) == .attachment(Attachment(path: "Media/photo.png")!))
+        #expect(vault.place(folder.url.appending(path: ".obsidian")) == .excluded)
+        #expect(vault.place(folder.url.appending(path: ".obsidian/app.json")) == .excluded)
+        #expect(vault.place(elsewhere.appending(path: "Notes.md")) == .outside)
+    }
+
     @Test("reads the text of a Note as written")
     func text() throws {
         let content = "---\ntags: [meeting]\n---\n# Retro\r\n\r\nàèìòù [[Other]]\n"

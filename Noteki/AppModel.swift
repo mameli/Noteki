@@ -70,10 +70,16 @@ final class AppModel {
         }
     }
 
+    /// The Loose file this window shows, nil for the Vault's window: a Markdown or text file
+    /// from outside the Vault, alone, its folder neither listed nor remembered.
+    let looseFile: URL?
+    /// A Note, Attachment or folder to select once Files lists it: opened from the Finder or
+    /// Takku before Files was listed, or just written by Takku.
+    private var pendingReveal: String?
+
     init() {
-        editor.onChange = { [weak self] noteID, revision, text in
-            self?.edited(noteID: noteID, revision: revision, text: text)
-        }
+        looseFile = nil
+        connectEditor()
         guard let path = UserDefaults.standard.string(forKey: Self.vaultPathKey) else { return }
         var isFolder: ObjCBool = false
         if FileManager.default.fileExists(atPath: path, isDirectory: &isFolder), isFolder.boolValue {
@@ -83,6 +89,40 @@ final class AppModel {
             // Moved or deleted since last time: ask again, as at first launch.
             logger.info("The remembered Vault is gone, asking for another")
         }
+    }
+
+    init(looseFile: URL) {
+        self.looseFile = looseFile
+        connectEditor()
+        activate(Vault(root: looseFile.deletingLastPathComponent()))
+        let note = Note(path: looseFile.lastPathComponent)
+        afterTransition { await self.show(note) }
+    }
+
+    private var isLooseFile: Bool { looseFile != nil }
+
+    /// Where the Loose file is now, after any Followed rename.
+    var looseFileNow: URL? {
+        guard let looseFile else { return nil }
+        guard let vault, case .note(let note)? = shown else { return looseFile }
+        return vault.root.appending(path: note.path)
+    }
+
+    private func connectEditor() {
+        editor.onChange = { [weak self] noteID, revision, text in
+            self?.edited(noteID: noteID, revision: revision, text: text)
+        }
+    }
+
+    /// A Note, Attachment or folder of the Vault opened from the Finder or Takku: selected in
+    /// Files, at once if listed, otherwise once Files lists it (Takku's note just written).
+    func reveal(_ path: String) {
+        guard tree.item(at: path) == nil else {
+            selection = path
+            return
+        }
+        pendingReveal = path
+        if !tree.isEmpty, let vault { refreshTree(of: vault) }
     }
 
     func chooseVault() {
@@ -110,8 +150,10 @@ final class AppModel {
     /// Saves what the user typed before the app quits. False when edits could not be saved and
     /// the user chose to stay.
     func prepareToQuit() async -> Bool {
-        await transition?.value
-        return await leaveOpenNote()
+        // In turn with switches and with a window closing: one question at a time.
+        await withCheckedContinuation { continuation in
+            afterTransition { continuation.resume(returning: await self.leaveOpenNote()) }
+        }
     }
 
     private func switchVault(to folder: URL) async {
@@ -121,6 +163,7 @@ final class AppModel {
 
     private func activate(_ vault: Vault) {
         self.vault = vault
+        pendingReveal = nil
         watcher = VaultWatcher(root: vault.root) { [weak self] change in self?.filesChanged(change) }
         tree = []
         shown = nil
@@ -130,6 +173,7 @@ final class AppModel {
         editor.clear()
         selection = nil
         failure = nil
+        guard !isLooseFile else { return }
         UserDefaults.standard.set(vault.root.path(percentEncoded: false), forKey: Self.vaultPathKey)
         Task { await listTree(of: vault) }
     }
@@ -137,12 +181,19 @@ final class AppModel {
     /// Lists Files. `refresh` after a change on disk: a failure then keeps the last list and
     /// leaves the Note on screen, it is only logged.
     private func listTree(of vault: Vault, refresh: Bool = false) async {
+        let started = ContinuousClock.now
         // Off the main thread: a large Vault takes a moment to list.
         let result = await Task.detached { Result { try vault.tree() } }.value
         guard self.vault?.root == vault.root else { return }
         switch result {
         case .success(let tree):
             self.tree = tree
+            // Read by scripts/measure.
+            logger.info("Files listed: \(tree.noteCount) Notes in \((ContinuousClock.now - started).milliseconds) ms")
+            if let pendingReveal, tree.item(at: pendingReveal) != nil {
+                self.pendingReveal = nil
+                selection = pendingReveal
+            }
         case .failure(let error):
             logger.error("Cannot list the Vault: \(error.localizedDescription, privacy: .public)")
             guard !refresh else { return }
@@ -153,24 +204,35 @@ final class AppModel {
     /// From the Vault's watcher: files changed on disk, by Noteki or another app.
     private func filesChanged(_ change: VaultWatcher.Change) {
         guard let vault else { return }
-        var paths = vault.changedPaths(change.urls)
+        var urls = change.urls
+        if let looseFile {
+            // A Loose file's folder may be ~ or ~/Downloads, busy and deep: only events in that
+            // folder itself can concern the file, by name, before any path is resolved.
+            let folderName = looseFile.deletingLastPathComponent().lastPathComponent
+            urls = urls.filter { $0.deletingLastPathComponent().lastPathComponent == folderName }
+        }
+        var paths = vault.changedPaths(urls)
         // Events were lost or merged into folders: anything may have changed.
         if change.mustRescan, let open = openNote { paths.insert(open.note.path) }
         guard !paths.isEmpty else { return }
-        if change.mustRescan || paths.contains(where: { appearedOrDisappeared($0, in: vault) }) {
+        if !isLooseFile, change.mustRescan || paths.contains(where: { appearedOrDisappeared($0, in: vault) }) {
             // A Note or Attachment created or deleted by another app, such as Takku's new
             // Meeting notes: Files lists it without a relaunch.
-            pendingTreeRefresh?.cancel()
-            pendingTreeRefresh = Task {
-                try? await Task.sleep(for: .milliseconds(300))
-                guard !Task.isCancelled else { return }
-                await listTree(of: vault, refresh: true)
-            }
+            refreshTree(of: vault)
         }
         // Case-insensitively: a rename that only changes letter case is reported under the new name.
         if let open = openNote,
            open.isDeleted || paths.contains(where: { $0.caseInsensitiveCompare(open.note.path) == .orderedSame }) {
             afterTransition { await self.noticeChanges(at: paths) }
+        }
+    }
+
+    private func refreshTree(of vault: Vault) {
+        pendingTreeRefresh?.cancel()
+        pendingTreeRefresh = Task {
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled else { return }
+            await listTree(of: vault, refresh: true)
         }
     }
 
@@ -296,40 +358,44 @@ final class AppModel {
     }
 
     private func show(_ path: String) async {
-        guard let vault else { return }
         switch tree.item(at: path) {
         case .note(let note):
-            guard openNote?.note != note else {
-                shown = .note(note)
-                return
-            }
-            guard await leaveOpenNote() else {
-                // The user stays with edits that could not be saved: back to that Note.
-                if let open = openNote {
-                    shown = .note(open.note)
-                    selection = open.note.path
-                }
-                return
-            }
-            shown = .note(note)
-            do {
-                let open = try vault.open(note)
-                openNote = open
-                openNoteID = UUID().uuidString
-                // Revisions matter only for the Note open and the one just left.
-                revisions = revisions.filter { $0.key == previousNoteID }
-                editor.load(noteID: openNoteID, text: open.text)
-                failure = nil
-            } catch {
-                openNote = nil
-                editor.clear()
-                logger.error("Cannot read a Note: \(error.localizedDescription, privacy: .public)")
-                failure = "Cannot read \(note.name): \(error.localizedDescription)"
-            }
+            await show(note)
         case .attachment(let attachment):
             shown = .attachment(attachment)
             failure = nil
         case .folder, nil: break
+        }
+    }
+
+    private func show(_ note: Note) async {
+        guard let vault else { return }
+        guard openNote?.note != note else {
+            shown = .note(note)
+            return
+        }
+        guard await leaveOpenNote() else {
+            // The user stays with edits that could not be saved: back to that Note.
+            if let open = openNote {
+                shown = .note(open.note)
+                selection = open.note.path
+            }
+            return
+        }
+        shown = .note(note)
+        do {
+            let open = try vault.open(note)
+            openNote = open
+            openNoteID = UUID().uuidString
+            // Revisions matter only for the Note open and the one just left.
+            revisions = revisions.filter { $0.key == previousNoteID }
+            editor.load(noteID: openNoteID, text: open.text)
+            failure = nil
+        } catch {
+            openNote = nil
+            editor.clear()
+            logger.error("Cannot read a Note: \(error.localizedDescription, privacy: .public)")
+            failure = "Cannot read \(note.name): \(error.localizedDescription)"
         }
     }
 
@@ -486,7 +552,21 @@ final class AppModel {
     }
 }
 
+private extension Duration {
+    var milliseconds: Int64 { components.seconds * 1000 + components.attoseconds / 1_000_000_000_000_000 }
+}
+
 private extension [VaultItem] {
+    var noteCount: Int {
+        reduce(0) { count, item in
+            switch item {
+            case .folder(_, let children): count + children.noteCount
+            case .note: count + 1
+            case .attachment: count
+            }
+        }
+    }
+
     func item(at path: String) -> VaultItem? {
         for item in self {
             if item.path == path { return item }

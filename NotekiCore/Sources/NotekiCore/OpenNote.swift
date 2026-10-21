@@ -215,7 +215,7 @@ public struct OpenNote: Sendable {
         let known = Set(base.split(separator: "\n").filter { !$0.isEmpty })
         guard !known.isEmpty else { return nil }
         let matches = paths.filter { path in
-            guard path != note.path, path.hasSuffix(".\(Note.fileExtension)"),
+            guard path != note.path, hasNoteExtension(path),
                   let data = try? Data(contentsOf: root.appending(path: path, directoryHint: .notDirectory))
             else { return false }
             let lines = Set(Self.editorText(of: data).text.split(separator: "\n"))
@@ -224,8 +224,13 @@ public struct OpenNote: Sendable {
         return matches.count == 1 ? matches.first : nil
     }
 
+    /// `.md` for a Note; for a text file opened on its own (a Loose file), its own extension.
+    private func hasNoteExtension(_ path: String) -> Bool {
+        (path as NSString).pathExtension == (note.path as NSString).pathExtension
+    }
+
     private func isThisFile(at path: String) -> Bool {
-        guard path != note.path, path.hasSuffix(".\(Note.fileExtension)"), let fileID else { return false }
+        guard path != note.path, hasNoteExtension(path), let fileID else { return false }
         return FileID(root.appending(path: path, directoryHint: .notDirectory)) == fileID
     }
 }

@@ -26,6 +26,10 @@ _Avoid_: screenshot (that is Takku's), clipboard image
 A folder inside the Vault that Noteki neither lists nor indexes: hidden folders, environments and dependencies of code, any folder that is a repository of its own, and the ones the user adds.
 _Avoid_: ignored path, filter
 
+**Loose file** (`AppModel.looseFile`):
+A Markdown or text file from outside the Vault, opened in a window of its own: written and saved like a Note, with nothing of the Vault around it.
+_Avoid_: standalone file, external note
+
 **Daily note** (`DailyNote`):
 The Note of a given day, named after its date in a folder the user chooses. Noteki opens it, creating it if missing.
 _Avoid_: journal, diary

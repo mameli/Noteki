@@ -33,12 +33,43 @@ public struct Vault: Sendable {
     /// Vault. Those outside it or in an Excluded folder (a `.git` written by obsidian-git, say)
     /// are left out. The Vault does not watch: the app's watcher calls this (ticket 06).
     public func changedPaths(_ urls: [URL]) -> Set<String> {
-        let rootPath = Self.realPath(root) + "/"
-        return Set(urls.compactMap { path(ofChangeAt: $0, under: rootPath) })
+        let rootPath = Self.prefix(Self.realPath(root))
+        return Set(urls.compactMap { path(ofChangeAt: Self.realPath($0), under: rootPath) })
     }
 
-    private func path(ofChangeAt url: URL, under rootPath: String) -> String? {
+    /// The root as a prefix of the paths under it: `/Users/me/Vault/`, or `/` for the disk's root.
+    private static func prefix(_ rootPath: String) -> String {
+        rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
+    }
+
+    /// Where a file or folder opened from the Finder or another app (Takku) is.
+    public enum Place: Equatable, Sendable {
+        case note(Note)
+        case attachment(Attachment)
+        /// A folder of the Vault, by its path; "" for the Vault itself.
+        case folder(String)
+        /// Inside the Vault but not listed: in an Excluded folder, or neither a Note nor an
+        /// Attachment. Not to be opened on its own: it is the Vault's.
+        case excluded
+        case outside
+    }
+
+    public func place(_ url: URL) -> Place {
+        let rootPath = Self.realPath(root)
         let candidate = Self.realPath(url)
+        if candidate == rootPath { return .folder("") }
+        let prefix = Self.prefix(rootPath)
+        guard candidate.hasPrefix(prefix) else { return .outside }
+        guard let path = self.path(ofChangeAt: candidate, under: prefix) else { return .excluded }
+        var isFolder: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: candidate, isDirectory: &isFolder) else { return .outside }
+        if isFolder.boolValue { return .folder(path) }
+        if (path as NSString).pathExtension == Note.fileExtension { return .note(Note(path: path)) }
+        return Attachment(path: path).map(Place.attachment) ?? .excluded
+    }
+
+    /// `candidate` is a real path (`realPath`).
+    private func path(ofChangeAt candidate: String, under rootPath: String) -> String? {
         guard candidate.hasPrefix(rootPath) else { return nil }
         let path = String(candidate.dropFirst(rootPath.count))
         return isInExcludedFolder(path) ? nil : path
@@ -153,9 +184,10 @@ public struct Note: Hashable, Sendable {
         self.path = path
     }
 
-    /// The file name without `.md`, the name Wikilinks use.
+    /// The file name without `.md`, the name Wikilinks use (or another extension, for a text
+    /// file opened on its own).
     public var name: String {
-        String(lastComponent(of: path).dropLast(Note.fileExtension.count + 1))
+        (lastComponent(of: path) as NSString).deletingPathExtension
     }
 }
 

@@ -66,7 +66,8 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
     func load(noteID: String, text: String) {
         loaded = (noteID, text)
         guard isReady else { return }
-        run(.load(noteID: noteID, text: text)) { _ in }
+        // Read by scripts/measure.
+        run(.load(noteID: noteID, text: text)) { _ in logger.info("Note shown") }
     }
 
     /// An editing command from the menus, when a Note is in front.
