@@ -22,7 +22,24 @@ export type EditorCommand =
   /** The Edit menu's Find items, over the whole Note. */
   | { type: "find"; step: "open" | "next" | "previous" }
   /** Which of the Note's links lead nowhere: those are drawn as Unresolved links. */
-  | { type: "unresolvedLinks"; noteID: string; inners: string[] };
+  | { type: "unresolvedLinks"; noteID: string; inners: string[] }
+  /** The answer to the `completeLink` with the same `requestID`. */
+  | { type: "linkCompletions"; requestID: number; completions: LinkCompletions };
+
+/** What `[[` offers: the Notes opened recently, the latest first, then all the others. */
+export interface LinkCompletions {
+  recent: LinkCompletion[];
+  others: LinkCompletion[];
+}
+
+export interface LinkCompletion {
+  /** What the user's typing is matched against. */
+  name: string;
+  /** Where the Note is, shown beside its name; empty at the Vault's root. */
+  folder: string;
+  /** What is written between the brackets when the Note is chosen. */
+  link: string;
+}
 
 /** From the editor to the app. */
 export type EditorMessage =
@@ -32,7 +49,9 @@ export type EditorMessage =
   /** The user clicked a Wikilink: what is between its brackets. */
   | { type: "followLink"; inner: string }
   /** The Note's links, what is between their brackets: which lead nowhere? */
-  | { type: "checkLinks"; noteID: string; inners: string[] };
+  | { type: "checkLinks"; noteID: string; inners: string[] }
+  /** The user typed `[[`: which Notes can the link lead to? Answered by `linkCompletions`. */
+  | { type: "completeLink"; requestID: number };
 
 declare global {
   interface Window {

@@ -57,6 +57,17 @@ struct EditorBridgeTests {
         #expect(try command.json() == #"{"inners":["Missing","Other|alias"],"noteID":"n1","type":"unresolvedLinks"}"#)
     }
 
+    @Test("the editor asks for the Notes to complete a link, and the app answers that request")
+    func linkCompletions() throws {
+        let completions = LinkCompletions(
+            recent: [LinkCompletion(name: "Retro", folder: "Meetings", link: "Retro")],
+            others: [LinkCompletion(name: "Home", folder: "", link: "Home")]
+        )
+
+        #expect(try EditorMessage(json: #"{"type":"completeLink","requestID":3}"#) == .completeLink(requestID: 3))
+        #expect(try EditorCommand.linkCompletions(requestID: 3, completions: completions).json() == #"{"completions":{"others":[{"folder":"","link":"Home","name":"Home"}],"recent":[{"folder":"Meetings","link":"Retro","name":"Retro"}]},"requestID":3,"type":"linkCompletions"}"#)
+    }
+
     @Test("clearing the editor needs nothing else")
     func clear() throws {
         #expect(try EditorCommand.clear.json() == #"{"type":"clear"}"#)

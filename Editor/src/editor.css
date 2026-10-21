@@ -6,6 +6,8 @@
   --link: #0064d1;
   --quote: #6e6e73;
   --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --system-font: -apple-system, BlinkMacSystemFont, sans-serif;
+  --on-link: #ffffff;
   --line-width: 46rem;
   --panel: #f5f5f7;
   --separator: #d2d2d7;

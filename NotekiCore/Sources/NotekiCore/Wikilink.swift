@@ -32,21 +32,30 @@ public struct VaultIndex: Sendable {
     /// the order Files lists them. Only listed files: not those in Excluded folders, nor files
     /// Noteki does not show (Obsidian's `.canvas`, say).
     private let byName: [String: [Candidate]]
+    /// The Notes, in the order Files lists them.
+    private let notes: [Note]
 
     public init(tree: [VaultItem]) {
         var byName: [String: [Candidate]] = [:]
+        var notes: [Note] = []
+        func index(_ item: VaultItem) {
+            let path = item.path.lowercased()
+            byName[lastComponent(of: path), default: []].append(Candidate(item: item, path: path))
+        }
         func add(_ items: [VaultItem]) {
             for item in items {
                 switch item {
                 case .folder(_, let children): add(children)
-                case .note, .attachment:
-                    let path = item.path.lowercased()
-                    byName[lastComponent(of: path), default: []].append(Candidate(item: item, path: path))
+                case .note(let note):
+                    notes.append(note)
+                    index(item)
+                case .attachment: index(item)
                 }
             }
         }
         add(tree)
         self.byName = byName
+        self.notes = notes
     }
 
     /// The Note or Attachment a Wikilink's target leads to from `source`, exactly as Obsidian
@@ -94,10 +103,84 @@ public struct VaultIndex: Sendable {
         return (shortestFirst(near) + shortestFirst(far)).first?.item
     }
 
+    /// The Notes offered when the user types `[[`: those in `recent` first, in that order (the
+    /// latest first), then the others as Files lists them.
+    public func linkCompletions(recent: [Note]) -> LinkCompletions {
+        let listed = Set(notes)
+        var offered = Set<Note>()
+        let recent = recent.filter { listed.contains($0) && offered.insert($0).inserted }
+        return LinkCompletions(
+            recent: recent.map(completion(for:)),
+            others: notes.filter { !offered.contains($0) }.map(completion(for:))
+        )
+    }
+
+    private func completion(for note: Note) -> LinkCompletion {
+        let components = note.path.split(separator: "/", omittingEmptySubsequences: false)
+        return LinkCompletion(
+            name: note.name,
+            folder: components.dropLast().joined(separator: "/"),
+            link: shortestLink(to: note, components: components)
+        )
+    }
+
+    /// The name, or else the fewest folders before it that only this Note's path ends with, so
+    /// that the link leads to it from any Note, as `resolve` (and Obsidian) reads it. Obsidian
+    /// itself writes the whole path as soon as the name is shared; this is shorter and leads to
+    /// the same Note.
+    private func shortestLink(to note: Note, components: [Substring]) -> String {
+        let name = lastComponent(of: note.path).lowercased()
+        let candidates = byName[name] ?? []
+        for count in 1...components.count {
+            let suffix = components.suffix(count).joined(separator: "/")
+            // As `resolve` compares: the text's end, not whole folders, so `Data/` ends in `a/`.
+            let lowered = suffix.lowercased()
+            let link = (suffix as NSString).deletingPathExtension
+            // Unique among the Notes (the whole path is, as an exact match), and not taken by an
+            // Attachment: `Report.pdf` is the PDF's name before it is the Note `Report.pdf.md`'s.
+            let unique = count == components.count || candidates.count(where: { $0.path.hasSuffix(lowered) }) == 1
+            if unique, resolve(link, from: nil) == .note(note) {
+                return link
+            }
+        }
+        // With its extension the whole path is an exact match: nothing else can take it.
+        return note.path
+    }
+
     private func shortestFirst(_ candidates: [Candidate]) -> [Candidate] {
         candidates.enumerated()
             .sorted { ($0.element.path.count, $0.offset) < ($1.element.path.count, $1.offset) }
             .map(\.element)
+    }
+}
+
+/// What `[[` offers: the Notes opened recently, the latest first, then all the others.
+public struct LinkCompletions: Equatable, Sendable, Encodable {
+    public let recent: [LinkCompletion]
+    public let others: [LinkCompletion]
+
+    /// Nothing to offer: no Vault listed yet, or a Loose file.
+    public static let none = LinkCompletions(recent: [], others: [])
+
+    public init(recent: [LinkCompletion], others: [LinkCompletion]) {
+        self.recent = recent
+        self.others = others
+    }
+}
+
+/// A Note offered to complete a Wikilink.
+public struct LinkCompletion: Equatable, Sendable, Encodable {
+    /// What the user's typing is matched against.
+    public let name: String
+    /// Where the Note is, shown beside its name; empty at the Vault's root.
+    public let folder: String
+    /// What is written between the brackets when the Note is chosen.
+    public let link: String
+
+    public init(name: String, folder: String, link: String) {
+        self.name = name
+        self.folder = folder
+        self.link = link
     }
 }
 

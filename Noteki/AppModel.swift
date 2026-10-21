@@ -12,6 +12,9 @@ private let logger = Logger(subsystem: "app.noteki.noteki", category: "vault")
 @Observable
 final class AppModel {
     private static let vaultPathKey = "vaultPath"
+    /// The Notes opened recently, per Vault: its path → theirs, the latest first.
+    private static let recentNotesKey = "recentNotes"
+    private static let recentNotesKept = 50
 
     private(set) var vault: Vault?
     private(set) var tree: [VaultItem] = []
@@ -19,6 +22,8 @@ final class AppModel {
     private var index: VaultIndex? {
         didSet { markUnresolvedLinks() }
     }
+    /// The Notes opened in this Vault, the latest first, offered first to complete a Wikilink.
+    private var recentNotes: [Note] = []
     /// The links of the open Note, as the editor last reported them.
     private var openNoteLinks: [String] = []
     /// The Note or Attachment selected, nil before the first choice.
@@ -119,6 +124,11 @@ final class AppModel {
             self?.edited(noteID: noteID, revision: revision, text: text)
         }
         editor.onFollowLink = { [weak self] inner in self?.followLink(inner) }
+        editor.linkCompletions = { [weak self] in
+            // Before Files is listed, or in a Loose file, there is nothing to offer.
+            guard let self, let index else { return .none }
+            return index.linkCompletions(recent: recentNotes)
+        }
         editor.onCheckLinks = { [weak self] noteID, inners in
             guard let self, noteID == openNoteID else { return }
             openNoteLinks = inners
@@ -223,8 +233,11 @@ final class AppModel {
         editor.clear()
         selection = nil
         failure = nil
+        recentNotes = []
         guard !isLooseFile else { return }
         UserDefaults.standard.set(vault.root.path(percentEncoded: false), forKey: Self.vaultPathKey)
+        let remembered = UserDefaults.standard.dictionary(forKey: Self.recentNotesKey)?[vault.root.path(percentEncoded: false)]
+        recentNotes = (remembered as? [String] ?? []).map(Note.init(path:))
         Task { await listTree(of: vault) }
     }
 
@@ -315,6 +328,11 @@ final class AppModel {
                 // selects it. Behind an Attachment, or once the user chose another row, nothing moves.
                 shown = .note(open.note)
                 if selection == before.path { selection = open.note.path }
+            }
+            if let before, open.note != before {
+                // Still the Note opened last, under its new name.
+                recentNotes = recentNotes.map { $0 == before ? open.note : $0 }
+                rememberRecentNotes()
             }
             switch change {
             case .unchanged:
@@ -443,12 +461,26 @@ final class AppModel {
             revisions = revisions.filter { $0.key == previousNoteID }
             editor.load(noteID: openNoteID, text: open.text)
             failure = nil
+            opened(note)
         } catch {
             openNote = nil
             editor.clear()
             logger.error("Cannot read a Note: \(error.localizedDescription, privacy: .public)")
             failure = "Cannot read \(note.name): \(error.localizedDescription)"
         }
+    }
+
+    /// Remembers `note` as the latest opened, outside the Vault (ADR 0002).
+    private func opened(_ note: Note) {
+        recentNotes = [note] + recentNotes.filter { $0 != note }.prefix(Self.recentNotesKept - 1)
+        rememberRecentNotes()
+    }
+
+    private func rememberRecentNotes() {
+        guard !isLooseFile, let vault else { return }
+        var all = UserDefaults.standard.dictionary(forKey: Self.recentNotesKey) ?? [:]
+        all[vault.root.path(percentEncoded: false)] = recentNotes.map(\.path)
+        UserDefaults.standard.set(all, forKey: Self.recentNotesKey)
     }
 
     private func edited(noteID: String, revision: Int, text: String) {

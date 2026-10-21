@@ -26,6 +26,8 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
     var onFollowLink: (_ inner: String) -> Void = { _ in }
     /// The links of the Note loaded as `noteID`: which lead nowhere?
     var onCheckLinks: (_ noteID: String, _ inners: [String]) -> Void = { _, _ in }
+    /// The Notes to offer when the user types `[[`.
+    var linkCompletions: () -> LinkCompletions = { .none }
 
     private var isReady = false
     /// What the editor shows, or will show once it is ready.
@@ -167,6 +169,8 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
             onFollowLink(inner)
         case .checkLinks(let noteID, let inners):
             onCheckLinks(noteID, inners)
+        case .completeLink(let requestID):
+            run(.linkCompletions(requestID: requestID, completions: linkCompletions())) { _ in }
         }
     }
 

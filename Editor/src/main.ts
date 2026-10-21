@@ -6,6 +6,7 @@ import { Annotation, EditorState, Transaction } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import { type EditorCommand, type EditorMessage, send } from "./bridge";
+import { linkCompletion, receiveLinkCompletions } from "./completion";
 import { frontmatter } from "./frontmatter";
 import { followWikilinks, linkInners, markUnresolved, unresolvedLinks, wikilinks } from "./wikilink";
 
@@ -28,12 +29,12 @@ const sourceHighlight = HighlightStyle.define([
 
 // Set here rather than in editor.css: CodeMirror's base theme would win over a stylesheet.
 const noteTheme = EditorView.theme({
-  ".cm-scroller": { fontFamily: "-apple-system, BlinkMacSystemFont, sans-serif", fontSize: "15px", lineHeight: "1.6" },
+  ".cm-scroller": { fontFamily: "var(--system-font)", fontSize: "15px", lineHeight: "1.6" },
   ".cm-content": { maxWidth: "var(--line-width)", margin: "0 auto", padding: "2rem 1.5rem 40vh" },
   ".cm-panels": {
     backgroundColor: "var(--panel)",
     color: "var(--text)",
-    fontFamily: "-apple-system, BlinkMacSystemFont, sans-serif",
+    fontFamily: "var(--system-font)",
     fontSize: "13px",
   },
   ".cm-panels-top": { borderBottom: "1px solid var(--separator)" },
@@ -109,6 +110,7 @@ function initialState(text: string, editable: boolean) {
       followWikilinks((inner) => send({ type: "followLink", inner })),
       unresolvedLinks,
       checkLinksAfterChanges,
+      linkCompletion((requestID) => send({ type: "completeLink", requestID })),
       noteTheme,
       syntaxHighlighting(sourceHighlight),
       EditorView.lineWrapping,
@@ -162,6 +164,9 @@ window.noteki = {
       }
       case "unresolvedLinks":
         if (command.noteID === noteID) markUnresolved(view, command.inners);
+        return null;
+      case "linkCompletions":
+        receiveLinkCompletions(command.requestID, command.completions);
         return null;
       case "find":
         if (command.step === "open") openSearchPanel(view);

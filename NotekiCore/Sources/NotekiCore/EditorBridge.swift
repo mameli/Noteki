@@ -24,6 +24,8 @@ public enum EditorCommand: Encodable, Sendable {
     case find(FindStep)
     /// Which of the Note's links lead nowhere: those `inners` are drawn as Unresolved links.
     case unresolvedLinks(noteID: String, inners: [String])
+    /// The answer to the editor's `completeLink` with the same `requestID`.
+    case linkCompletions(requestID: Int, completions: LinkCompletions)
 
     public enum FindStep: String, Sendable {
         /// Show the find bar, with the selection as the text to find.
@@ -31,10 +33,10 @@ public enum EditorCommand: Encodable, Sendable {
         case next, previous
     }
 
-    public static let types = ["load", "reload", "flush", "clear", "selectAll", "undo", "redo", "find", "unresolvedLinks"]
+    public static let types = ["load", "reload", "flush", "clear", "selectAll", "undo", "redo", "find", "unresolvedLinks", "linkCompletions"]
 
     private enum CodingKeys: String, CodingKey {
-        case type, noteID, revision, text, step, inners
+        case type, noteID, revision, text, step, inners, requestID, completions
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -66,6 +68,10 @@ public enum EditorCommand: Encodable, Sendable {
             try container.encode("unresolvedLinks", forKey: .type)
             try container.encode(noteID, forKey: .noteID)
             try container.encode(inners, forKey: .inners)
+        case .linkCompletions(let requestID, let completions):
+            try container.encode("linkCompletions", forKey: .type)
+            try container.encode(requestID, forKey: .requestID)
+            try container.encode(completions, forKey: .completions)
         }
     }
 
@@ -87,11 +93,13 @@ public enum EditorMessage: Decodable, Equatable, Sendable {
     case followLink(inner: String)
     /// The Note's links, what is between their brackets: which lead nowhere?
     case checkLinks(noteID: String, inners: [String])
+    /// The user typed `[[`: which Notes can the link lead to? Answered by `linkCompletions`.
+    case completeLink(requestID: Int)
 
-    public static let types = ["ready", "changed", "followLink", "checkLinks"]
+    public static let types = ["ready", "changed", "followLink", "checkLinks", "completeLink"]
 
     private enum CodingKeys: String, CodingKey {
-        case type, noteID, revision, text, inner, inners
+        case type, noteID, revision, text, inner, inners, requestID
     }
 
     public init(json: String) throws {
@@ -117,6 +125,8 @@ public enum EditorMessage: Decodable, Equatable, Sendable {
                 noteID: try container.decode(String.self, forKey: .noteID),
                 inners: try container.decode([String].self, forKey: .inners)
             )
+        case "completeLink":
+            self = .completeLink(requestID: try container.decode(Int.self, forKey: .requestID))
         default:
             throw DecodingError.dataCorruptedError(
                 forKey: .type, in: container, debugDescription: "Unknown editor message \(type)"
