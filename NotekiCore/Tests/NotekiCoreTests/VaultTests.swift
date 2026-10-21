@@ -138,6 +138,29 @@ struct VaultTests {
             """)
     }
 
+    @Test("a file system event becomes a path in the Vault, unless it is outside it or in an Excluded folder")
+    func changePaths() throws {
+        let folder = try TemporaryVault(files: [
+            "Meetings/Retro.md": "",
+            ".git/index": "",
+            "Code/repo/.git/HEAD": "",
+            "Code/repo/README.md": "",
+            "Code/node_modules/x/a.md": "",
+        ])
+        let vault = Vault(root: folder.url)
+        // FSEvents reports real paths: /private/var/… for a Vault opened as /var/….
+        let events = folder.url.resolvingSymlinksInPath()
+
+        #expect(vault.changedPaths([
+            events.appending(path: "Meetings/Retro.md"),
+            folder.url.appending(path: "Meetings/New.md"),
+            events.appending(path: ".git/index"),
+            events.appending(path: "Code/repo/README.md"),
+            events.appending(path: "Code/node_modules/x/a.md"),
+            URL(filePath: "/tmp/elsewhere.md"),
+        ]) == ["Meetings/Retro.md", "Meetings/New.md"])
+    }
+
     @Test("reads the text of a Note as written")
     func text() throws {
         let content = "---\ntags: [meeting]\n---\n# Retro\r\n\r\nàèìòù [[Other]]\n"

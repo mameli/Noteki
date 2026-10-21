@@ -92,3 +92,76 @@ struct OpenNoteTests {
         #expect(try folder.data("Windows.md") == Data("# Title\r\n\r\nfirst\r\nsecond\r\n".utf8))
     }
 }
+
+@Suite("External change")
+struct ExternalChangeTests {
+    @Test("a Note changed by another app, with nothing unsaved, is reloaded once the editor shows it")
+    func reloads() throws {
+        let folder = try TemporaryVault(files: ["Retro.md": "# Retro\n"])
+        let vault = Vault(root: folder.url)
+        var open = try vault.open(Note(path: "Retro.md"))
+
+        try folder.write("# Retro\n\nSummary written by Takku\n", at: "Retro.md")
+        let change = try open.noticeChanges(at: vault.changedPaths([folder.url.appending(path: "Retro.md")]))
+
+        guard case .reload(let reload) = change else {
+            Issue.record("expected a reload, got \(change)")
+            return
+        }
+        #expect(reload.text == "# Retro\n\nSummary written by Takku\n")
+        open.apply(reload)
+        #expect(open.text == "# Retro\n\nSummary written by Takku\n")
+        open.edit("# Retro\n\nSummary written by Takku\n\nmy notes\n")
+        try open.save()
+        #expect(try folder.read("Retro.md") == "# Retro\n\nSummary written by Takku\n\nmy notes\n")
+    }
+
+    @Test("a reload the editor could not show changes nothing: the user's next save is refused")
+    func reloadNotShown() throws {
+        let folder = try TemporaryVault(files: ["Retro.md": "# Retro\n"])
+        let vault = Vault(root: folder.url)
+        var open = try vault.open(Note(path: "Retro.md"))
+
+        try folder.write("# Retro\nTakku\n", at: "Retro.md")
+        _ = try open.noticeChanges(at: ["Retro.md"])
+        // The user typed before the reload reached the editor: their text, on the old one.
+        open.edit("# Retro\nmine\n")
+
+        #expect(throws: OpenNote.SaveError.changedOnDisk) { try open.save() }
+        #expect(try folder.read("Retro.md") == "# Retro\nTakku\n")
+    }
+
+    @Test("changes to other files leave the open Note alone")
+    func otherFiles() throws {
+        let folder = try TemporaryVault(files: ["Retro.md": "# Retro\n", "Other.md": ""])
+        var open = try Vault(root: folder.url).open(Note(path: "Retro.md"))
+
+        try folder.write("# Retro\nTakku\n", at: "Retro.md")
+
+        #expect(try open.noticeChanges(at: ["Other.md"]) == .unchanged)
+    }
+
+    @Test("the event of Noteki's own save changes nothing")
+    func ownSave() throws {
+        let folder = try TemporaryVault(files: ["Retro.md": "# Retro\n"])
+        var open = try Vault(root: folder.url).open(Note(path: "Retro.md"))
+        open.edit("# Retro\nmine\n")
+        try open.save()
+
+        #expect(try open.noticeChanges(at: ["Retro.md"]) == .unchanged)
+        #expect(open.text == "# Retro\nmine\n")
+    }
+
+    @Test("with unsaved edits the open Note keeps them and leaves the file to the Merge")
+    func unsavedEdits() throws {
+        let folder = try TemporaryVault(files: ["Retro.md": "# Retro\n"])
+        var open = try Vault(root: folder.url).open(Note(path: "Retro.md"))
+        open.edit("# Retro\nmine\n")
+
+        try folder.write("# Retro\nTakku\n", at: "Retro.md")
+
+        #expect(try open.noticeChanges(at: ["Retro.md"]) == .keptUnsavedEdits)
+        #expect(open.text == "# Retro\nmine\n")
+        #expect(try folder.read("Retro.md") == "# Retro\nTakku\n")
+    }
+}

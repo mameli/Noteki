@@ -83,6 +83,19 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
         if step == .open { webView.window?.makeFirstResponder(webView) }
     }
 
+    /// The Note shown changed on disk: its new text, with the cursor kept where it was. True
+    /// when the editor shows it; false when the user typed first and the editor kept their text.
+    func reload(noteID: String, revision: Int, text: String) async -> Bool {
+        guard isReady, loaded?.noteID == noteID else { return false }
+        let applied = await withCheckedContinuation { continuation in
+            run(.reload(noteID: noteID, revision: revision, text: text)) { reply in
+                continuation.resume(returning: reply == "applied")
+            }
+        }
+        if applied { loaded = (noteID, text) }
+        return applied
+    }
+
     /// Empties the editor and stops it taking typing: no Note is open.
     func clear() {
         loaded = nil

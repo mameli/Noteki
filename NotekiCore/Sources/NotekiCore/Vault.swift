@@ -29,6 +29,37 @@ public struct Vault: Sendable {
         fileURL(attachment.path)
     }
 
+    /// The Vault's change entry: the files the file system reports as changed, as paths in the
+    /// Vault. Those outside it or in an Excluded folder (a `.git` written by obsidian-git, say)
+    /// are left out. The Vault does not watch: the app's watcher calls this (ticket 06).
+    public func changedPaths(_ urls: [URL]) -> Set<String> {
+        Set(urls.compactMap(path(ofChangeAt:)))
+    }
+
+    private func path(ofChangeAt url: URL) -> String? {
+        let roots = [root, root.resolvingSymlinksInPath()].map { $0.path(percentEncoded: false) }
+        let candidates = [url.standardizedFileURL, url.resolvingSymlinksInPath()].map { $0.path(percentEncoded: false) }
+        for candidate in candidates {
+            for rootPath in roots {
+                let prefix = rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
+                guard candidate.hasPrefix(prefix) else { continue }
+                let path = String(candidate.dropFirst(prefix.count))
+                return isInExcludedFolder(path) ? nil : path
+            }
+        }
+        return nil
+    }
+
+    /// Whether any folder on the way to this path, or the path itself, is an Excluded folder.
+    private func isInExcludedFolder(_ path: String) -> Bool {
+        var folder = root
+        for component in path.split(separator: "/") {
+            folder = folder.appending(path: String(component))
+            if isExcludedFolder(folder) { return true }
+        }
+        return false
+    }
+
     private func fileURL(_ path: String) -> URL {
         root.appending(path: path, directoryHint: .notDirectory)
     }
@@ -42,7 +73,9 @@ public struct Vault: Sendable {
         for url in contents {
             let name = url.lastPathComponent
             let path = relativePath.isEmpty ? name : relativePath + "/" + name
-            if try url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true {
+            // A file gone while listing (an editor's temporary file) is simply not listed.
+            guard let isDirectory = try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory else { continue }
+            if isDirectory {
                 // A folder the user cannot read is left out rather than hiding the whole Vault.
                 guard !isExcludedFolder(url), let children = try? items(in: url, relativePath: path) else {
                     continue

@@ -5,6 +5,12 @@
 export type EditorCommand =
   /** Show this Note's text; what the editor reports is tagged with `noteID`. */
   | { type: "load"; noteID: string; text: string }
+  /**
+   * The same Note changed on disk: its new text, the cursor kept in place, outside the undo
+   * history. `revision` is the last report the app received. Replies "applied", or null when the
+   * editor has anything newer: then it reports that first and the app keeps the old base.
+   */
+  | { type: "reload"; noteID: string; revision: number; text: string }
   /** Report now any change not reported yet, before the app switches Note or quits. */
   | { type: "flush" }
   /** Show nothing and take no typing: no Note is open, as after switching Vault. */
@@ -24,7 +30,7 @@ export type EditorMessage =
 
 declare global {
   interface Window {
-    /** Returns the reply to a `flush` as JSON, null for other commands or nothing to report. */
+    /** The reply to a `flush` (a message as JSON) or a `reload` ("applied"), else null. */
     noteki: { receive(command: EditorCommand): string | null };
     webkit?: { messageHandlers: { noteki: { postMessage(message: string): void } } };
   }

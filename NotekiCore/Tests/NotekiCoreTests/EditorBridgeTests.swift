@@ -43,6 +43,13 @@ struct EditorBridgeTests {
         #expect(try EditorCommand.find(.previous).json() == #"{"step":"previous","type":"find"}"#)
     }
 
+    @Test("a reload carries the Note, the last revision the app received and the new text")
+    func reload() throws {
+        let command = EditorCommand.reload(noteID: "Meetings/Retro.md", revision: 4, text: "# Retro\nTakku\n")
+
+        #expect(try command.json() == ##"{"noteID":"Meetings\/Retro.md","revision":4,"text":"# Retro\nTakku\n","type":"reload"}"##)
+    }
+
     @Test("clearing the editor needs nothing else")
     func clear() throws {
         #expect(try EditorCommand.clear.json() == #"{"type":"clear"}"#)

@@ -8,6 +8,11 @@ public enum EditorCommand: Encodable, Sendable {
     /// Show this Note's text. The editor tags what it reports with `noteID`, so text typed in
     /// one Note can never be saved into another.
     case load(noteID: String, text: String)
+    /// The same Note changed on disk: show its new text, the cursor kept at the same place in
+    /// the text, outside the undo history. `revision` is the last report the app received: the
+    /// editor replies "applied" only if it has nothing newer, otherwise it reports first and
+    /// drops the reload, so no key typed meanwhile is lost.
+    case reload(noteID: String, revision: Int, text: String)
     /// Report now any change not reported yet, before the app switches Note or quits.
     case flush
     /// Show nothing and take no typing: no Note is open, as after switching Vault.
@@ -24,10 +29,10 @@ public enum EditorCommand: Encodable, Sendable {
         case next, previous
     }
 
-    public static let types = ["load", "flush", "clear", "selectAll", "undo", "redo", "find"]
+    public static let types = ["load", "reload", "flush", "clear", "selectAll", "undo", "redo", "find"]
 
     private enum CodingKeys: String, CodingKey {
-        case type, noteID, text, step
+        case type, noteID, revision, text, step
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -36,6 +41,11 @@ public enum EditorCommand: Encodable, Sendable {
         case .load(let noteID, let text):
             try container.encode("load", forKey: .type)
             try container.encode(noteID, forKey: .noteID)
+            try container.encode(text, forKey: .text)
+        case .reload(let noteID, let revision, let text):
+            try container.encode("reload", forKey: .type)
+            try container.encode(noteID, forKey: .noteID)
+            try container.encode(revision, forKey: .revision)
             try container.encode(text, forKey: .text)
         case .flush:
             try container.encode("flush", forKey: .type)

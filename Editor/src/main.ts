@@ -2,7 +2,7 @@ import { defaultKeymap, history, historyKeymap, redo, selectAll, undo } from "@c
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { findNext, findPrevious, openSearchPanel, search, searchKeymap } from "@codemirror/search";
-import { EditorState } from "@codemirror/state";
+import { Annotation, EditorState, Transaction } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import { type EditorCommand, type EditorMessage, send } from "./bridge";
@@ -42,6 +42,9 @@ const noteTheme = EditorView.theme({
 /** The system's spelling, autocorrection and text replacements, as in any Mac text field. */
 const systemTextServices = EditorView.contentAttributes.of({ spellcheck: "true", autocorrect: "on" });
 
+/** Marks a change that came from disk: not the user's, so not reported back to the app. */
+const fromDisk = Annotation.define<boolean>();
+
 /** How often, at most, the text is reported while the user types. The app saves after it. */
 const reportInterval = 250;
 
@@ -61,7 +64,8 @@ function report(): EditorMessage | null {
 }
 
 const reportChanges = EditorView.updateListener.of((update) => {
-  if (!update.docChanged) return;
+  // Per transaction: the user's keys may share an update with a reload from disk.
+  if (!update.transactions.some((tr) => tr.docChanged && !tr.annotation(fromDisk))) return;
   unreported = true;
   reportTimer ??= setTimeout(() => {
     const message = report();
@@ -129,6 +133,32 @@ window.noteki = {
         else if (command.step === "next") findNext(view);
         else findPrevious(view);
         return null;
+      case "reload": {
+        if (command.noteID !== noteID) return null;
+        if (unreported || command.revision !== revision) {
+          // The user typed since the report the app last received: their text stays here, and
+          // the app learns of it from this report (or the one already on its way).
+          const pending = report();
+          if (pending) send(pending);
+          return null;
+        }
+        // Only the part that differs changes, so the cursor and the scroll map through it.
+        const doc = view.state.doc.toString();
+        const text = command.text;
+        let start = 0;
+        while (start < doc.length && start < text.length && doc[start] === text[start]) start++;
+        let end = 0;
+        while (
+          end < doc.length - start &&
+          end < text.length - start &&
+          doc[doc.length - 1 - end] === text[text.length - 1 - end]
+        ) end++;
+        view.dispatch({
+          changes: { from: start, to: doc.length - end, insert: text.slice(start, text.length - end) },
+          annotations: [fromDisk.of(true), Transaction.addToHistory.of(false)],
+        });
+        return "applied";
+      }
       case "flush": {
         const message = report();
         return message ? JSON.stringify(message) : null;

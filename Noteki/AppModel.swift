@@ -36,6 +36,8 @@ final class AppModel {
     private var revisions: [String: Int] = [:]
     private var lastSaveError: (any Error)?
     private var pendingSave: Task<Void, Never>?
+    private var watcher: VaultWatcher?
+    private var pendingTreeRefresh: Task<Void, Never>?
     /// Switching Note, Vault or quitting waits for the previous switch: each one saves first.
     private var transition: Task<Void, Never>?
     private static let saveDelay: Duration = .seconds(1)
@@ -112,6 +114,7 @@ final class AppModel {
 
     private func activate(_ vault: Vault) {
         self.vault = vault
+        watcher = VaultWatcher(root: vault.root) { [weak self] change in self?.filesChanged(change) }
         tree = []
         shown = nil
         openNote = nil
@@ -121,17 +124,81 @@ final class AppModel {
         selection = nil
         failure = nil
         UserDefaults.standard.set(vault.root.path(percentEncoded: false), forKey: Self.vaultPathKey)
-        Task {
-            // Off the main thread: a large Vault takes a moment to list.
-            let result = await Task.detached { Result { try vault.tree() } }.value
-            guard self.vault?.root == vault.root else { return }
-            switch result {
-            case .success(let tree):
-                self.tree = tree
-            case .failure(let error):
-                logger.error("Cannot list the Vault: \(error.localizedDescription, privacy: .public)")
-                failure = "Cannot read the Vault \(vault.root.lastPathComponent): \(error.localizedDescription)"
+        Task { await listTree(of: vault) }
+    }
+
+    /// Lists Files. `refresh` after a change on disk: a failure then keeps the last list and
+    /// leaves the Note on screen, it is only logged.
+    private func listTree(of vault: Vault, refresh: Bool = false) async {
+        // Off the main thread: a large Vault takes a moment to list.
+        let result = await Task.detached { Result { try vault.tree() } }.value
+        guard self.vault?.root == vault.root else { return }
+        switch result {
+        case .success(let tree):
+            self.tree = tree
+        case .failure(let error):
+            logger.error("Cannot list the Vault: \(error.localizedDescription, privacy: .public)")
+            guard !refresh else { return }
+            failure = "Cannot read the Vault \(vault.root.lastPathComponent): \(error.localizedDescription)"
+        }
+    }
+
+    /// From the Vault's watcher: files changed on disk, by Noteki or another app.
+    private func filesChanged(_ change: VaultWatcher.Change) {
+        guard let vault else { return }
+        var paths = vault.changedPaths(change.urls)
+        // Events were lost or merged into folders: anything may have changed.
+        if change.mustRescan, let open = openNote { paths.insert(open.note.path) }
+        guard !paths.isEmpty else { return }
+        if change.mustRescan || paths.contains(where: { appearedOrDisappeared($0, in: vault) }) {
+            // A Note or Attachment created or deleted by another app, such as Takku's new
+            // Meeting notes: Files lists it without a relaunch.
+            pendingTreeRefresh?.cancel()
+            pendingTreeRefresh = Task {
+                try? await Task.sleep(for: .milliseconds(300))
+                guard !Task.isCancelled else { return }
+                await listTree(of: vault, refresh: true)
             }
+        }
+        if let open = openNote, paths.contains(open.note.path) {
+            afterTransition { await self.noticeChanges(at: paths) }
+        }
+    }
+
+    /// Whether the file is new to Files or gone from disk; a save to a listed file is neither.
+    private func appearedOrDisappeared(_ path: String, in vault: Vault) -> Bool {
+        let exists = FileManager.default.fileExists(atPath: vault.root.appending(path: path).path(percentEncoded: false))
+        return exists != (tree.item(at: path) != nil)
+    }
+
+    /// The open Note may have changed on disk: reloaded when nothing is unsaved (ADR 0005).
+    private func noticeChanges(at paths: Set<String>) async {
+        // Keys the editor has not reported yet are unsaved edits too.
+        await editor.flush()
+        guard let open = openNote else { return }
+        do {
+            switch try open.noticeChanges(at: paths) {
+            case .unchanged:
+                break
+            case .reload(let reload):
+                let shown = await editor.reload(
+                    noteID: open.note.path, revision: revisions[open.note.path, default: 0], text: reload.text
+                )
+                // Only what the editor shows becomes the base, and only if no edit arrived
+                // meanwhile: text typed on the old content must meet the guard on the next save.
+                guard shown, var current = openNote, current.note == open.note, !current.hasUnsavedEdits else {
+                    return
+                }
+                current.apply(reload)
+                openNote = current
+                logger.info("Reloaded a Note changed on disk")
+            case .keptUnsavedEdits:
+                // Until the Merge (ticket 07): the save is refused and the banner says why.
+                pendingSave?.cancel()
+                save()
+            }
+        } catch {
+            logger.error("Cannot read a Note changed on disk: \(error.localizedDescription, privacy: .public)")
         }
     }
 

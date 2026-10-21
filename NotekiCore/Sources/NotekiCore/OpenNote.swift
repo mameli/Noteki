@@ -12,21 +12,68 @@ public struct OpenNote: Sendable {
     private let url: URL
     /// Kept as most lines of the file had it, so saving never rewrites every line (and every
     /// line of a diff). The editor has one kind of line break: a mixed file comes out uniform.
-    private let usesCRLF: Bool
+    private var usesCRLF = false
 
     init(note: Note, url: URL) throws {
         self.note = note
         self.url = url
-        onDisk = try Data(contentsOf: url)
-        let content = String(decoding: onDisk, as: UTF8.self)
-        let lineBreaks = content.utf8.count { $0 == UInt8(ascii: "\n") }
-        let crlfBreaks = content.components(separatedBy: "\r\n").count - 1
-        usesCRLF = crlfBreaks * 2 > lineBreaks
-        text = usesCRLF ? content.replacingOccurrences(of: "\r\n", with: "\n") : content
+        onDisk = Data()
+        text = ""
+        base = ""
+        take(try Data(contentsOf: url))
+    }
+
+    /// The file's content becomes what the editor shows and the base of the next save.
+    private mutating func take(_ data: Data) {
+        onDisk = data
+        (text, usesCRLF) = Self.editorText(of: data)
         base = text
     }
 
+    /// The file's text with `\n` between lines, and whether most of its lines ended with CRLF.
+    private static func editorText(of data: Data) -> (text: String, usesCRLF: Bool) {
+        let content = String(decoding: data, as: UTF8.self)
+        let lineBreaks = content.utf8.count { $0 == UInt8(ascii: "\n") }
+        let crlfBreaks = content.components(separatedBy: "\r\n").count - 1
+        let usesCRLF = crlfBreaks * 2 > lineBreaks
+        return (usesCRLF ? content.replacingOccurrences(of: "\r\n", with: "\n") : content, usesCRLF)
+    }
+
     public var hasUnsavedEdits: Bool { text != base }
+
+    /// What an External change means for the open Note.
+    public enum ExternalChange: Equatable, Sendable {
+        /// Not this Note, or the file is as Noteki last read or wrote it (its own save).
+        case unchanged
+        /// Nothing was unsaved: show the new content, then `apply` it. Until applied the open
+        /// Note keeps the old base, so text typed on the old content cannot overwrite the new.
+        case reload(Reload)
+        /// The user's edits are kept and the file left alone: saving refuses until the two are
+        /// merged (ticket 07) or the user chooses.
+        case keptUnsavedEdits
+    }
+
+    /// The file's new content, waiting for the editor to show it.
+    public struct Reload: Equatable, Sendable {
+        fileprivate let data: Data
+        /// What the editor should show, with `\n` between lines.
+        public let text: String
+    }
+
+    /// The Vault's change entry for the open Note: the paths the Vault reported as changed on
+    /// disk (`Vault.changedPaths`). Reads the file only when its own path is among them.
+    public func noticeChanges(at paths: Set<String>) throws -> ExternalChange {
+        guard paths.contains(note.path) else { return .unchanged }
+        let data = try Data(contentsOf: url)
+        guard data != onDisk else { return .unchanged }
+        guard !hasUnsavedEdits else { return .keptUnsavedEdits }
+        return .reload(Reload(data: data, text: Self.editorText(of: data).text))
+    }
+
+    /// The editor shows the reloaded content: it becomes the text and the base of the next save.
+    public mutating func apply(_ reload: Reload) {
+        take(reload.data)
+    }
 
     public enum SaveError: Error, Equatable {
         /// Another app wrote the file since Noteki last read or saved it. Saving would erase that
