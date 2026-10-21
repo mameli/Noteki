@@ -61,5 +61,6 @@ struct EditorBridgeTests {
 
         #expect(try EditorMessage(json: json) == .changed(noteID: "Meetings/Retro.md", revision: 7, text: "# Retro\nnew\n"))
         #expect(try EditorMessage(json: #"{"type":"ready"}"#) == .ready)
+        #expect(try EditorMessage(json: #"{"type":"followLink","inner":"Retro|the retro"}"#) == .followLink(inner: "Retro|the retro"))
     }
 }

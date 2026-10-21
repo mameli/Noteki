@@ -9,4 +9,5 @@ Wikilinks, Backlinks, Tags, the Quick switcher and search all need an index of t
 ## Consequences
 
 - Search is a scan of the Notes' text in memory, without ranking beyond matches in the name first.
+- Built in steps: for Wikilinks (ticket 11) the index holds only the files' names, from the listing, so it reads no Note. Backlinks, Tags and search (tickets 15–17) add the Notes' text, read once at launch.
 - Memory grows with the size of the Vault's text: a few MB for thousands of Notes.

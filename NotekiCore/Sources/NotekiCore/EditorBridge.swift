@@ -77,11 +77,13 @@ public enum EditorMessage: Decodable, Equatable, Sendable {
     /// The whole text of the Note after the user typed. `revision` grows with every report: a
     /// report that arrives after a later one is stale.
     case changed(noteID: String, revision: Int, text: String)
+    /// The user clicked a Wikilink: what is between its brackets.
+    case followLink(inner: String)
 
-    public static let types = ["ready", "changed"]
+    public static let types = ["ready", "changed", "followLink"]
 
     private enum CodingKeys: String, CodingKey {
-        case type, noteID, revision, text
+        case type, noteID, revision, text, inner
     }
 
     public init(json: String) throws {
@@ -100,6 +102,8 @@ public enum EditorMessage: Decodable, Equatable, Sendable {
                 revision: try container.decode(Int.self, forKey: .revision),
                 text: try container.decode(String.self, forKey: .text)
             )
+        case "followLink":
+            self = .followLink(inner: try container.decode(String.self, forKey: .inner))
         default:
             throw DecodingError.dataCorruptedError(
                 forKey: .type, in: container, debugDescription: "Unknown editor message \(type)"

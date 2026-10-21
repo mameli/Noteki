@@ -26,7 +26,9 @@ export type EditorCommand =
 export type EditorMessage =
   | { type: "ready" }
   /** The whole text after the user typed; `revision` grows with every report. */
-  | { type: "changed"; noteID: string; revision: number; text: string };
+  | { type: "changed"; noteID: string; revision: number; text: string }
+  /** The user clicked a Wikilink: what is between its brackets. */
+  | { type: "followLink"; inner: string };
 
 declare global {
   interface Window {

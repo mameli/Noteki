@@ -15,6 +15,8 @@ final class AppModel {
 
     private(set) var vault: Vault?
     private(set) var tree: [VaultItem] = []
+    /// The Vault's files by name, to resolve Wikilinks; rebuilt whenever Files is listed.
+    private var index: VaultIndex?
     /// The Note or Attachment selected, nil before the first choice.
     private(set) var shown: Shown? {
         didSet { editor.isInFront = isShowingNote }
@@ -112,6 +114,21 @@ final class AppModel {
         editor.onChange = { [weak self] noteID, revision, text in
             self?.edited(noteID: noteID, revision: revision, text: text)
         }
+        editor.onFollowLink = { [weak self] inner in self?.followLink(inner) }
+    }
+
+    /// Opens the Note or Attachment a clicked Wikilink leads to, resolved from the open Note as
+    /// Obsidian resolves it.
+    private func followLink(_ inner: String) {
+        // Before Files is listed, or in a Loose file, there is nothing to resolve against: not
+        // an Unresolved link.
+        guard let index else { return }
+        guard let item = index.resolve(Wikilink(inner: inner).target, from: openNote?.note) else {
+            // An Unresolved link: creating its Note is ticket 12.
+            NSSound.beep()
+            return
+        }
+        reveal(item.path)
     }
 
     /// A Note, Attachment or folder of the Vault opened from the Finder or Takku: selected in
@@ -166,6 +183,7 @@ final class AppModel {
         pendingReveal = nil
         watcher = VaultWatcher(root: vault.root) { [weak self] change in self?.filesChanged(change) }
         tree = []
+        index = nil
         shown = nil
         openNote = nil
         previousNote = nil
@@ -188,6 +206,7 @@ final class AppModel {
         switch result {
         case .success(let tree):
             self.tree = tree
+            index = VaultIndex(tree: tree)
             // Read by scripts/measure.
             logger.info("Files listed: \(tree.noteCount) Notes in \((ContinuousClock.now - started).milliseconds) ms")
             if let pendingReveal, tree.item(at: pendingReveal) != nil {

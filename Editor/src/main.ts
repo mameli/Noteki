@@ -7,6 +7,7 @@ import { EditorView, keymap } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import { type EditorCommand, type EditorMessage, send } from "./bridge";
 import { frontmatter } from "./frontmatter";
+import { followWikilinks, wikilinks } from "./wikilink";
 
 // Colours come from the CSS variables in editor.css, so light and dark follow the system.
 const sourceHighlight = HighlightStyle.define([
@@ -77,7 +78,8 @@ function initialState(text: string, editable: boolean) {
   return EditorState.create({
     doc: text,
     extensions: [
-      markdown({ base: markdownLanguage, extensions: [frontmatter] }),
+      markdown({ base: markdownLanguage, extensions: [frontmatter, wikilinks] }),
+      followWikilinks((inner) => send({ type: "followLink", inner })),
       noteTheme,
       syntaxHighlighting(sourceHighlight),
       EditorView.lineWrapping,

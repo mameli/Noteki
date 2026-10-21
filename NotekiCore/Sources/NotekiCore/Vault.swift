@@ -222,6 +222,6 @@ private func finderOrder(_ a: VaultItem, _ b: VaultItem) -> Bool {
     a.name.localizedStandardCompare(b.name) == .orderedAscending
 }
 
-private func lastComponent(of path: String) -> String {
+func lastComponent(of path: String) -> String {
     path.split(separator: "/").last.map(String.init) ?? path
 }

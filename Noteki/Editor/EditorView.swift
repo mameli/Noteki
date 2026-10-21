@@ -22,6 +22,8 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
     /// The user typed: the whole text, tagged with the Note it was loaded as and a revision
     /// that grows with every report.
     var onChange: (_ noteID: String, _ revision: Int, _ text: String) -> Void = { _, _, _ in }
+    /// The user clicked a Wikilink: what is between its brackets.
+    var onFollowLink: (_ inner: String) -> Void = { _ in }
 
     private var isReady = false
     /// What the editor shows, or will show once it is ready.
@@ -153,6 +155,8 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
             // Late keys of the Note just left must not become what a reload shows.
             if loaded?.noteID == noteID { loaded = (noteID, text) }
             onChange(noteID, revision, text)
+        case .followLink(let inner):
+            onFollowLink(inner)
         }
     }
 

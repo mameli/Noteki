@@ -90,7 +90,7 @@ Noteki watches the Vault with FSEvents ([ADR 0005](adr/0005-merge-external-chang
 ### Wikilinks
 
 - `[[name]]` and `[[name|alias]]` are links: click (or ⌘-click for a new Tab) opens the Note.
-- **Resolution**, as Obsidian: a name with a `/` is a path from the Vault's root; otherwise the Note with that file name anywhere in the Vault. When more Notes share the name, the rule must match Obsidian's exactly (see [Known risks](#known-risks)).
+- **Resolution**, exactly as Obsidian 1.14.4's `getLinkpathDest`, read from its code: by file name in any case, `.md` optional; a path from the Vault's root wins when it matches exactly, `./` and `../` are relative to the linking Note's folder, and otherwise a path also matches the end of a longer one (`Axo/Retro` finds `Clients/Axo/Retro.md`). Among files with the same name, those whose path starts with the linking Note's folder come first, then the shortest path. `[[#heading]]` leads to the Note itself. Only files Noteki lists can be found: not those in Excluded folders, nor Obsidian's `.canvas`.
 - An **Unresolved link** is drawn in another colour. Following it creates the Note in the same folder as the Note that holds the link, and opens it.
 - Typing `[[` opens a completion list of the Notes, fuzzy on the name, the most recently opened first. Choosing one writes its name, or the shortest path that is unique when the name is ambiguous.
 
@@ -153,7 +153,7 @@ Each milestone ends with an app the user can use every day.
 
 ## Known risks
 
-- **Wikilink resolution with duplicate names**: Obsidian's exact rule when more Notes share a name (same folder first? shortest path?) is not documented. Before M2 it is checked by hand in Obsidian on the fixture Vault and written as tests; a Note that resolves differently in the two apps breaks the promise of [ADR 0002](adr/0002-coexist-with-obsidian.md).
+- **Wikilink resolution with duplicate names**: Obsidian's rule is undocumented. It was read from Obsidian 1.14.4's code and written as tests (ticket 11), but not checked by hand in Obsidian, and a later Obsidian may change it. Ties in path length keep Files' order, where Obsidian keeps its own loading order.
 - **Native text behaviour in the web view**: select-all, find, Services and accessibility do not work by themselves because CodeMirror draws only the visible lines. MarkEdit's solutions are the starting point.
 - **Live preview that jumps**: hiding and showing syntax changes widths and heights. Every extension is tried on the Vault's longest Meeting notes before M3 ends.
 - **Merge on large rewrites**: when Takku rewrites most of a Note at once, a Conflict may be frequent. If it is, the base is taken at the moment the user starts typing rather than at the last save.
