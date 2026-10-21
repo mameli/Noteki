@@ -44,20 +44,6 @@ struct OpenNoteTests {
         #expect(try folder.read("Retro.md") == "# Retro\n\nSummary written by Takku\n")
     }
 
-    @Test("the user can choose to replace the other app's change with their own version")
-    func replaceChangeOnDisk() throws {
-        let folder = try TemporaryVault(files: ["Retro.md": "# Retro\n"])
-        var open = try Vault(root: folder.url).open(Note(path: "Retro.md"))
-        open.edit("# Retro\n\nmy notes\n")
-        try folder.write("# Retro\n\nSummary written by Takku\n", at: "Retro.md")
-
-        try open.saveReplacingChangesOnDisk()
-        open.edit("# Retro\n\nmy notes\nmore\n")
-        try open.save()
-
-        #expect(try folder.read("Retro.md") == "# Retro\n\nmy notes\nmore\n")
-    }
-
     @Test("a Note without a final newline is saved without one")
     func noFinalNewline() throws {
         let folder = try TemporaryVault(files: ["Short.md": "one line"])
@@ -150,18 +136,5 @@ struct ExternalChangeTests {
 
         #expect(try open.noticeChanges(at: ["Retro.md"]) == .unchanged)
         #expect(open.text == "# Retro\nmine\n")
-    }
-
-    @Test("with unsaved edits the open Note keeps them and leaves the file to the Merge")
-    func unsavedEdits() throws {
-        let folder = try TemporaryVault(files: ["Retro.md": "# Retro\n"])
-        var open = try Vault(root: folder.url).open(Note(path: "Retro.md"))
-        open.edit("# Retro\nmine\n")
-
-        try folder.write("# Retro\nTakku\n", at: "Retro.md")
-
-        #expect(try open.noticeChanges(at: ["Retro.md"]) == .keptUnsavedEdits)
-        #expect(open.text == "# Retro\nmine\n")
-        #expect(try folder.read("Retro.md") == "# Retro\nTakku\n")
     }
 }

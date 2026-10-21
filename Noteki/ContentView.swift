@@ -3,6 +3,7 @@ import SwiftUI
 
 struct ContentView: View {
     @Bindable var model: AppModel
+    @State private var isShowingDifferences = false
 
     var body: some View {
         NavigationSplitView {
@@ -13,6 +14,14 @@ struct ContentView: View {
         }
         .navigationTitle(model.shown?.name ?? model.vault?.root.lastPathComponent ?? "Noteki")
         .focusedSceneValue(\.noteEditor, model.isShowingNote ? model.editor : nil)
+        .sheet(isPresented: $isShowingDifferences) {
+            if let conflict = model.conflict {
+                DifferencesView(conflict: conflict) { isShowingDifferences = false }
+            }
+        }
+        .onChange(of: model.conflict == nil) { _, resolved in
+            if resolved { isShowingDifferences = false }
+        }
         .onAppear {
             if model.vault == nil { model.chooseVault() }
         }
@@ -45,7 +54,14 @@ struct ContentView: View {
                     }
                 }
                 .overlay(alignment: .bottom) {
-                    if let saveFailure = model.saveFailure {
+                    if model.conflict != nil, case .note(let note)? = model.shown {
+                        ConflictBanner(
+                            noteName: note.name,
+                            keepMine: model.keepMine,
+                            takeTheirs: model.takeTheirs,
+                            showDifferences: { isShowingDifferences = true }
+                        )
+                    } else if let saveFailure = model.saveFailure {
                         Label(saveFailure, systemImage: "exclamationmark.triangle.fill")
                             .padding(.horizontal, 12)
                             .padding(.vertical, 8)

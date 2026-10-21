@@ -10,6 +10,10 @@ public struct OpenNote: Sendable {
     /// The file as Noteki last read or wrote it, to tell whether another app changed it since.
     private var onDisk: Data
     private let url: URL
+    /// Set while the user's edits and the file's change touch the same lines: saving stops
+    /// until the user keeps their version or takes the file's (ADR 0005).
+    public private(set) var conflict: Conflict?
+    private var theirsData: Data?
     /// Kept as most lines of the file had it, so saving never rewrites every line (and every
     /// line of a diff). The editor has one kind of line break: a mixed file comes out uniform.
     private var usesCRLF = false
@@ -45,40 +49,92 @@ public struct OpenNote: Sendable {
     public enum ExternalChange: Equatable, Sendable {
         /// Not this Note, or the file is as Noteki last read or wrote it (its own save).
         case unchanged
-        /// Nothing was unsaved: show the new content, then `apply` it. Until applied the open
-        /// Note keeps the old base, so text typed on the old content cannot overwrite the new.
+        /// Show this text, then `apply` it: the file's new content when nothing was unsaved, or
+        /// the user's edits merged with it. Until applied the open Note keeps the old base, so
+        /// text typed on the old content cannot overwrite the new.
         case reload(Reload)
-        /// The user's edits are kept and the file left alone: saving refuses until the two are
-        /// merged (ticket 07) or the user chooses.
-        case keptUnsavedEdits
+        /// The user's edits and the change touch the same lines: see `conflict`. The editor keeps
+        /// the user's text and nothing is saved until the user chooses.
+        case conflict
     }
 
-    /// The file's new content, waiting for the editor to show it.
+    /// The two versions of a Conflict, for the user to compare.
+    public struct Conflict: Equatable, Sendable {
+        public let mine: String
+        public let theirs: String
+
+        public init(mine: String, theirs: String) {
+            self.mine = mine
+            self.theirs = theirs
+        }
+    }
+
+    /// The file's new content, or the user's edits merged with it, waiting for the editor.
     public struct Reload: Equatable, Sendable {
+        /// The file as it is now: the base of the next save once applied.
         fileprivate let data: Data
+        /// The user's text this was computed from: if it changed since, it no longer applies.
+        fileprivate let mine: String
         /// What the editor should show, with `\n` between lines.
         public let text: String
     }
 
     /// The Vault's change entry for the open Note: the paths the Vault reported as changed on
     /// disk (`Vault.changedPaths`). Reads the file only when its own path is among them.
-    public func noticeChanges(at paths: Set<String>) throws -> ExternalChange {
+    public mutating func noticeChanges(at paths: Set<String>) throws -> ExternalChange {
         guard paths.contains(note.path) else { return .unchanged }
         let data = try Data(contentsOf: url)
-        guard data != onDisk else { return .unchanged }
-        guard !hasUnsavedEdits else { return .keptUnsavedEdits }
-        return .reload(Reload(data: data, text: Self.editorText(of: data).text))
+        guard data != onDisk else {
+            // The other app put the file back as Noteki knew it: no Conflict any more.
+            conflict = nil
+            theirsData = nil
+            return .unchanged
+        }
+        guard data != theirsData || conflict == nil else { return .unchanged }
+        let theirs = Self.editorText(of: data).text
+        guard hasUnsavedEdits else { return .reload(Reload(data: data, mine: text, text: theirs)) }
+        guard let merged = Merge.merge(base: base, mine: text, theirs: theirs) else {
+            conflict = Conflict(mine: text, theirs: theirs)
+            theirsData = data
+            return .conflict
+        }
+        return .reload(Reload(data: data, mine: text, text: merged))
     }
 
-    /// The editor shows the reloaded content: it becomes the text and the base of the next save.
-    public mutating func apply(_ reload: Reload) {
+    /// Ends a Conflict with the user's text: written over the file, erasing the other change.
+    public mutating func keepMine() throws {
+        try write()
+        conflict = nil
+        theirsData = nil
+    }
+
+    /// Ends a Conflict with the file's text: the user's edits are dropped. The editor shows `text`.
+    public mutating func takeTheirs() {
+        guard let theirsData else { return }
+        take(theirsData)
+        conflict = nil
+        self.theirsData = nil
+    }
+
+    /// The editor shows the reload: its text becomes the open Note's, and the file's content the
+    /// base of the next save, which writes what was merged. False, changing nothing, when the
+    /// user's text changed since the reload was computed: notice the change again.
+    @discardableResult
+    public mutating func apply(_ reload: Reload) -> Bool {
+        guard text == reload.mine else { return false }
         take(reload.data)
+        text = reload.text
+        conflict = nil
+        theirsData = nil
+        return true
     }
 
     public enum SaveError: Error, Equatable {
         /// Another app wrote the file since Noteki last read or saved it. Saving would erase that
-        /// change; merging it is the job of External change handling (ADR 0005).
+        /// change: notice it first, to merge it (ADR 0005).
         case changedOnDisk
+        /// A Conflict waits for the user's choice.
+        case conflict
     }
 
     /// The whole text after the user typed.
@@ -90,13 +146,8 @@ public struct OpenNote: Sendable {
     /// changed since: then it throws `changedOnDisk` and the edits stay unsaved.
     public mutating func save() throws {
         guard hasUnsavedEdits else { return }
+        guard conflict == nil else { throw SaveError.conflict }
         guard try Data(contentsOf: url) == onDisk else { throw SaveError.changedOnDisk }
-        try write()
-    }
-
-    /// Writes the user's edits even over another app's change, erasing it: only when the user
-    /// chose their version.
-    public mutating func saveReplacingChangesOnDisk() throws {
         try write()
     }
 

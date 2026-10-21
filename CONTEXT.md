@@ -107,7 +107,7 @@ Putting an External change together with what the user wrote and Noteki has not 
 _Avoid_: reconcile, sync
 
 **Conflict** (`Conflict`):
-An External change and the user's edits that touch the same lines, so the Merge cannot put them together. The user's text is kept and the user decides.
+An External change and the user's edits that touch the same lines, or adjacent ones, so the Merge cannot put them together. The user's text is kept and the user decides.
 _Avoid_: clash, collision
 
 **Followed rename** (`FollowedRename`):

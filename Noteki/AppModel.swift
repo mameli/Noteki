@@ -29,12 +29,15 @@ final class AppModel {
     /// The window's editor: one web view per window (ADR 0003), one window until ticket 25.
     let editor = EditorController()
     /// The Note in the editor, kept while an Attachment is in front.
-    private var openNote: OpenNote?
+    private var openNote: OpenNote? {
+        didSet { conflict = openNote.flatMap { open in open.conflict.map { .init(mine: open.text, theirs: $0.theirs) } } }
+    }
+    /// The open Note's Conflict, for the banner: the user's text as it is now and the file's.
+    private(set) var conflict: OpenNote.Conflict?
     /// The Note just left: keys typed in the instant before the switch still belong to it.
     private var previousNote: OpenNote?
     /// The last revision applied per Note: a report that arrives after a later one is stale.
     private var revisions: [String: Int] = [:]
-    private var lastSaveError: (any Error)?
     private var pendingSave: Task<Void, Never>?
     private var watcher: VaultWatcher?
     private var pendingTreeRefresh: Task<Void, Never>?
@@ -171,34 +174,83 @@ final class AppModel {
         return exists != (tree.item(at: path) != nil)
     }
 
-    /// The open Note may have changed on disk: reloaded when nothing is unsaved (ADR 0005).
+    /// The open Note may have changed on disk (ADR 0005): reloaded when nothing is unsaved,
+    /// merged with the user's edits and saved, or a Conflict left to the user.
     private func noticeChanges(at paths: Set<String>) async {
-        // Keys the editor has not reported yet are unsaved edits too.
-        await editor.flush()
-        guard let open = openNote else { return }
-        do {
-            switch try open.noticeChanges(at: paths) {
+        // If the user types while a merge is on its way to the editor, it is computed again.
+        for _ in 1...3 {
+            // Keys the editor has not reported yet are unsaved edits too.
+            await editor.flush()
+            guard var open = openNote else { return }
+            let change: OpenNote.ExternalChange
+            do {
+                change = try open.noticeChanges(at: paths)
+            } catch {
+                logger.error("Cannot read a Note changed on disk: \(error.localizedDescription, privacy: .public)")
+                return
+            }
+            openNote = open
+            switch change {
             case .unchanged:
-                break
+                return
+            case .conflict:
+                pendingSave?.cancel()
+                saveFailure = nil
+                logger.info("Conflict with a change on disk")
+                return
             case .reload(let reload):
                 let shown = await editor.reload(
                     noteID: open.note.path, revision: revisions[open.note.path, default: 0], text: reload.text
                 )
-                // Only what the editor shows becomes the base, and only if no edit arrived
-                // meanwhile: text typed on the old content must meet the guard on the next save.
-                guard shown, var current = openNote, current.note == open.note, !current.hasUnsavedEdits else {
+                // Only what the editor shows becomes the base, and only if the user's text is
+                // still the one the merge started from.
+                guard shown, var current = openNote, current.note == open.note, current.apply(reload) else {
+                    continue
+                }
+                openNote = current
+                saveFailure = nil
+                logger.info("Reloaded a Note changed on disk")
+                // A merge holds the user's edits: saved at once, over the file it came from.
+                if current.hasUnsavedEdits { await saveNow() }
+                return
+            }
+        }
+        logger.error("A change on disk could not reach the editor, the next save tries again")
+    }
+
+    /// Ends the Conflict with the user's version, written over the other app's change.
+    func keepMine() {
+        afterTransition {
+            await self.editor.flush()
+            guard var open = self.openNote, open.conflict != nil else { return }
+            do {
+                try open.keepMine()
+                self.saveFailure = nil
+            } catch {
+                self.saveFailure = "Cannot save \(open.note.name): \(error.localizedDescription)"
+            }
+            self.openNote = open
+        }
+    }
+
+    /// Ends the Conflict with the other app's version: the user's edits are dropped. Shown as a
+    /// reload, so the cursor stays where it was.
+    func takeTheirs() {
+        afterTransition {
+            for _ in 1...3 {
+                // Keys typed just before the click arrive now, not after the choice.
+                await self.editor.flush()
+                guard var open = self.openNote, open.conflict != nil else { return }
+                open.takeTheirs()
+                let shown = await self.editor.reload(
+                    noteID: open.note.path, revision: self.revisions[open.note.path, default: 0], text: open.text
+                )
+                if shown {
+                    self.openNote = open
                     return
                 }
-                current.apply(reload)
-                openNote = current
-                logger.info("Reloaded a Note changed on disk")
-            case .keptUnsavedEdits:
-                // Until the Merge (ticket 07): the save is refused and the banner says why.
-                pendingSave?.cancel()
-                save()
             }
-        } catch {
-            logger.error("Cannot read a Note changed on disk: \(error.localizedDescription, privacy: .public)")
+            logger.error("Take Theirs could not reach the editor")
         }
     }
 
@@ -246,11 +298,7 @@ final class AppModel {
         if openNote?.note.path == noteID {
             openNote?.edit(text)
             pendingSave?.cancel()
-            pendingSave = Task {
-                try? await Task.sleep(for: Self.saveDelay)
-                guard !Task.isCancelled else { return }
-                save()
-            }
+            scheduleSave()
         } else if var previous = previousNote, previous.note.path == noteID {
             // Never into the Note now open, never into a file reopened from scratch.
             previous.edit(text)
@@ -271,7 +319,7 @@ final class AppModel {
     private func leaveOpenNote() async -> Bool {
         await editor.flush()
         pendingSave?.cancel()
-        save()
+        await saveNow()
         guard var open = openNote, open.hasUnsavedEdits else {
             previousNote = openNote
             return true
@@ -285,7 +333,7 @@ final class AppModel {
             return true
         case .replace:
             do {
-                try open.saveReplacingChangesOnDisk()
+                try open.keepMine()
                 saveFailure = nil
                 openNote = open
                 previousNote = open
@@ -300,16 +348,16 @@ final class AppModel {
     private enum UnsavedChoice { case stay, discard, replace }
 
     private func askAboutUnsavedEdits(in open: OpenNote) -> UnsavedChoice {
-        let changedOnDisk = (lastSaveError as? OpenNote.SaveError) == .changedOnDisk
+        let inConflict = open.conflict != nil
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = "Your edits to \(open.note.name) are not saved"
-        alert.informativeText = changedOnDisk
-            ? "Another app changed the file while you were writing. Replacing it with your version erases that change."
+        alert.informativeText = inConflict
+            ? "Another app changed the same lines while you were writing. Replacing them with your version erases that change."
             : saveFailure ?? "The file could not be written."
         alert.addButton(withTitle: "Keep Editing")
         alert.addButton(withTitle: "Discard My Edits")
-        if changedOnDisk { alert.addButton(withTitle: "Replace With My Version") }
+        if inConflict { alert.addButton(withTitle: "Replace With My Version") }
         switch alert.runModal() {
         case .alertSecondButtonReturn: return .discard
         case .alertThirdButtonReturn: return .replace
@@ -317,21 +365,33 @@ final class AppModel {
         }
     }
 
-    private func save() {
+    private func scheduleSave() {
+        pendingSave?.cancel()
+        pendingSave = Task {
+            try? await Task.sleep(for: Self.saveDelay)
+            guard !Task.isCancelled else { return }
+            await saveNow()
+        }
+    }
+
+    /// Saves the open Note. A file another app changed meanwhile is merged first, then saved;
+    /// during a Conflict nothing is written and the banner waits for the user.
+    private func saveNow() async {
         guard var open = openNote, open.hasUnsavedEdits else { return }
+        var changedOnDisk = false
         do {
             try open.save()
             saveFailure = nil
-            lastSaveError = nil
         } catch OpenNote.SaveError.changedOnDisk {
-            lastSaveError = OpenNote.SaveError.changedOnDisk
-            saveFailure = "\(open.note.name) was changed by another app. Your edits are kept here, not saved."
+            changedOnDisk = true
+        } catch OpenNote.SaveError.conflict {
+            // The banner is up: nothing to add.
         } catch {
             logger.error("Cannot save a Note: \(error.localizedDescription, privacy: .public)")
-            lastSaveError = error
             saveFailure = "Cannot save \(open.note.name): \(error.localizedDescription)"
         }
         openNote = open
+        if changedOnDisk { await noticeChanges(at: [open.note.path]) }
     }
 
     private func afterTransition(_ work: @escaping @MainActor () async -> Void) {
