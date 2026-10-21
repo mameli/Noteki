@@ -107,6 +107,37 @@ struct VaultTests {
         #expect(try outline(Vault(root: folder.url).tree()) == "Note")
     }
 
+    @Test("lists images and PDFs as Attachments among the Notes, in Finder order")
+    func attachments() throws {
+        let folder = try TemporaryVault(files: [
+            "Meetings/Retro.md": "",
+            "Meetings/Pasted image 20260917102056.png": "",
+            "Meetings/Screenshots/Slide.jpeg": "",
+            "Contract.pdf": "",
+            "Diagram.svg": "",
+            "IMG_0042.HEIC": "",
+            "Photo.JPG": "",
+            "anim.gif": "",
+            "banner.webp": "",
+            "notes.txt": "",
+            "page.html": "",
+        ])
+
+        #expect(try outline(Vault(root: folder.url).tree()) == """
+            Meetings/
+              Screenshots/
+                [image] Slide.jpeg
+              [image] Pasted image 20260917102056.png
+              Retro
+            [image] anim.gif
+            [image] banner.webp
+            [pdf] Contract.pdf
+            [image] Diagram.svg
+            [image] IMG_0042.HEIC
+            [image] Photo.JPG
+            """)
+    }
+
     @Test("reads the text of a Note as written")
     func text() throws {
         let content = "---\ntags: [meeting]\n---\n# Retro\r\n\r\nàèìòù [[Other]]\n"
@@ -133,7 +164,8 @@ struct VaultTests {
     }
 }
 
-/// The tree as indented lines: folders end with `/`, Notes are shown by name.
+/// The tree as indented lines: folders end with `/`, Notes are shown by name, Attachments by
+/// file name after their kind.
 private func outline(_ items: [VaultItem], depth: Int = 0) -> String {
     items.map { item in
         let indent = String(repeating: "  ", count: depth)
@@ -143,6 +175,8 @@ private func outline(_ items: [VaultItem], depth: Int = 0) -> String {
             return children.isEmpty ? lines : lines + "\n" + outline(children, depth: depth + 1)
         case .note(let note):
             return indent + note.name
+        case .attachment(let attachment):
+            return indent + "[\(attachment.kind)] " + attachment.name
         }
     }.joined(separator: "\n")
 }
@@ -153,6 +187,7 @@ extension [VaultItem] {
             switch item {
             case .folder(_, let children): children.notes
             case .note(let note): [note]
+            case .attachment: []
             }
         }
     }

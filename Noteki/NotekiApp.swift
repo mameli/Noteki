@@ -15,6 +15,32 @@ struct NotekiApp: App {
                 Button("Open Vault…") { model.chooseVault() }
                     .keyboardShortcut("o", modifiers: [.command, .shift])
             }
+            ZoomCommands()
+        }
+    }
+}
+
+/// Zoom for what is shown, whatever has the focus in the window: the sidebar usually does.
+struct ZoomActions {
+    let zoomIn: () -> Void
+    let zoomOut: () -> Void
+}
+
+extension FocusedValues {
+    @Entry var zoom: ZoomActions?
+}
+
+private struct ZoomCommands: Commands {
+    @FocusedValue(\.zoom) private var zoom
+
+    var body: some Commands {
+        CommandGroup(after: .toolbar) {
+            Button("Zoom In") { zoom?.zoomIn() }
+                .keyboardShortcut("+")
+                .disabled(zoom == nil)
+            Button("Zoom Out") { zoom?.zoomOut() }
+                .keyboardShortcut("-")
+                .disabled(zoom == nil)
         }
     }
 }

@@ -11,7 +11,7 @@ struct ContentView: View {
         } detail: {
             detail
         }
-        .navigationTitle(model.note?.name ?? model.vault?.root.lastPathComponent ?? "Noteki")
+        .navigationTitle(model.shown?.name ?? model.vault?.root.lastPathComponent ?? "Noteki")
         .onAppear {
             if model.vault == nil { model.chooseVault() }
         }
@@ -36,7 +36,10 @@ struct ContentView: View {
                         placeholder(ContentUnavailableView(
                             "Cannot Open", systemImage: "exclamationmark.triangle", description: Text(failure)
                         ))
-                    } else if model.note == nil {
+                    } else if case .attachment(let attachment)? = model.shown, let vault = model.vault {
+                        AttachmentView(attachment: attachment, url: vault.url(of: attachment))
+                            .background(.background)
+                    } else if model.shown == nil {
                         placeholder(ContentUnavailableView("No Note Selected", systemImage: "doc.text"))
                     }
                 }
@@ -55,7 +58,7 @@ private struct FilesPane: View {
 
     var body: some View {
         List(model.tree, children: \.children, selection: $model.selection) { item in
-            Label(item.name, systemImage: item.children == nil ? "doc.text" : "folder")
+            Label(item.name, systemImage: item.symbolName)
         }
     }
 }
@@ -63,11 +66,23 @@ private struct FilesPane: View {
 extension VaultItem: @retroactive Identifiable {
     public var id: String { path }
 
-    /// For the Files pane's outline: nil for Notes, so they show no disclosure triangle.
+    /// For the Files pane's outline: nil for files, so they show no disclosure triangle.
     var children: [VaultItem]? {
         switch self {
         case .folder(_, let children): children
-        case .note: nil
+        case .note, .attachment: nil
+        }
+    }
+
+    var symbolName: String {
+        switch self {
+        case .folder: "folder"
+        case .note: "doc.text"
+        case .attachment(let attachment):
+            switch attachment.kind {
+            case .image: "photo"
+            case .pdf: "doc.richtext"
+            }
         }
     }
 }

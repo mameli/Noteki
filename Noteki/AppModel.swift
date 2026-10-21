@@ -5,8 +5,8 @@ import os
 
 private let logger = Logger(subsystem: "app.noteki.noteki", category: "vault")
 
-/// The open Vault and the Note shown. The Vault's location is remembered in the app's
-/// preferences, outside the Vault (ADR 0002).
+/// The open Vault and what it shows: a Note or an Attachment. The Vault's location is
+/// remembered in the app's preferences, outside the Vault (ADR 0002).
 @MainActor
 @Observable
 final class AppModel {
@@ -14,12 +14,27 @@ final class AppModel {
 
     private(set) var vault: Vault?
     private(set) var tree: [VaultItem] = []
-    private(set) var note: Note?
+    /// The Note or Attachment selected, nil before the first choice.
+    private(set) var shown: Shown?
+    /// The text of the last Note read: the editor keeps it while an Attachment is in front.
     private(set) var noteText = ""
-    /// Why the Vault or the Note cannot be shown, in words for the user.
+    /// Why the Vault or what is shown cannot be read, in words for the user.
     private(set) var failure: String?
 
-    /// The path of the row selected in the Files pane: a Note or a folder.
+    enum Shown: Equatable {
+        case note(Note)
+        /// In a native view, in front of the editor.
+        case attachment(Attachment)
+
+        var name: String {
+            switch self {
+            case .note(let note): note.name
+            case .attachment(let attachment): attachment.name
+            }
+        }
+    }
+
+    /// The path of the row selected in the Files pane: a Note, an Attachment or a folder.
     var selection: String? {
         didSet { if selection != oldValue { showSelection() } }
     }
@@ -52,7 +67,7 @@ final class AppModel {
         let vault = Vault(root: folder)
         self.vault = vault
         tree = []
-        note = nil
+        shown = nil
         noteText = ""
         selection = nil
         failure = nil
@@ -72,10 +87,20 @@ final class AppModel {
     }
 
     private func showSelection() {
-        guard let vault, let selection, case .note(let note)? = tree.item(at: selection) else { return }
+        guard let vault, let selection else { return }
+        switch tree.item(at: selection) {
+        case .note(let note): show(note, in: vault)
+        case .attachment(let attachment):
+            shown = .attachment(attachment)
+            failure = nil
+        case .folder, nil: break
+        }
+    }
+
+    private func show(_ note: Note, in vault: Vault) {
+        shown = .note(note)
         do {
             noteText = try vault.text(of: note)
-            self.note = note
             failure = nil
         } catch {
             logger.error("Cannot read a Note: \(error.localizedDescription, privacy: .public)")

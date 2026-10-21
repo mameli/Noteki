@@ -9,7 +9,8 @@ public struct Vault: Sendable {
         self.root = root.standardizedFileURL
     }
 
-    /// The folders and Notes of the Vault, folders first, each level in Finder order.
+    /// The folders, Notes and Attachments of the Vault: at each level folders first, then the
+    /// files, each group in Finder order. Other files are not listed.
     public func tree() throws -> [VaultItem] {
         try items(in: root, relativePath: "")
     }
@@ -20,7 +21,16 @@ public struct Vault: Sendable {
     }
 
     func url(of note: Note) -> URL {
-        root.appending(path: note.path, directoryHint: .notDirectory)
+        fileURL(note.path)
+    }
+
+    /// Where the Attachment is on disk, for the views that show it.
+    public func url(of attachment: Attachment) -> URL {
+        fileURL(attachment.path)
+    }
+
+    private func fileURL(_ path: String) -> URL {
+        root.appending(path: path, directoryHint: .notDirectory)
     }
 
     private func items(in folder: URL, relativePath: String) throws -> [VaultItem] {
@@ -28,7 +38,7 @@ public struct Vault: Sendable {
             at: folder, includingPropertiesForKeys: [.isDirectoryKey], options: []
         )
         var folders: [VaultItem] = []
-        var notes: [VaultItem] = []
+        var files: [VaultItem] = []
         for url in contents {
             let name = url.lastPathComponent
             let path = relativePath.isEmpty ? name : relativePath + "/" + name
@@ -39,10 +49,12 @@ public struct Vault: Sendable {
                 }
                 folders.append(.folder(path: path, children: children))
             } else if url.pathExtension == Note.fileExtension {
-                notes.append(.note(Note(path: path)))
+                files.append(.note(Note(path: path)))
+            } else if let attachment = Attachment(path: path) {
+                files.append(.attachment(attachment))
             }
         }
-        return folders.sorted(by: finderOrder) + notes.sorted(by: finderOrder)
+        return folders.sorted(by: finderOrder) + files.sorted(by: finderOrder)
     }
 
     /// Environments and dependencies of code kept inside the Vault: thousands of files, no Notes.
@@ -65,20 +77,23 @@ public enum VaultItem: Hashable, Sendable {
     /// A folder, by its path from the Vault's root, with what it holds.
     case folder(path: String, children: [VaultItem])
     case note(Note)
+    case attachment(Attachment)
 
     /// From the Vault's root: `Meetings/Transcripts` or `Meetings/Retro.md`.
     public var path: String {
         switch self {
         case .folder(let path, _): path
         case .note(let note): note.path
+        case .attachment(let attachment): attachment.path
         }
     }
 
-    /// The folder's name, or the Note's name without `.md`.
+    /// The folder's name, the Note's name without `.md`, or the Attachment's file name.
     public var name: String {
         switch self {
         case .folder(let path, _): lastComponent(of: path)
         case .note(let note): note.name
+        case .attachment(let attachment): attachment.name
         }
     }
 }
@@ -98,6 +113,33 @@ public struct Note: Hashable, Sendable {
     public var name: String {
         String(lastComponent(of: path).dropLast(Note.fileExtension.count + 1))
     }
+}
+
+/// An image or a PDF in the Vault: Noteki shows it but does not edit it.
+public struct Attachment: Hashable, Sendable {
+    public enum Kind: Sendable {
+        case image, pdf
+    }
+
+    private static let kinds: [String: Kind] = [
+        "png": .image, "jpg": .image, "jpeg": .image, "gif": .image, "webp": .image, "svg": .image, "heic": .image,
+        "pdf": .pdf,
+    ]
+
+    /// From the Vault's root, with `/` between folders: `Meetings/Pasted image 20260917102056.png`.
+    public let path: String
+    public let kind: Kind
+
+    /// Nil for a file that is not an image or a PDF. Extensions in any case: phones write `.JPG`.
+    public init?(path: String) {
+        let fileExtension = (lastComponent(of: path) as NSString).pathExtension.lowercased()
+        guard let kind = Self.kinds[fileExtension] else { return nil }
+        self.path = path
+        self.kind = kind
+    }
+
+    /// The file name with its extension, as Embeds write it: `![[Pasted image 20260917102056.png]]`.
+    public var name: String { lastComponent(of: path) }
 }
 
 private func finderOrder(_ a: VaultItem, _ b: VaultItem) -> Bool {
