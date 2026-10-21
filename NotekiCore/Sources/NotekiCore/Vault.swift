@@ -33,12 +33,30 @@ public struct Vault: Sendable {
             let name = url.lastPathComponent
             let path = relativePath.isEmpty ? name : relativePath + "/" + name
             if try url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true {
-                folders.append(.folder(path: path, children: try items(in: url, relativePath: path)))
+                // A folder the user cannot read is left out rather than hiding the whole Vault.
+                guard !isExcludedFolder(url), let children = try? items(in: url, relativePath: path) else {
+                    continue
+                }
+                folders.append(.folder(path: path, children: children))
             } else if url.pathExtension == Note.fileExtension {
                 notes.append(.note(Note(path: path)))
             }
         }
         return folders.sorted(by: finderOrder) + notes.sorted(by: finderOrder)
+    }
+
+    /// Environments and dependencies of code kept inside the Vault: thousands of files, no Notes.
+    private static let codeFolderNames: Set<String> = ["node_modules", "venv", "__pycache__"]
+
+    /// Excluded folders are neither listed nor read: hidden ones (`.obsidian`, `.venv`), the
+    /// environments and dependencies of code, and any folder that is a repository of its own,
+    /// whose `.git` is a folder or, for submodules and worktrees, a file. Only asked of folders
+    /// below the root, so a Vault kept in git (obsidian-git) is not excluded from itself.
+    private func isExcludedFolder(_ folder: URL) -> Bool {
+        let name = folder.lastPathComponent
+        return name.hasPrefix(".")
+            || Self.codeFolderNames.contains(name)
+            || FileManager.default.fileExists(atPath: folder.appending(path: ".git").path(percentEncoded: false))
     }
 }
 

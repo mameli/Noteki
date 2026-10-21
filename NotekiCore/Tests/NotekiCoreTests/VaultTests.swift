@@ -43,6 +43,70 @@ struct VaultTests {
         #expect(try outline(Vault(root: folder.url).tree()) == "Note")
     }
 
+    @Test("hidden folders are Excluded folders")
+    func hiddenFolders() throws {
+        let folder = try TemporaryVault(files: [
+            "Note.md": "",
+            ".obsidian/workspace.md": "",
+            ".trash/Old.md": "",
+            "Meetings/.cache/x.md": "",
+            "Meetings/Retro.md": "",
+        ])
+
+        #expect(try outline(Vault(root: folder.url).tree()) == """
+            Meetings/
+              Retro
+            Note
+            """)
+    }
+
+    @Test("dependency and environment folders of code are Excluded folders, at any depth")
+    func codeFolders() throws {
+        let folder = try TemporaryVault(files: [
+            "node_modules/pkg/README.md": "",
+            "Projects/playground/node_modules/pkg/README.md": "",
+            "Projects/playground/venv/lib/LICENSE.md": "",
+            "Projects/playground/.venv/lib/LICENSE.md": "",
+            "Projects/playground/__pycache__/x.md": "",
+            "Projects/playground/Notes.md": "",
+        ])
+
+        #expect(try outline(Vault(root: folder.url).tree()) == """
+            Projects/
+              playground/
+                Notes
+            """)
+    }
+
+    @Test("a repository inside the Vault is an Excluded folder, the Vault's own repository is not")
+    func repositories() throws {
+        let folder = try TemporaryVault(files: [
+            ".git/HEAD": "ref: refs/heads/main",
+            "Note.md": "",
+            "Projects/refactoring-agent/.git/HEAD": "ref: refs/heads/main",
+            "Projects/refactoring-agent/README.md": "",
+            "Projects/submodule/.git": "gitdir: ../../.git/modules/submodule",
+            "Projects/submodule/README.md": "",
+            "Projects/Course.md": "",
+        ])
+
+        #expect(try outline(Vault(root: folder.url).tree()) == """
+            Projects/
+              Course
+            Note
+            """)
+    }
+
+    @Test("a folder that cannot be read is left out, the rest of the Vault is listed")
+    func unreadableFolder() throws {
+        let folder = try TemporaryVault(files: ["Private/Secret.md": "", "Note.md": ""])
+        let locked = folder.url.appending(path: "Private").path(percentEncoded: false)
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: locked)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: locked) }
+
+        #expect(try outline(Vault(root: folder.url).tree()) == "Note")
+    }
+
     @Test("reads the text of a Note as written")
     func text() throws {
         let content = "---\ntags: [meeting]\n---\n# Retro\r\n\r\nàèìòù [[Other]]\n"
