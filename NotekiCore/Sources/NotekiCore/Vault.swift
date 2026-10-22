@@ -262,6 +262,11 @@ public struct Note: Hashable, Sendable {
     public var name: String {
         (lastComponent(of: path) as NSString).deletingPathExtension
     }
+
+    /// The folder it is in, from the Vault's root; empty at the root.
+    public var folder: String {
+        folderOf(path)
+    }
 }
 
 /// An image or a PDF in the Vault: Noteki shows it but does not edit it.

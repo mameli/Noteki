@@ -20,6 +20,12 @@ struct NotekiApp: App {
         .defaultSize(width: 1100, height: 750)
         .commands {
             CommandGroup(after: .newItem) {
+                Button("Quick Switcher…") {
+                    appDelegate.showMainWindow()
+                    model.showSwitcher(in: NSApp.keyWindow)
+                }
+                .keyboardShortcut("o")
+                .disabled(!model.canShowSwitcher)
                 Button("Open Vault…") { model.chooseVault() }
                     .keyboardShortcut("o", modifiers: [.command, .shift])
             }

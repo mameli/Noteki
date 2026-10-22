@@ -82,6 +82,12 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
         run(command) { _ in }
     }
 
+    /// Gives the editor the keyboard, as after choosing a Note in the Quick switcher.
+    func focus() {
+        guard isInFront else { return }
+        webView.window?.makeFirstResponder(webView)
+    }
+
     /// The Edit menu's Find items. Opening the search panel gives it the keyboard, as ⌘F does in
     /// any app; Find Next and Find Previous leave the focus where it is.
     func find(_ step: EditorCommand.FindStep) {

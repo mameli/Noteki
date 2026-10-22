@@ -19,8 +19,8 @@ public struct Wikilink: Equatable, Sendable {
     }
 }
 
-/// The Vault's files by name, kept in memory to resolve Wikilinks (ADR 0006). Built from the
-/// listing, so it costs no reading of the Notes.
+/// The Vault's files by name, kept in memory to resolve and complete Wikilinks and for the
+/// Quick switcher (ADR 0006). Built from the listing, so it costs no reading of the Notes.
 public struct VaultIndex: Sendable {
     /// A file and its lowercased path, compared many times while resolving.
     private struct Candidate: Sendable {
@@ -33,7 +33,9 @@ public struct VaultIndex: Sendable {
     /// Noteki does not show (Obsidian's `.canvas`, say).
     private let byName: [String: [Candidate]]
     /// The Notes, in the order Files lists them.
-    private let notes: [Note]
+    let notes: [Note]
+    /// Their names as the Quick switcher matches them, in the same order.
+    let foldedNames: [String]
 
     public init(tree: [VaultItem]) {
         var byName: [String: [Candidate]] = [:]
@@ -56,6 +58,7 @@ public struct VaultIndex: Sendable {
         add(tree)
         self.byName = byName
         self.notes = notes
+        foldedNames = notes.map { fold($0.name) }
     }
 
     /// The Note or Attachment a Wikilink's target leads to from `source`, exactly as Obsidian
@@ -119,7 +122,7 @@ public struct VaultIndex: Sendable {
         let components = note.path.split(separator: "/", omittingEmptySubsequences: false)
         return LinkCompletion(
             name: note.name,
-            folder: components.dropLast().joined(separator: "/"),
+            folder: note.folder,
             link: shortestLink(to: note, components: components)
         )
     }
@@ -190,7 +193,12 @@ private func afterLastSlash(_ path: String) -> String {
     return String(path[path.index(after: slash)...])
 }
 
-private func folderOf(_ path: String) -> String {
+/// Case and accents do not matter: `Café` is found by `cafe`.
+func fold(_ text: String) -> String {
+    text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
+}
+
+func folderOf(_ path: String) -> String {
     guard let slash = path.lastIndex(of: "/") else { return "" }
     return String(path[..<slash])
 }

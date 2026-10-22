@@ -112,7 +112,7 @@ The right sidebar lists the Notes with a Wikilink to the Note in front, each wit
 
 ## Search and navigation
 
-- **Quick switcher** (⌘O): fuzzy on Note names, most recently opened first; Enter opens in the Tab in front, ⌘Enter in a new Tab. A name that exists nowhere offers to create the Note.
+- **Quick switcher** (⌘O): fuzzy on Note names, ranked by how well the name matches (the name itself, then a start, a word's start, inside, letters in order), and most recently opened first among names that match equally well; with nothing typed, the recent Notes first. A path or a name with `.md` finds its Note as a Wikilink would. Enter opens in the Tab in front, ⌘Enter in a new Tab (with Tabs, ticket 25). A name that exists nowhere offers to create the Note, where a Wikilink's would be created from the Note or Attachment in front; not a name the Vault or a Wikilink refuses. The editor takes the keyboard once the Note is in front; Escape gives it back where it was.
 - **Search** (⌘⇧F): words in any order, all required, case and accents ignored. `tag:client/axo` and `path:Meetings/` narrow it. Results grouped by Note, name matches first, each with its lines.
 - **New Note** (⌘N): `Untitled.md` (then `Untitled 1.md`…) in the folder of the Note in front, its name selected to type over.
 - **Daily note** (*File → Today's Note*, ⌥⌘D): folder and date format in *Settings*, `Journal/Daily_2025` and `YYYY-MM-DD` to match the user's Vault.

@@ -22,8 +22,17 @@ final class AppModel {
     private var index: VaultIndex? {
         didSet { markUnresolvedLinks() }
     }
-    /// The Notes opened in this Vault, the latest first, offered first to complete a Wikilink.
+    /// The Notes opened in this Vault, the latest first, offered first to complete a Wikilink
+    /// and in the Quick switcher.
     private var recentNotes: [Note] = []
+    /// Over the window, finding a Note by its name; only once Files is listed.
+    private(set) var isShowingSwitcher = false
+    /// What had the keyboard before the Quick switcher: closing it without a choice gives it back.
+    private weak var responderBeforeSwitcher: NSResponder?
+    /// Until SwiftUI has removed it, a little after `isShowingSwitcher` turns false.
+    private var isSwitcherOnScreen = false
+    /// The Note chosen in the Quick switcher: the editor takes the keyboard once it is shown.
+    private var noteToFocus: Note?
     /// The links of the open Note, as the editor last reported them.
     private var openNoteLinks: [String] = []
     /// The Note or Attachment selected, nil before the first choice.
@@ -159,18 +168,98 @@ final class AppModel {
             return
         }
         // An Unresolved link: its Note is created where Obsidian would put it, then opened.
+        createNote(for: target, from: openNote?.note)
+    }
+
+    /// Creates the Note a Wikilink's `target` would lead to from `source`, and opens it.
+    private func createNote(for target: String, from source: Note?) {
         guard let vault else { return }
         do {
-            let created = try vault.createNote(for: target, from: openNote?.note)
+            let created = try vault.createNote(for: target, from: source)
             reveal(created.path)
         } catch Vault.CreateError.exists(let note) {
             // Created a moment ago, by a click before Files listed it or by another app.
             reveal(note.path)
         } catch {
-            // An Attachment's name, or outside the Vault: nothing to create.
-            logger.info("Unresolved link not created: \(String(describing: error), privacy: .public)")
+            // An Attachment's name, a name Obsidian refuses, or outside the Vault.
+            logger.info("Note not created: \(String(describing: error), privacy: .public)")
             NSSound.beep()
         }
+    }
+
+    var canShowSwitcher: Bool { index != nil }
+
+    func showSwitcher(in window: NSWindow?) {
+        // Before the switcher's field takes the keyboard.
+        responderBeforeSwitcher = window?.firstResponder
+        isShowingSwitcher = true
+        isSwitcherOnScreen = true
+    }
+
+    /// Closed without a choice: the keyboard goes back where it was.
+    func closeSwitcher() {
+        isShowingSwitcher = false
+    }
+
+    /// Once SwiftUI has removed the switcher's field, which takes the keyboard with it.
+    func switcherDisappeared() {
+        isSwitcherOnScreen = false
+        if let responder = responderBeforeSwitcher as? NSView {
+            responder.window?.makeFirstResponder(responder)
+        }
+        responderBeforeSwitcher = nil
+        focusIfShown()
+    }
+
+    /// The Notes the Quick switcher offers for what the user typed, the best first.
+    func switcherMatches(for typed: String) -> [Note] {
+        index?.switcherMatches(for: typed, recent: recentNotes, from: placeInFront) ?? []
+    }
+
+    /// The Note the Quick switcher offers to create for what the user typed, if any.
+    func switcherNewNote(for typed: String) -> String? {
+        guard let index, let vault else { return nil }
+        return index.switcherNewNote(for: typed, from: placeInFront, in: vault)
+    }
+
+    func openFromSwitcher(_ note: Note) {
+        isShowingSwitcher = false
+        responderBeforeSwitcher = nil
+        reveal(note.path)
+        focusEditorWhenShown(note)
+    }
+
+    /// A bare name goes in the folder of the Note or Attachment in front, a path from the
+    /// Vault's root, as a Wikilink's Note is created.
+    func createFromSwitcher(_ name: String) {
+        isShowingSwitcher = false
+        responderBeforeSwitcher = nil
+        guard let vault else { return }
+        createNote(for: name, from: placeInFront)
+        if let path = try? vault.newNotePath(for: name, from: placeInFront) { focusEditorWhenShown(Note(path: path)) }
+    }
+
+    /// Where a link or a new Note starts from: the Note in front, or an Attachment, as a Note
+    /// would be in its folder (only the folder counts).
+    private var placeInFront: Note? {
+        switch shown {
+        case .note(let note): note
+        case .attachment(let attachment): Note(path: attachment.path)
+        case nil: nil
+        }
+    }
+
+    /// Gives the editor the keyboard once `note` is in front, so the user types into it at once.
+    private func focusEditorWhenShown(_ note: Note) {
+        noteToFocus = note
+        focusIfShown()
+    }
+
+    /// The Note must be in front and the switcher gone, whichever comes last.
+    private func focusIfShown() {
+        guard !isSwitcherOnScreen, let note = noteToFocus, openNote?.note == note, shown == .note(note) else { return }
+        noteToFocus = nil
+        editor.focus()
     }
 
     /// A Note, Attachment or folder of the Vault opened from the Finder or Takku: selected in
@@ -441,6 +530,7 @@ final class AppModel {
         guard let vault else { return }
         guard openNote?.note != note else {
             shown = .note(note)
+            focusIfShown()
             return
         }
         guard await leaveOpenNote() else {
@@ -462,6 +552,7 @@ final class AppModel {
             editor.load(noteID: openNoteID, text: open.text)
             failure = nil
             opened(note)
+            focusIfShown()
         } catch {
             openNote = nil
             editor.clear()

@@ -26,6 +26,11 @@ struct ContentView: View {
                 NoteDetail(model: model)
             }
         }
+        .overlay(alignment: .top) {
+            if model.isShowingSwitcher {
+                QuickSwitcher(model: model)
+            }
+        }
         .navigationTitle(model.shown?.name ?? model.vault?.root.lastPathComponent ?? "Noteki")
         .focusedSceneValue(\.noteEditor, model.isShowingNote ? model.editor : nil)
         .onAppear {

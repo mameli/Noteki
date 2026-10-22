@@ -139,6 +139,9 @@ window.noteki = {
         noteID = command.noteID;
         view.setState(initialState(command.text, true));
         view.scrollDOM.scrollTop = 0;
+        // The cursor at the start, ready for when the web view has the keyboard: the app gives
+        // it after the Quick switcher, while Files keeps it after a click there.
+        view.focus();
         checkLinks(true);
         return null;
       }
