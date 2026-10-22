@@ -1,7 +1,4 @@
-import Darwin
-import Dispatch
 import Foundation
-import Synchronization
 
 /// A Wikilink in another Note that points to a Note (CONTEXT.md): the Note that holds it, the
 /// line it is on and that line as it reads.
@@ -23,7 +20,7 @@ public struct Backlink: Equatable, Sendable {
 /// links themselves: 8 bytes a link, as every link of the Vault is here. What a link says, and
 /// which Note it leads to, is read from the file when a Backlink is asked for, with the index as
 /// it is then, so a Note created or renamed later is found.
-public struct LinkMap: Sendable {
+public struct LinkMap: NoteScanned {
     /// A link's place: the file name it asks for (an id in `nameIDs`) and its line.
     private struct Place: Sendable {
         let nameID: Int32
@@ -38,29 +35,15 @@ public struct LinkMap: Sendable {
     public init() {}
 
     /// Reads `notes` again: their links replace the ones kept, a Note that cannot be read (deleted,
-    /// not UTF-8) has none. Several at a time: reading the files is what takes the time.
+    /// not UTF-8) has none.
     public mutating func rescan(_ notes: [Note], in vault: Vault) {
-        let merged = Mutex(self)
-        let chunk = 64
-        DispatchQueue.concurrentPerform(iterations: (notes.count + chunk - 1) / chunk) { part in
-            // Each chunk is turned into places as soon as it is read, so that no more than a few
-            // chunks' text is held at once.
-            var read: [(Note, [(name: String, line: Int)])] = []
-            for note in notes[(part * chunk)..<min(notes.count, (part + 1) * chunk)] {
-                var links: [(name: String, line: Int)] = []
-                if let text = try? vault.text(of: note) {
-                    Self.forEachLine(of: text) { number, line in
-                        for link in Self.links(in: line) { links.append((Self.key(of: link.inner), number)) }
-                    }
-                }
-                read.append((note, links))
+        NoteScan.read(notes, in: vault, into: &self, parse: { text in
+            var links: [(name: String, line: Int)] = []
+            MarkdownText.forEachLine(of: text) { number, line in
+                for link in Self.links(in: line) { links.append((Self.key(of: link.inner), number)) }
             }
-            merged.withLock { map in for (note, links) in read { map.set(note, links: links) } }
-        }
-        self = merged.withLock { $0 }
-        // Reading every Note leaves the allocator holding the pages it used for their text: given
-        // back, the app's memory at rest is the map's, not the scan's peak (SPEC, Budget).
-        if notes.count > chunk { malloc_zone_pressure_relief(nil, 0) }
+            return links
+        }, merge: { map, note, links in map.set(note, links: links ?? []) })
     }
 
     public mutating func remove(_ note: Note) {
@@ -90,7 +73,7 @@ public struct LinkMap: Sendable {
             // and the next read puts the map right.
             guard let text = try? vault.text(of: source) else { continue }
             let wanted = Set(places[source, default: []].filter { $0.nameID == id }.map { Int($0.line) })
-            Self.forEachLine(of: text) { number, line in
+            MarkdownText.forEachLine(of: text) { number, line in
                 guard wanted.contains(number) else { return }
                 // The first link on the line that leads here: the line is cut around it.
                 let leading = Self.links(in: line).first { link in
@@ -110,8 +93,8 @@ public struct LinkMap: Sendable {
         let plain = inner.utf8.allSatisfy { $0 < 0x80 && $0 != 124 && $0 != 35 && $0 != 92 && $0 != 47 }
         guard plain else { return name(of: Wikilink(inner: inner).target) }
         var utf8 = inner.utf8[...]
-        while let first = utf8.first, first == space || first == 9 { utf8.removeFirst() }
-        while let last = utf8.last, last == space || last == 9 { utf8.removeLast() }
+        while let first = utf8.first, first == MarkdownText.space || first == MarkdownText.tab { utf8.removeFirst() }
+        while let last = utf8.last, last == MarkdownText.space || last == MarkdownText.tab { utf8.removeLast() }
         return trimmingNoteExtension(String(Substring(utf8)).lowercased())
     }
 
@@ -128,58 +111,6 @@ public struct LinkMap: Sendable {
 
     private static let lineWidth = 200
 
-    /// Calls `body` with each line and its number, from 1, as CodeMirror counts lines: `\n`, `\r\n`
-    /// and `\r` end one. Outside a fenced code block only: its lines are not given.
-    private static func forEachLine(of text: String, _ body: (Int, ArraySlice<UInt8>) -> Void) {
-        let bytes = Array(text.utf8)
-        var fence: (mark: UInt8, length: Int)?
-        var number = 0
-        func handle(_ line: ArraySlice<UInt8>) {
-            number += 1
-            if let open = fence {
-                if closesFence(line, open.mark, open.length) { fence = nil }
-            } else if let opening = fenceOpening(line) {
-                fence = opening
-            } else {
-                body(number, line)
-            }
-        }
-        var start = 0
-        var position = 0
-        while position < bytes.count {
-            if bytes[position] == 10 || bytes[position] == 13 {
-                handle(bytes[start..<position])
-                if bytes[position] == 13, position + 1 < bytes.count, bytes[position + 1] == 10 { position += 1 }
-                start = position + 1
-            }
-            position += 1
-        }
-        handle(bytes[start...])
-    }
-
-    private static let backtick: UInt8 = 96
-    private static let tilde: UInt8 = 126
-    private static let space: UInt8 = 32
-
-    /// A line of three or more backticks or tildes, indented by at most three spaces; a backtick
-    /// fence's info string holds no backtick.
-    private static func fenceOpening(_ line: ArraySlice<UInt8>) -> (mark: UInt8, length: Int)? {
-        let rest = line.drop { $0 == space }
-        guard line.count - rest.count <= 3, let mark = rest.first, mark == backtick || mark == tilde else { return nil }
-        let length = rest.prefix { $0 == mark }.count
-        guard length >= 3 else { return nil }
-        if mark == backtick, rest.dropFirst(length).contains(backtick) { return nil }
-        return (mark, length)
-    }
-
-    private static func closesFence(_ line: ArraySlice<UInt8>, _ mark: UInt8, _ length: Int) -> Bool {
-        let rest = line.drop { $0 == space }
-        guard line.count - rest.count <= 3 else { return false }
-        let run = rest.prefix { $0 == mark }.count
-        return run >= length && rest.dropFirst(run).allSatisfy { $0 == space || $0 == 9 }
-    }
-
-    private static let backslash: UInt8 = 92
     private static let bracket: UInt8 = 91
     private static let closing: UInt8 = 93
 
@@ -191,13 +122,13 @@ public struct LinkMap: Sendable {
         var i = 0
         while i < bytes.count {
             switch bytes[i] {
-            case backslash:
+            case MarkdownText.backslash:
                 // An escaped character is text, whatever it is: `\[[x]]` is no link.
                 i += 2
-            case backtick:
-                let run = bytes[i...].prefix { $0 == backtick }.count
+            case MarkdownText.backtick:
+                let run = bytes[i...].prefix { $0 == MarkdownText.backtick }.count
                 // A code span ends at the next run of as many backticks; without one they are text.
-                i = endOfCodeSpan(in: bytes, after: i + run, length: run) ?? i + run
+                i = MarkdownText.endOfCodeSpan(in: bytes, after: i + run, length: run) ?? i + run
             case bracket where i + 1 < bytes.count && bytes[i + 1] == bracket:
                 guard i + 2 < bytes.count, bytes[i + 2] != bracket, let end = closingEnd(in: bytes, from: i + 2) else {
                     i += 1
@@ -212,26 +143,12 @@ public struct LinkMap: Sendable {
         return links
     }
 
-    private static func endOfCodeSpan(in bytes: [UInt8], after start: Int, length: Int) -> Int? {
-        var i = start
-        while i < bytes.count {
-            guard bytes[i] == backtick else {
-                i += 1
-                continue
-            }
-            let run = bytes[i...].prefix { $0 == backtick }.count
-            if run == length { return i + run }
-            i += run
-        }
-        return nil
-    }
-
     /// Where the `]]` closing a link whose name starts at `start` is, or nil: none on the line,
     /// a backtick first, or nothing between the brackets.
     private static func closingEnd(in bytes: [UInt8], from start: Int) -> Int? {
         var i = start
         while i + 1 < bytes.count {
-            if bytes[i] == backtick { return nil }
+            if bytes[i] == MarkdownText.backtick { return nil }
             if bytes[i] == closing, bytes[i + 1] == closing { return i == start ? nil : i }
             i += 1
         }

@@ -21,7 +21,7 @@ Measured at the end of every milestone on a generated Vault of 5,000 Notes (see 
 
 A feature that breaks the budget waits until it fits.
 
-Memory is measured with the right sidebar hidden, as at first launch. With it shown, memory is higher: about 10 MB for the sidebar itself and 4 MB for the links of a Vault of 5,000 Notes (8 bytes a link), which at M2 puts the total over 150 MB (CHANGELOG). The index of 5,000 Notes counts the Files listing and, with the sidebar shown, the reading of the links.
+Memory is measured as at first launch: the right sidebar hidden, the left one on Files. Showing the right sidebar costs about 11 MB of Noteki's own process (the sidebar itself, and 4 MB for the links of a Vault of 5,000 Notes, 8 bytes a link); showing the Tags pane about 1 to 5 MB (CHANGELOG). The index of 5,000 Notes counts the Files listing and, with a pane shown, the reading of what it needs (links, Tags). WebKit's processes vary between runs, from 50 to 90 MB in all, so a total is only comparable with another taken in the same conditions; Noteki's own process is steady.
 
 ## Scope
 
@@ -114,7 +114,14 @@ The right sidebar lists the Notes with a Wikilink to the Note in front, each wit
 ## Tags
 
 - Read from the `tags` Property (list or single value, with or without `#`) and from `#tag` in the text, outside code. A Tag starts with a letter and may contain letters, digits, `_`, `-` and `/`.
-- `client/axo` is nested: the *Tags* pane shows `client` with `axo` under it, and choosing `client` lists the Notes of both.
+- `client/axo` is nested: the *Tags* pane shows `client` with `axo` under it, and choosing `client` lists the Notes of both. Each Tag shows the number of Notes that have it or a Tag under it, each Note counted once.
+- A `#tag` in the text follows the start of a line or a space, as in Obsidian: `(#tag)` and `word#tag` are not Tags. The Frontmatter is not read for them. `#`, `\#` and the text of code (inline, fenced) are not Tags. Letters are any letters, accented or in other scripts.
+- Digits are 0–9 and those of other scripts, not `²` or `½`. A Tag that is only digits (`#2024`) is not one, as it starts with no letter.
+- Upper and lower case are one Tag: `#Client` and `#client`, and so is the Tag chosen in the pane and, from ticket 17, in `tag:`. It is shown as most Notes write it, the lowercase form between equals.
+- Not excluded as code, as for Backlinks: indented code blocks, fences nested in a list, a code span across lines, `%%comments%%` and HTML (`style="color: #fff"` is the Tag `fff`).
+- In the Frontmatter only the `tags` key is read: a block list (blank lines allowed in it), a flow list (on one line or several), or one value, or several separated by commas or spaces; quotes and `#` are dropped, and a YAML comment (`alpha # old`) is not read. A value that is not a Tag, or `null`, is skipped.
+- The Tags are read when the *Tags* pane is first shown, not at launch (the memory of the Budget, as with the Backlinks); until then "Reading the Tags of your Notes…". They follow the files on disk: a Tag typed in a Note is in the pane a moment after it is saved.
+- The left sidebar's *Files* and *Tags* are chosen with a control at its top; the choice is remembered in the preferences.
 - Noteki adds and removes Tags only in the `tags` Property, never in the text.
 
 ## Search and navigation

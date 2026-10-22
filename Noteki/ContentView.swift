@@ -11,7 +11,7 @@ struct ContentView: View {
 
     var body: some View {
         NavigationSplitView {
-            FilesPane(model: model)
+            LeftSidebar(model: model)
                 .navigationSplitViewColumnWidth(min: 200, ideal: 260)
         } detail: {
             if model.vault == nil {
@@ -129,7 +129,7 @@ struct NoteDetail: View {
     }
 }
 
-private struct FilesPane: View {
+struct FilesPane: View {
     @Bindable var model: AppModel
 
     var body: some View {

@@ -25,19 +25,32 @@ final class AppModel {
             updateBacklinks()
         }
     }
-    /// The Wikilinks written in each Note, read once the right sidebar is first shown and kept up
-    /// to date from then on.
-    private var linkMap = LinkMap()
-    /// The Notes whose links are read or about to be: Files' last listing.
-    private var scannedNotes: Set<Note> = []
-    /// Reading links one batch after the other keeps a later read from being overwritten by an
-    /// earlier one that finished last.
-    private var linkReading: Task<Void, Never>?
-    /// Counted from zero again for each Vault: a read begun in another one changes nothing here.
-    private var linkGeneration = 0
-    private var linkReads = 0
+    /// The Wikilinks written in each Note, read once the right sidebar is first shown.
+    private let links = ScannedNotes<LinkMap>(name: "Links")
+    /// The Tags of each Note, read once the Tags pane is first shown.
+    private let tagged = ScannedNotes<TagMap>(name: "Tags")
     /// Reads of links not finished: the sidebar says so rather than "No Backlinks".
-    var isReadingLinks: Bool { linkReads > 0 }
+    var isReadingLinks: Bool { links.isReading }
+    /// The Tags are not known yet: being read, or Files not listed.
+    var isReadingTags: Bool { tagged.isReading || !tagged.hasRead }
+    /// The Tags as a tree, and the Notes of the Tag chosen, for the Tags pane.
+    private(set) var tagTree: [TagNode] = []
+    private(set) var notesOfSelectedTag: [Note] = []
+    /// The path of the Tag chosen in the tree.
+    var selectedTag: String? {
+        didSet { updateTagNotes() }
+    }
+    enum LeftPane: String { case files, tags }
+    /// What the left sidebar shows, remembered in the preferences. Tags are read the first time
+    /// the Tags pane is shown.
+    var leftPane = LeftPane(rawValue: UserDefaults.standard.string(forKey: AppModel.leftPaneKey) ?? "") ?? .files {
+        didSet {
+            UserDefaults.standard.set(leftPane.rawValue, forKey: Self.leftPaneKey)
+            guard leftPane == .tags, oldValue != .tags, let index, let vault else { return }
+            tagged.listed(index.notes, in: vault, isWanted: true)
+        }
+    }
+    private static let leftPaneKey = "leftPane"
     /// The Backlinks of the Note in front, for the right sidebar, and the Note they were found for.
     private(set) var backlinks: [Backlink] = []
     private(set) var backlinksNote: Note?
@@ -50,8 +63,8 @@ final class AppModel {
     var isShowingSidebar = UserDefaults.standard.bool(forKey: AppModel.sidebarKey) {
         didSet {
             UserDefaults.standard.set(isShowingSidebar, forKey: Self.sidebarKey)
-            guard isShowingSidebar, !oldValue else { return }
-            scanLinksAfterListing()
+            guard isShowingSidebar, !oldValue, let index, let vault else { return }
+            links.listed(index.notes, in: vault, isWanted: true)
             updateBacklinks()
         }
     }
@@ -139,6 +152,7 @@ final class AppModel {
     init() {
         looseFile = nil
         connectEditor()
+        connectScans()
         guard let path = UserDefaults.standard.string(forKey: Self.vaultPathKey) else { return }
         var isFolder: ObjCBool = false
         if FileManager.default.fileExists(atPath: path, isDirectory: &isFolder), isFolder.boolValue {
@@ -153,6 +167,7 @@ final class AppModel {
     init(looseFile: URL) {
         self.looseFile = looseFile
         connectEditor()
+        connectScans()
         activate(Vault(root: looseFile.deletingLastPathComponent()))
         let note = Note(path: looseFile.lastPathComponent)
         afterTransition { await self.show(note) }
@@ -356,10 +371,12 @@ final class AppModel {
         shown = nil
         openNote = nil
         index = nil
-        linkMap = LinkMap()
-        scannedNotes = []
-        linkReads = 0
-        linkGeneration += 1
+        backlinkQuery?.cancel()
+        links.reset()
+        tagged.reset()
+        tagTree = []
+        notesOfSelectedTag = []
+        selectedTag = nil
         backlinks = []
         backlinksNote = nil
         previousNote = nil
@@ -386,7 +403,7 @@ final class AppModel {
         case .success(let tree):
             self.tree = tree
             index = VaultIndex(tree: tree)
-            scanLinksAfterListing()
+            readAfterListing(in: vault)
             // Read by scripts/measure.
             logger.info("Files listed: \(tree.noteCount) Notes in \((ContinuousClock.now - started).milliseconds) ms")
             if let pendingReveal, tree.item(at: pendingReveal) != nil {
@@ -400,45 +417,34 @@ final class AppModel {
         }
     }
 
-    /// Reads the links of the Notes Files lists that are new, forgets those of the Notes gone.
-    private func scanLinksAfterListing() {
-        // Once the sidebar has been shown, the map is kept up to date even when it is hidden again.
-        guard let index, isShowingSidebar || !scannedNotes.isEmpty else { return }
-        let current = Set(index.notes)
-        let added = index.notes.filter { !scannedNotes.contains($0) }
-        let gone = scannedNotes.subtracting(current)
-        scannedNotes = current
-        scanLinks(added, dropping: Array(gone))
+    /// Files was listed: the panes that read the Notes' text read the new ones.
+    private func readAfterListing(in vault: Vault) {
+        guard let index else { return }
+        links.listed(index.notes, in: vault, isWanted: isShowingSidebar)
+        tagged.listed(index.notes, in: vault, isWanted: leftPane == .tags)
     }
 
-    /// Reads `notes` again, away from the main thread and after the reads already on their way.
-    private func scanLinks(_ notes: [Note], dropping gone: [Note] = []) {
-        guard let vault, !isLooseFile, !notes.isEmpty || !gone.isEmpty else { return }
-        let previous = linkReading
-        let generation = linkGeneration
-        linkReads += 1
-        linkReading = Task {
-            await previous?.value
-            defer { if generation == linkGeneration { linkReads -= 1 } }
-            guard generation == linkGeneration else { return }
-            var map = linkMap
-            for note in gone { map.remove(note) }
-            let start = map
-            let started = ContinuousClock.now
-            map = await Task.detached {
-                var reading = start
-                reading.rescan(notes, in: vault)
-                return reading
-            }.value
-            guard generation == linkGeneration else { return }
-            // Read by scripts/measure.
-            logger.info("Links read: \(notes.count) Notes in \((ContinuousClock.now - started).milliseconds) ms")
-            linkMap = map
+    private func connectScans() {
+        links.didRead = { [weak self] notes, gone in
+            guard let self else { return }
             // The Note in front links to others, not the other way round: saving it changes no one's
             // Backlinks but the Notes it links to, which are not in front.
-            let current = noteInFront
-            if !gone.isEmpty || notes.contains(where: { $0 != current }) { updateBacklinks(after: .milliseconds(300)) }
+            if !gone.isEmpty || notes.contains(where: { $0 != noteInFront }) { updateBacklinks(after: .milliseconds(300)) }
         }
+        tagged.didRead = { [weak self] _, _ in self?.updateTags() }
+    }
+
+    private func updateTags() {
+        let tree = tagged.map.tree()
+        // Not assigned when the same: the outline is not drawn again for every save.
+        if tree != tagTree { tagTree = tree }
+        // A Tag no Note has any more is no longer chosen.
+        if let selectedTag, !tagTree.contains(where: { $0.contains(path: selectedTag) }) { self.selectedTag = nil }
+        updateTagNotes()
+    }
+
+    private func updateTagNotes() {
+        notesOfSelectedTag = selectedTag.map { tagged.map.notes(tagged: $0) } ?? []
     }
 
     private var noteInFront: Note? {
@@ -457,13 +463,12 @@ final class AppModel {
         }
         // Another Note: the last one's Backlinks must not stay under it while these are found.
         if backlinksNote != note { backlinks = [] }
-        let links = linkMap
-        let generation = linkGeneration
+        let linkMap = links.map
         backlinkQuery = Task {
             if delay > .zero { try? await Task.sleep(for: delay) }
             guard !Task.isCancelled else { return }
-            let found = await Task.detached { links.backlinks(to: note, using: index, in: vault) }.value
-            guard !Task.isCancelled, generation == linkGeneration else { return }
+            let found = await Task.detached { linkMap.backlinks(to: note, using: index, in: vault) }.value
+            guard !Task.isCancelled else { return }
             backlinks = found
             backlinksNote = note
         }
@@ -494,7 +499,9 @@ final class AppModel {
         guard !paths.isEmpty else { return }
         // A Note changed on disk, saved by Noteki or not: its links are read again. Those new to
         // Files are read once Files lists them.
-        if !scannedNotes.isEmpty { scanLinks(paths.compactMap { tree.item(at: $0)?.note }) }
+        let changedNotes = paths.compactMap { tree.item(at: $0)?.note }
+        links.changed(changedNotes, in: vault)
+        tagged.changed(changedNotes, in: vault)
         if !isLooseFile, change.mustRescan || paths.contains(where: { appearedOrDisappeared($0, in: vault) }) {
             // A Note or Attachment created or deleted by another app, such as Takku's new
             // Meeting notes: Files lists it without a relaunch.
@@ -857,7 +864,7 @@ final class AppModel {
     }
 }
 
-private extension Duration {
+extension Duration {
     var milliseconds: Int64 { components.seconds * 1000 + components.attoseconds / 1_000_000_000_000_000 }
 }
 
@@ -880,5 +887,12 @@ private extension [VaultItem] {
             }
         }
         return nil
+    }
+}
+
+private extension TagNode {
+    /// Whether this Tag or one under it has the path.
+    func contains(path wanted: String) -> Bool {
+        path == wanted || children.contains { $0.contains(path: wanted) }
     }
 }

@@ -30,3 +30,17 @@ Memory by process: Noteki 55 MB, WebKit's WebContent 51 MB, GPU 13 MB, Networkin
 | Memory at rest | 146 MB | 149 MB | 155 MB | 150 MB |
 
 With the sidebar shown the memory is over by 5 MB: Noteki 75 MB (59 hidden), of which the links are about 4 MB and the sidebar about 10 MB. Reading the links the first time after a Vault is generated takes 16 s (macOS looks at new files); every later launch, 1.5–1.9 s. Hidden, the margin is 1 MB.
+
+### Budget with the Tags pane (ticket 16)
+
+`BACKGROUND=1 scripts/measure`, same Vault and method, run in turn on the same build:
+
+| | Default (Files, sidebar hidden) | `SIDEBAR=1` | `TAGS=1` | Limit |
+|---|---|---|---|---|
+| Noteki's own process | 59 MB | 70 MB | 60 MB | |
+| Memory at rest, all processes | 108 MB | 117 MB | 109 MB | 150 MB |
+| Cold start to a Note shown | 0.84 s | 0.89 s | 0.90 s | 1 s |
+| Listing 5,000 Notes | 0.30 s | 0.26 s | 0.26 s | 3 s |
+| Listing and reading links / Tags | | 2.2 s | 2.0 s | 3 s |
+
+Correction to the M2 table above: WebKit's processes were 60 to 69 MB of the totals there, and are 30 MB in this run, on the same method. The WebKit figure varies from run to run on this Mac (other apps, the state of WebKit's caches), so the totals of the two tables are not comparable. Noteki's own process is the steady figure: 55 MB at ticket 14, 59 MB now, 70 MB with the right sidebar shown. At worst WebKit's 69 MB, which has been seen, makes the sidebar-shown total 155 MB. Reading the links of 5,000 Notes is 1.5 to 2.2 s, slower than before the reading was shared with Tags (1.5 s); the Tags take 1.8 to 2.0 s.

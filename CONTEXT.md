@@ -45,7 +45,7 @@ One key and its value in the Frontmatter, such as `participants` or `duration`.
 _Avoid_: field, attribute, metadata
 
 **Tag** (`Tag`):
-A label of a Note, written in the `tags` Property or as `#tag` in the text. A `/` makes a Tag nested (`client/axo`), and the Tags form a tree.
+A label of a Note, written in the `tags` Property or as `#tag` in the text. A `/` makes a Tag nested (`client/axo`), and the Tags form a tree. `#Client` and `#client` are one Tag, shown as most Notes write it.
 _Avoid_: label, category, keyword
 
 **Comment** (`Comment`):
