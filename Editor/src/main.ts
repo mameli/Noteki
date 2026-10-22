@@ -139,8 +139,16 @@ window.noteki = {
         noteID = command.noteID;
         view.setState(initialState(command.text, true));
         view.scrollDOM.scrollTop = 0;
-        // The cursor at the start, ready for when the web view has the keyboard: the app gives
-        // it after the Quick switcher, while Files keeps it after a click there.
+        if (command.line !== undefined) {
+          // A Backlink: the cursor on its line, in the middle of the view.
+          const line = view.state.doc.line(Math.min(Math.max(command.line, 1), view.state.doc.lines));
+          view.dispatch({
+            selection: { anchor: line.from },
+            effects: EditorView.scrollIntoView(line.from, { y: "center" }),
+          });
+        }
+        // Ready for typing when the web view has the keyboard: the app gives it after the Quick
+        // switcher or a Backlink, while Files keeps it after a click there.
         view.focus();
         checkLinks(true);
         return null;

@@ -6,8 +6,9 @@ import Foundation
 /// From the app to the editor.
 public enum EditorCommand: Encodable, Sendable {
     /// Show this Note's text. The editor tags what it reports with `noteID`, so text typed in
-    /// one Note can never be saved into another.
-    case load(noteID: String, text: String)
+    /// one Note can never be saved into another. `line`, counted from 1, is where the cursor goes
+    /// and the view scrolls to: a Backlink opens its Note at the link. Without it, the start.
+    case load(noteID: String, text: String, line: Int?)
     /// The same Note changed on disk: show its new text, the cursor kept at the same place in
     /// the text, outside the undo history. `revision` is the last report the app received: the
     /// editor replies "applied" only if it has nothing newer, otherwise it reports first and
@@ -36,16 +37,17 @@ public enum EditorCommand: Encodable, Sendable {
     public static let types = ["load", "reload", "flush", "clear", "selectAll", "undo", "redo", "find", "unresolvedLinks", "linkCompletions"]
 
     private enum CodingKeys: String, CodingKey {
-        case type, noteID, revision, text, step, inners, requestID, completions
+        case type, noteID, revision, text, step, inners, requestID, completions, line
     }
 
     public func encode(to encoder: any Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
         switch self {
-        case .load(let noteID, let text):
+        case .load(let noteID, let text, let line):
             try container.encode("load", forKey: .type)
             try container.encode(noteID, forKey: .noteID)
             try container.encode(text, forKey: .text)
+            try container.encodeIfPresent(line, forKey: .line)
         case .reload(let noteID, let revision, let text):
             try container.encode("reload", forKey: .type)
             try container.encode(noteID, forKey: .noteID)

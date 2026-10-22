@@ -24,6 +24,18 @@ struct ContentView: View {
                 }
             } else {
                 NoteDetail(model: model)
+                    .inspector(isPresented: $model.isShowingSidebar) {
+                        BacklinksPane(model: model)
+                            .inspectorColumnWidth(min: 220, ideal: 280, max: 420)
+                    }
+            }
+        }
+        .toolbar {
+            if model.vault != nil {
+                ToolbarItem {
+                    Button("Right Sidebar", systemImage: "sidebar.trailing") { model.isShowingSidebar.toggle() }
+                        .help("Show or hide the Backlinks")
+                }
             }
         }
         .overlay(alignment: .top) {

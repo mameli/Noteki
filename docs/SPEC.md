@@ -21,6 +21,8 @@ Measured at the end of every milestone on a generated Vault of 5,000 Notes (see 
 
 A feature that breaks the budget waits until it fits.
 
+Memory is measured with the right sidebar hidden, as at first launch. With it shown, memory is higher: about 10 MB for the sidebar itself and 4 MB for the links of a Vault of 5,000 Notes (8 bytes a link), which at M2 puts the total over 150 MB (CHANGELOG). The index of 5,000 Notes counts the Files listing and, with the sidebar shown, the reading of the links.
+
 ## Scope
 
 **In v1**: everything in this document.
@@ -102,7 +104,12 @@ Noteki watches the Vault with FSEvents ([ADR 0005](adr/0005-merge-external-chang
 
 ### Backlinks
 
-The right sidebar lists the Notes with a Wikilink to the Note in front, each with the line that holds the link. Unlinked mentions (the name written without `[[ ]]`) are not listed.
+The right sidebar lists the Notes with a Wikilink to the Note in front, each with the line that holds the link (cut around the link when it is long). Clicking one opens that Note with the cursor on that line. Unlinked mentions (the name written without `[[ ]]`) are not listed.
+
+- A link counts as Obsidian counts it: `[[name]]`, with an Alias, a heading or a block (`[[name#heading]]`, which leads to the Note), a path, an Embed `![[name]]`, and a link in the Frontmatter. A link to the Note itself does not, and several on a line are one Backlink. Which Note a link leads to is decided by the same resolution as a click, from the Note that holds it.
+- Links in code (inline, fenced) do not count; a backslash-escaped `\[[` does not either. Not excluded: indented code blocks, fences nested in a list, a code span across lines, `%%comments%%`.
+- Backlinks come from the files on disk: a link typed in a Note shows in the Backlinks of its target a moment after it is saved.
+- The sidebar is **hidden at first** (⌥⌘0, or the toolbar button; remembered in the preferences). The links of the Vault are read when it is first shown, not at launch, because holding them costs memory (see Budget). Until then, "Reading the links of your Notes…".
 
 ## Tags
 
@@ -157,4 +164,4 @@ Each milestone ends with an app the user can use every day.
 - **Native text behaviour in the web view**: select-all, find, Services and accessibility do not work by themselves because CodeMirror draws only the visible lines. MarkEdit's solutions are the starting point.
 - **Live preview that jumps**: hiding and showing syntax changes widths and heights. Every extension is tried on the Vault's longest Meeting notes before M3 ends.
 - **Merge on large rewrites**: when Takku rewrites most of a Note at once, a Conflict may be frequent. If it is, the base is taken at the moment the user starts typing rather than at the last save.
-- **The memory budget**: the WebKit process alone may use most of the 150 MB. Measured at M1, before anything else is built on it.
+- **The memory budget**: the WebKit processes alone use about 80 MB of the 150. Measured at M1, before anything else is built on it, and at the end of every milestone. At M2 the budget holds only with the right sidebar hidden; what Tags, Search and the Outline add has to fit in what is left, or be read only when its pane is first shown, as the Backlinks are.

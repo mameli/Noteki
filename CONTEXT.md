@@ -75,7 +75,7 @@ A Wikilink whose name matches no Note in the Vault. Following it creates that No
 _Avoid_: broken link, dead link
 
 **Backlink** (`Backlink`):
-A Wikilink in another Note that points to the Note being looked at.
+A Wikilink in another Note that points to the Note being looked at. An Embed of the Note and a link in the Frontmatter count too, as in Obsidian.
 _Avoid_: incoming link, reference, mention
 
 ### Reading and writing

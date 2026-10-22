@@ -33,7 +33,7 @@ public struct VaultIndex: Sendable {
     /// Noteki does not show (Obsidian's `.canvas`, say).
     private let byName: [String: [Candidate]]
     /// The Notes, in the order Files lists them.
-    let notes: [Note]
+    public let notes: [Note]
     /// Their names as the Quick switcher matches them, in the same order.
     let foldedNames: [String]
 

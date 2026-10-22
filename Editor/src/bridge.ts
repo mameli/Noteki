@@ -3,8 +3,11 @@
 
 /** From the app to the editor. */
 export type EditorCommand =
-  /** Show this Note's text; what the editor reports is tagged with `noteID`. */
-  | { type: "load"; noteID: string; text: string }
+  /**
+   * Show this Note's text; what the editor reports is tagged with `noteID`. `line`, from 1, is
+   * where the cursor goes and the view scrolls to: a Backlink opens its Note at the link.
+   */
+  | { type: "load"; noteID: string; text: string; line?: number }
   /**
    * The same Note changed on disk: its new text, the cursor kept in place, outside the undo
    * history. `revision` is the last report the app received. Replies "applied", or null when the

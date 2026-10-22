@@ -244,6 +244,10 @@ public enum VaultItem: Hashable, Sendable {
         case .attachment(let attachment): attachment.name
         }
     }
+    /// The Note, nil for a folder or an Attachment.
+    public var note: Note? {
+        if case .note(let note) = self { note } else { nil }
+    }
 }
 
 /// A Markdown file in the Vault, identified by its path from the Vault's root.

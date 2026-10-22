@@ -23,10 +23,17 @@ struct EditorBridgeTests {
     @Test("a load command carries the Note and its text")
     func load() throws {
         let json = try JSONSerialization.jsonObject(
-            with: JSONEncoder().encode(EditorCommand.load(noteID: "Meetings/Retro.md", text: "# Retro\n"))
+            with: JSONEncoder().encode(EditorCommand.load(noteID: "Meetings/Retro.md", text: "# Retro\n", line: nil))
         ) as? [String: String]
 
         #expect(json == ["type": "load", "noteID": "Meetings/Retro.md", "text": "# Retro\n"])
+    }
+
+    @Test("a load command can ask for a line, counted from 1")
+    func loadAtLine() throws {
+        let command = EditorCommand.load(noteID: "n1", text: "a\nb", line: 2)
+
+        #expect(try command.json() == #"{"line":2,"noteID":"n1","text":"a\nb","type":"load"}"#)
     }
 
     @Test("editing commands from the app's menus need nothing else")

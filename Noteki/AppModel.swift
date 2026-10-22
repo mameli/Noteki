@@ -20,8 +20,44 @@ final class AppModel {
     private(set) var tree: [VaultItem] = []
     /// The Vault's files by name, to resolve Wikilinks; rebuilt whenever Files is listed.
     private var index: VaultIndex? {
-        didSet { markUnresolvedLinks() }
+        didSet {
+            markUnresolvedLinks()
+            updateBacklinks()
+        }
     }
+    /// The Wikilinks written in each Note, read once the right sidebar is first shown and kept up
+    /// to date from then on.
+    private var linkMap = LinkMap()
+    /// The Notes whose links are read or about to be: Files' last listing.
+    private var scannedNotes: Set<Note> = []
+    /// Reading links one batch after the other keeps a later read from being overwritten by an
+    /// earlier one that finished last.
+    private var linkReading: Task<Void, Never>?
+    /// Counted from zero again for each Vault: a read begun in another one changes nothing here.
+    private var linkGeneration = 0
+    private var linkReads = 0
+    /// Reads of links not finished: the sidebar says so rather than "No Backlinks".
+    var isReadingLinks: Bool { linkReads > 0 }
+    /// The Backlinks of the Note in front, for the right sidebar, and the Note they were found for.
+    private(set) var backlinks: [Backlink] = []
+    private(set) var backlinksNote: Note?
+    private var backlinkQuery: Task<Void, Never>?
+    /// The Backlinks shown are those of the Note in front: an empty list is an answer, not a wait.
+    var backlinksAreFound: Bool { backlinksNote != nil && backlinksNote == noteInFront }
+    /// The right sidebar, remembered across launches in the app's preferences. Hidden at first, as
+    /// in Obsidian. The Notes' links are read when it is first shown, not before: a Vault of 5,000
+    /// Notes would hold about 4 MB for a sidebar nobody opened (SPEC, Budget).
+    var isShowingSidebar = UserDefaults.standard.bool(forKey: AppModel.sidebarKey) {
+        didSet {
+            UserDefaults.standard.set(isShowingSidebar, forKey: Self.sidebarKey)
+            guard isShowingSidebar, !oldValue else { return }
+            scanLinksAfterListing()
+            updateBacklinks()
+        }
+    }
+    private static let sidebarKey = "rightSidebar"
+    /// A Backlink chosen: its Note opens with the cursor on that line once it is in front.
+    private var lineToShow: (note: Note, line: Int)?
     /// The Notes opened in this Vault, the latest first, offered first to complete a Wikilink
     /// and in the Quick switcher.
     private var recentNotes: [Note] = []
@@ -37,7 +73,10 @@ final class AppModel {
     private var openNoteLinks: [String] = []
     /// The Note or Attachment selected, nil before the first choice.
     private(set) var shown: Shown? {
-        didSet { editor.isInFront = isShowingNote }
+        didSet {
+            editor.isInFront = isShowingNote
+            updateBacklinks()
+        }
     }
     /// Why the Vault or what is shown cannot be read, in words for the user.
     private(set) var failure: String? {
@@ -317,6 +356,12 @@ final class AppModel {
         shown = nil
         openNote = nil
         index = nil
+        linkMap = LinkMap()
+        scannedNotes = []
+        linkReads = 0
+        linkGeneration += 1
+        backlinks = []
+        backlinksNote = nil
         previousNote = nil
         revisions = [:]
         editor.clear()
@@ -341,6 +386,7 @@ final class AppModel {
         case .success(let tree):
             self.tree = tree
             index = VaultIndex(tree: tree)
+            scanLinksAfterListing()
             // Read by scripts/measure.
             logger.info("Files listed: \(tree.noteCount) Notes in \((ContinuousClock.now - started).milliseconds) ms")
             if let pendingReveal, tree.item(at: pendingReveal) != nil {
@@ -352,6 +398,84 @@ final class AppModel {
             guard !refresh else { return }
             failure = "Cannot read the Vault \(vault.root.lastPathComponent): \(error.localizedDescription)"
         }
+    }
+
+    /// Reads the links of the Notes Files lists that are new, forgets those of the Notes gone.
+    private func scanLinksAfterListing() {
+        // Once the sidebar has been shown, the map is kept up to date even when it is hidden again.
+        guard let index, isShowingSidebar || !scannedNotes.isEmpty else { return }
+        let current = Set(index.notes)
+        let added = index.notes.filter { !scannedNotes.contains($0) }
+        let gone = scannedNotes.subtracting(current)
+        scannedNotes = current
+        scanLinks(added, dropping: Array(gone))
+    }
+
+    /// Reads `notes` again, away from the main thread and after the reads already on their way.
+    private func scanLinks(_ notes: [Note], dropping gone: [Note] = []) {
+        guard let vault, !isLooseFile, !notes.isEmpty || !gone.isEmpty else { return }
+        let previous = linkReading
+        let generation = linkGeneration
+        linkReads += 1
+        linkReading = Task {
+            await previous?.value
+            defer { if generation == linkGeneration { linkReads -= 1 } }
+            guard generation == linkGeneration else { return }
+            var map = linkMap
+            for note in gone { map.remove(note) }
+            let start = map
+            let started = ContinuousClock.now
+            map = await Task.detached {
+                var reading = start
+                reading.rescan(notes, in: vault)
+                return reading
+            }.value
+            guard generation == linkGeneration else { return }
+            // Read by scripts/measure.
+            logger.info("Links read: \(notes.count) Notes in \((ContinuousClock.now - started).milliseconds) ms")
+            linkMap = map
+            // The Note in front links to others, not the other way round: saving it changes no one's
+            // Backlinks but the Notes it links to, which are not in front.
+            let current = noteInFront
+            if !gone.isEmpty || notes.contains(where: { $0 != current }) { updateBacklinks(after: .milliseconds(300)) }
+        }
+    }
+
+    private var noteInFront: Note? {
+        if case .note(let note)? = shown { note } else { nil }
+    }
+
+    /// Asks for the Backlinks of the Note in front: read away from the main thread, as they read
+    /// the Notes that link to it. Only while the sidebar shows them. A newer question drops the
+    /// answer to an older one; `delay` lets a burst of saves count as one.
+    private func updateBacklinks(after delay: Duration = .zero) {
+        backlinkQuery?.cancel()
+        guard isShowingSidebar, let index, let vault, let note = noteInFront else {
+            backlinks = []
+            backlinksNote = nil
+            return
+        }
+        // Another Note: the last one's Backlinks must not stay under it while these are found.
+        if backlinksNote != note { backlinks = [] }
+        let links = linkMap
+        let generation = linkGeneration
+        backlinkQuery = Task {
+            if delay > .zero { try? await Task.sleep(for: delay) }
+            guard !Task.isCancelled else { return }
+            let found = await Task.detached { links.backlinks(to: note, using: index, in: vault) }.value
+            guard !Task.isCancelled, generation == linkGeneration else { return }
+            backlinks = found
+            backlinksNote = note
+        }
+    }
+
+    /// Opens the Note of a Backlink with the cursor on the line that holds the link.
+    func open(_ backlink: Backlink) {
+        // Already in front, with the user in it: nothing to move to.
+        guard shown != .note(backlink.note) else { return editor.focus() }
+        lineToShow = (backlink.note, backlink.line)
+        reveal(backlink.note.path)
+        focusEditorWhenShown(backlink.note)
     }
 
     /// From the Vault's watcher: files changed on disk, by Noteki or another app.
@@ -368,6 +492,9 @@ final class AppModel {
         // Events were lost or merged into folders: anything may have changed.
         if change.mustRescan, let open = openNote { paths.insert(open.note.path) }
         guard !paths.isEmpty else { return }
+        // A Note changed on disk, saved by Noteki or not: its links are read again. Those new to
+        // Files are read once Files lists them.
+        if !scannedNotes.isEmpty { scanLinks(paths.compactMap { tree.item(at: $0)?.note }) }
         if !isLooseFile, change.mustRescan || paths.contains(where: { appearedOrDisappeared($0, in: vault) }) {
             // A Note or Attachment created or deleted by another app, such as Takku's new
             // Meeting notes: Files lists it without a relaunch.
@@ -528,6 +655,9 @@ final class AppModel {
 
     private func show(_ note: Note) async {
         guard let vault else { return }
+        // Taken now, so that a Note not opened never keeps it for later.
+        let line = lineToShow?.note == note ? lineToShow?.line : nil
+        lineToShow = nil
         guard openNote?.note != note else {
             shown = .note(note)
             focusIfShown()
@@ -549,7 +679,7 @@ final class AppModel {
             openNoteLinks = []
             // Revisions matter only for the Note open and the one just left.
             revisions = revisions.filter { $0.key == previousNoteID }
-            editor.load(noteID: openNoteID, text: open.text)
+            editor.load(noteID: openNoteID, text: open.text, line: line)
             failure = nil
             opened(note)
             focusIfShown()

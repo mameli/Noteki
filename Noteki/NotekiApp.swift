@@ -29,6 +29,12 @@ struct NotekiApp: App {
                 Button("Open Vault…") { model.chooseVault() }
                     .keyboardShortcut("o", modifiers: [.command, .shift])
             }
+            CommandGroup(after: .sidebar) {
+                Button(model.isShowingSidebar ? "Hide Right Sidebar" : "Show Right Sidebar") {
+                    model.isShowingSidebar.toggle()
+                }
+                .keyboardShortcut("0", modifiers: [.command, .option])
+            }
             EditCommands(model: model)
             ZoomCommands()
         }

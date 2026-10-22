@@ -31,7 +31,7 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
 
     private var isReady = false
     /// What the editor shows, or will show once it is ready.
-    private var loaded: (noteID: String, text: String)?
+    private var loaded: (noteID: String, text: String, line: Int?)?
     private let page = Bundle.main.url(forResource: "editor", withExtension: "html")
     /// A flush that gets no answer in this time gives up: quitting must not hang on the editor.
     private static let flushTimeout: Duration = .seconds(2)
@@ -69,11 +69,12 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
         loadPage()
     }
 
-    func load(noteID: String, text: String) {
-        loaded = (noteID, text)
+    /// Shows a Note, at `line` (from 1) if given: where a Backlink points.
+    func load(noteID: String, text: String, line: Int? = nil) {
+        loaded = (noteID, text, line)
         guard isReady else { return }
         // Read by scripts/measure.
-        run(.load(noteID: noteID, text: text)) { _ in logger.info("Note shown") }
+        run(.load(noteID: noteID, text: text, line: line)) { _ in logger.info("Note shown") }
     }
 
     /// An editing command from the menus, when a Note is in front.
@@ -105,7 +106,7 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
                 continuation.resume(returning: reply == "applied")
             }
         }
-        if applied { loaded = (noteID, text) }
+        if applied { loaded = (noteID, text, nil) }
         return applied
     }
 
@@ -166,10 +167,10 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
         switch message {
         case .ready:
             isReady = true
-            if let loaded { load(noteID: loaded.noteID, text: loaded.text) }
+            if let loaded { load(noteID: loaded.noteID, text: loaded.text, line: loaded.line) }
         case .changed(let noteID, let revision, let text):
             // Late keys of the Note just left must not become what a reload shows.
-            if loaded?.noteID == noteID { loaded = (noteID, text) }
+            if loaded?.noteID == noteID { loaded = (noteID, text, nil) }
             onChange(noteID, revision, text)
         case .followLink(let inner):
             onFollowLink(inner)
