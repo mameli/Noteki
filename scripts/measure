@@ -4,8 +4,9 @@
 # window and one Note, WebKit's processes included.
 #
 # The right sidebar is hidden and the left one shows Files, as at first launch. SIDEBAR=1 shows
-# the right one: the Notes' links are then read after Files is listed, and the Backlinks of the
-# Note shown are found. TAGS=1 shows the Tags pane: the Notes' Tags are read. BACKGROUND=1 launches
+# the right one, on its Outline; BACKLINKS=1 shows it on its Backlinks: the Notes' links are then
+# read after Files is listed, and the Backlinks of the Note shown are found. TAGS=1 shows the
+# Tags pane: the Notes' Tags are read. BACKGROUND=1 launches
 # without taking the keyboard from whoever is typing: WebKit's figures differ from a foreground
 # launch's, so compare like with like. Run it at the end of every milestone and note the results
 # in CHANGELOG.md.
@@ -49,12 +50,14 @@ note="$vault/Folder 00/Note 0000.md"
 previous="$(defaults read "$domain" vaultPath 2>/dev/null || true)"
 previous_sidebar="$(defaults read "$domain" rightSidebar 2>/dev/null || true)"
 previous_pane="$(defaults read "$domain" leftPane 2>/dev/null || true)"
+previous_right="$(defaults read "$domain" rightPane 2>/dev/null || true)"
 restore() {
     trap - EXIT INT TERM HUP
     osascript -e 'quit app "Noteki"' >/dev/null 2>&1 || true
     # Noteki saves before it quits: the generated Vault goes only once it is gone.
     for _ in $(seq 1 50); do pgrep -x Noteki >/dev/null || break; sleep 0.2; done
     if [ -n "$previous" ]; then defaults write "$domain" vaultPath "$previous"; else defaults delete "$domain" vaultPath >/dev/null 2>&1 || true; fi
+    if [ -n "$previous_right" ]; then defaults write "$domain" rightPane "$previous_right"; else defaults delete "$domain" rightPane >/dev/null 2>&1 || true; fi
     if [ -n "$previous_pane" ]; then defaults write "$domain" leftPane "$previous_pane"; else defaults delete "$domain" leftPane >/dev/null 2>&1 || true; fi
     if [ -n "$previous_sidebar" ]; then defaults write "$domain" rightSidebar -bool "$( [ "$previous_sidebar" = 1 ] && echo true || echo false )"; else defaults delete "$domain" rightSidebar >/dev/null 2>&1 || true; fi
     rm -rf "$work"
@@ -62,7 +65,9 @@ restore() {
 trap restore EXIT
 trap 'restore; exit 130' INT TERM HUP
 defaults write "$domain" vaultPath "$vault"
+[ "${BACKLINKS:-0}" = 1 ] && SIDEBAR=1
 if [ "${SIDEBAR:-0}" = 1 ]; then defaults write "$domain" rightSidebar -bool true; else defaults write "$domain" rightSidebar -bool false; fi
+if [ "${BACKLINKS:-0}" = 1 ]; then defaults write "$domain" rightPane backlinks; else defaults write "$domain" rightPane outline; fi
 if [ "${TAGS:-0}" = 1 ]; then defaults write "$domain" leftPane tags; else defaults write "$domain" leftPane files; fi
 
 webkit_pids() { pgrep -f 'com.apple.WebKit\.(WebContent|Networking|GPU)' | sort; }
@@ -78,7 +83,7 @@ open ${BACKGROUND:+-g} -a "$app" "$note"
 for _ in $(seq 1 100); do grep -q 'Note shown' "$work/log" && break; sleep 0.1; done
 # With the sidebar shown the links are read after Files is listed: wait for them (a just-generated
 # Vault reads slowly at first, while macOS looks at the new files), then let memory settle.
-if [ "${SIDEBAR:-0}" = 1 ]; then
+if [ "${BACKLINKS:-0}" = 1 ]; then
     for _ in $(seq 1 400); do grep -q 'Links read' "$work/log" && break; sleep 0.1; done
 fi
 if [ "${TAGS:-0}" = 1 ]; then

@@ -1,7 +1,8 @@
 import NotekiCore
 import SwiftUI
 
-/// The right sidebar: the Notes with a Wikilink to the Note in front, each with its line.
+/// The Backlinks pane of the right sidebar: the Notes with a Wikilink to the Note in front,
+/// each with its line.
 struct BacklinksPane: View {
     let model: AppModel
 
@@ -9,13 +10,10 @@ struct BacklinksPane: View {
         ScrollView {
             // Not a List: its table costs several MB for the few rows a Note has.
             LazyVStack(alignment: .leading, spacing: 0) {
-                Text("Backlinks")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
                 if model.backlinks.isEmpty {
                     emptyState
+                        .foregroundStyle(.secondary)
+                        .padding(12)
                 }
                 ForEach(model.backlinks) { backlink in
                     Button { model.open(backlink) } label: {

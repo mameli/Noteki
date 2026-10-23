@@ -21,7 +21,7 @@ Measured at the end of every milestone on a generated Vault of 5,000 Notes (see 
 
 A feature that breaks the budget waits until it fits.
 
-Memory is measured as at first launch: the right sidebar hidden, the left one on Files. Showing the right sidebar costs about 11 MB of Noteki's own process (the sidebar itself, and 4 MB for the links of a Vault of 5,000 Notes, 8 bytes a link); showing the Tags pane about 1 to 5 MB (CHANGELOG). The index of 5,000 Notes counts the Files listing and, with a pane shown, the reading of what it needs (links, Tags). WebKit's processes vary between runs, from 50 to 90 MB in all, so a total is only comparable with another taken in the same conditions; Noteki's own process is steady.
+Memory is measured as at first launch: the right sidebar hidden, the left one on Files. Showing the right sidebar costs about 10 MB of Noteki's own process, on its Outline, and its Backlinks pane about 6 MB more, the links of a Vault of 5,000 Notes (8 bytes a link) and their list; showing the Tags pane about 1 to 5 MB (CHANGELOG). The index of 5,000 Notes counts the Files listing and, with a pane shown, the reading of what it needs (links, Tags). WebKit's processes vary between runs, from 50 to 90 MB in all, so a total is only comparable with another taken in the same conditions; Noteki's own process is steady.
 
 ## Scope
 
@@ -109,7 +109,11 @@ The right sidebar lists the Notes with a Wikilink to the Note in front, each wit
 - A link counts as Obsidian counts it: `[[name]]`, with an Alias, a heading or a block (`[[name#heading]]`, which leads to the Note), a path, an Embed `![[name]]`, and a link in the Frontmatter. A link to the Note itself does not, and several on a line are one Backlink. Which Note a link leads to is decided by the same resolution as a click, from the Note that holds it.
 - Links in code (inline, fenced) do not count; a backslash-escaped `\[[` does not either. Not excluded: indented code blocks, fences nested in a list, a code span across lines, `%%comments%%`.
 - Backlinks come from the files on disk: a link typed in a Note shows in the Backlinks of its target a moment after it is saved.
-- The sidebar is **hidden at first** (⌥⌘0, or the toolbar button; remembered in the preferences). The links of the Vault are read when it is first shown, not at launch, because holding them costs memory (see Budget). Until then, "Reading the links of your Notes…".
+- The sidebar is **hidden at first** (⌥⌘0, or the toolbar button; remembered in the preferences). Its *Outline* and *Backlinks* are chosen with a control at its top, the Outline first; the choice is remembered too. The links of the Vault are read when the Backlinks are first shown, not at launch, because holding them costs memory (see Budget). Until then, "Reading the links of your Notes…".
+
+### Outline
+
+The right sidebar's Outline lists the Headings of the Note in front, indented by level, as it is typed: `#` to `######`, and a paragraph underlined with `===` or `---` (at its first line; a rule under a list item, a quote or another rule is no Heading). Not in fenced code nor in the Frontmatter; Headings inside a quote, a list item or a `%%` Comment are not distinguished yet. A Heading's text is shown without the marks of its links, emphasis and code; an empty Heading is left out. A click puts the cursor at the start of the Heading's line, in the middle of the view.
 
 ## Tags
 

@@ -53,7 +53,7 @@ Text between `%%` marks: part of the Note, hidden while reading. Takku uses it t
 _Avoid_: hidden text, annotation
 
 **Heading** (`Heading`):
-A Markdown title line in a Note. The Headings of a Note make its Outline.
+A Markdown title in a Note: a line starting with `#` to `######`, or a paragraph underlined with `===` or `---`. The Headings of a Note make its Outline.
 _Avoid_: section, title (that is the Note's name)
 
 ### Links

@@ -73,17 +73,52 @@ final class AppModel {
     /// The Backlinks shown are those of the Note in front: an empty list is an answer, not a wait.
     var backlinksAreFound: Bool { backlinksNote != nil && backlinksNote == noteInFront }
     /// The right sidebar, remembered across launches in the app's preferences. Hidden at first, as
-    /// in Obsidian. The Notes' links are read when it is first shown, not before: a Vault of 5,000
-    /// Notes would hold about 4 MB for a sidebar nobody opened (SPEC, Budget).
+    /// in Obsidian. The Notes' links are read when the Backlinks are first shown, not before: a
+    /// Vault of 5,000 Notes would hold about 4 MB for a pane nobody opened (SPEC, Budget).
     var isShowingSidebar = UserDefaults.standard.bool(forKey: AppModel.sidebarKey) {
         didSet {
             UserDefaults.standard.set(isShowingSidebar, forKey: Self.sidebarKey)
-            guard isShowingSidebar, !oldValue, let index, let vault else { return }
-            links.listed(index.notes, in: vault, isWanted: true)
-            updateBacklinks()
+            if isShowingSidebar != oldValue { rightSidebarChanged() }
         }
     }
     private static let sidebarKey = "rightSidebar"
+    enum RightPane: String { case outline, backlinks }
+    /// What the right sidebar shows, remembered in the preferences.
+    var rightPane = RightPane(rawValue: UserDefaults.standard.string(forKey: AppModel.rightPaneKey) ?? "") ?? .outline {
+        didSet {
+            UserDefaults.standard.set(rightPane.rawValue, forKey: Self.rightPaneKey)
+            if rightPane != oldValue { rightSidebarChanged() }
+        }
+    }
+    private static let rightPaneKey = "rightPane"
+    private var isShowingBacklinks: Bool { isShowingSidebar && rightPane == .backlinks }
+    /// A Loose file's window has no right sidebar, whatever the preferences say.
+    private var isShowingOutline: Bool { isShowingSidebar && rightPane == .outline && !isLooseFile }
+    /// The Headings of the Note in front, as it is typed, for the Outline.
+    private(set) var outline: [Heading] = []
+
+    private func rightSidebarChanged() {
+        updateOutline()
+        guard isShowingBacklinks, let index, let vault else { return updateBacklinks() }
+        links.listed(index.notes, in: vault, isWanted: true)
+        updateBacklinks()
+    }
+
+    /// From the text of the open Note as the editor last reported it: the Outline follows typing.
+    private func updateOutline() {
+        guard isShowingOutline, let open = openNote, noteInFront == open.note else {
+            if !outline.isEmpty { outline = [] }
+            return
+        }
+        let headings = open.outline
+        if headings != outline { outline = headings }
+    }
+
+    /// Moves the editor to a Heading of the Note in front.
+    func go(to heading: Heading) {
+        guard let note = noteInFront else { return }
+        open(note, atLine: heading.line)
+    }
     /// A Backlink chosen: its Note opens with the cursor on that line once it is in front.
     private var lineToShow: (note: Note, line: Int)?
     /// The Notes opened in this Vault, the latest first, offered first to complete a Wikilink
@@ -104,6 +139,7 @@ final class AppModel {
         didSet {
             editor.isInFront = isShowingNote
             updateBacklinks()
+            updateOutline()
         }
     }
     /// Why the Vault or what is shown cannot be read, in words for the user.
@@ -117,7 +153,10 @@ final class AppModel {
     let editor = EditorController()
     /// The Note in the editor, kept while an Attachment is in front.
     private var openNote: OpenNote? {
-        didSet { conflict = openNote.flatMap { open in open.conflict.map { .init(mine: open.text, theirs: $0.theirs) } } }
+        didSet {
+            conflict = openNote.flatMap { open in open.conflict.map { .init(mine: open.text, theirs: $0.theirs) } }
+            updateOutline()
+        }
     }
     /// The open Note's Conflict, for the banner: the user's text as it is now and the file's.
     private(set) var conflict: OpenNote.Conflict?
@@ -438,7 +477,7 @@ final class AppModel {
     /// Files was listed: the panes that read the Notes' text read the new ones.
     private func readAfterListing(in vault: Vault) {
         guard let index else { return }
-        links.listed(index.notes, in: vault, isWanted: isShowingSidebar)
+        links.listed(index.notes, in: vault, isWanted: isShowingBacklinks)
         tagged.listed(index.notes, in: vault, isWanted: leftPane == .tags)
         // Another Vault, or new Notes: the results are found again.
         if leftPane == .search, !searchText.isEmpty { search() }
@@ -476,7 +515,7 @@ final class AppModel {
     /// answer to an older one; `delay` lets a burst of saves count as one.
     private func updateBacklinks(after delay: Duration = .zero) {
         backlinkQuery?.cancel()
-        guard isShowingSidebar, let index, let vault, let note = noteInFront else {
+        guard isShowingBacklinks, let index, let vault, let note = noteInFront else {
             backlinks = []
             backlinksNote = nil
             return

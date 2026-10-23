@@ -28,7 +28,7 @@ struct ContentView: View {
             } else {
                 NoteDetail(model: model)
                     .inspector(isPresented: $model.isShowingSidebar) {
-                        BacklinksPane(model: model)
+                        RightSidebar(model: model)
                             .inspectorColumnWidth(min: 220, ideal: 280, max: 420)
                     }
             }
@@ -37,7 +37,7 @@ struct ContentView: View {
             if model.vault != nil {
                 ToolbarItem {
                     Button("Right Sidebar", systemImage: "sidebar.trailing") { model.isShowingSidebar.toggle() }
-                        .help("Show or hide the Backlinks")
+                        .help("Show or hide the Outline and the Backlinks")
                 }
             }
         }

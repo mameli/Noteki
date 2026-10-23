@@ -48,3 +48,16 @@ Correction to the M2 table above: WebKit's processes were 60 to 69 MB of the tot
 ### Search (ticket 17)
 
 Search keeps nothing in memory: each search reads the files. On 5,000 generated Notes, Release build, files in macOS's cache: 0.19–0.24 s, whether it finds nothing, two Notes or all 5,000 (75,000 lines, of which the first 300 Notes and 10 lines each are listed). A search typed over is stopped where it is, not only its answer dropped.
+
+### Outline (ticket 18)
+
+`BACKGROUND=1 scripts/measure`, same Vault, one run each:
+
+| | Default | `SIDEBAR=1` (Outline) | `BACKLINKS=1` | Limit |
+|---|---|---|---|---|
+| Noteki's own process | 60 MB | 70 MB | 76 MB | |
+| WebKit's processes | 90 MB | 80 MB | 80 MB | |
+| Memory at rest, all processes | 150 MB | 150 MB | 156 MB | 150 MB |
+| Cold start to a Note shown | 0.80 s | 0.85 s | 0.84 s | 1 s |
+
+In these runs WebKit was at its high (WebContent 60–69 MB, against 30 MB in the Tags runs), which puts even the default at the limit. Noteki's own process at first launch went from 55 MB (ticket 14) to 60 MB over tickets 15–18. The memory budget is the open question of M2: it holds or not depending on WebKit's state.

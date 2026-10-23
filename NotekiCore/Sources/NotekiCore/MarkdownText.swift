@@ -1,7 +1,7 @@
 import Foundation
 
 /// Reading a Markdown text by bytes, as the editor's parser sees it (Editor/src/wikilink.ts):
-/// what the scans for links and Tags share, so that both skip the same code.
+/// what the scans for links, Tags and Headings share, so that all skip the same code.
 enum MarkdownText {
     static let backtick: UInt8 = 96
     static let tilde: UInt8 = 126
