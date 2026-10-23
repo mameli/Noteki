@@ -2,16 +2,15 @@ import { syntaxTree } from "@codemirror/language";
 import type { EditorState, Range } from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import type { SyntaxNode } from "@lezer/common";
+import { measure, type RenderedTable, rowHidden, type Span, tableLayout } from "./tables";
 
-// Live preview of inline syntax (SPEC, Live preview): bold, italic, strikethrough, inline code,
-// links, Wikilinks and Headings show without their marks, and the marks of an element appear
-// while the cursor is in it. Only on the cursor's line: what is shown above the cursor never
-// changes as it moves, so lines above it never change height.
+export type { RenderedTable } from "./tables";
 
-interface Span {
-  from: number;
-  to: number;
-}
+// Live preview (SPEC, Live preview): bold, italic, strikethrough, inline code, links, Wikilinks
+// and Headings show without their marks, and the marks of an element appear while the cursor is in
+// it, only on the cursor's line; tables are drawn as tables while the cursor is out of them
+// (tables.ts). What is shown above the cursor never changes as it moves, so lines above it never
+// change height.
 
 const emphasis: Record<string, string> = {
   Emphasis: "EmphasisMark",
@@ -32,8 +31,24 @@ export function hiddenRanges(state: EditorState, from = 0, to = state.doc.length
   return preview(state, from, to).hidden;
 }
 
-/** The marks hidden, and the inline code shown with a background, in one walk of the tree. */
-function preview(state: EditorState, from: number, to: number): { hidden: Span[]; code: Span[] } {
+/**
+ * The tables between `from` and `to` that Live preview shows as tables: those no selection range
+ * touches. Each row stays one line, so the height does not change when the cursor enters or leaves.
+ */
+export function renderedTables(state: EditorState, from = 0, to = state.doc.length): RenderedTable[] {
+  return preview(state, from, to).tables;
+}
+
+interface Preview {
+  hidden: Span[];
+  code: Span[];
+  tables: RenderedTable[];
+  /** The start of every table line, shown as a table or written: none wraps (tables.ts). */
+  tableLines: number[];
+}
+
+/** The marks hidden, the inline code shown with a background and the tables, in one walk. */
+function preview(state: EditorState, from: number, to: number, measuring = true): Preview {
   // A selection shows marks on the line where it ends only: dragging down, or ⌘A, leaves the
   // lines above as they were.
   const selections = state.selection.ranges.map((range) => ({
@@ -48,6 +63,10 @@ function preview(state: EditorState, from: number, to: number): { hidden: Span[]
     );
   const hidden: Span[] = [];
   const code: Span[] = [];
+  const tables: RenderedTable[] = [];
+  const tableLines: number[] = [];
+  // A table is written while a cursor or a selection's end is in it: ⌘A leaves tables shown.
+  const entered = (table: Span) => state.selection.ranges.some((range) => range.head >= table.from && range.head <= table.to);
   const hide = (element: Span, mark: Span) => {
     if (mark.from < mark.to && !shows(element, mark)) hidden.push(mark);
   };
@@ -58,6 +77,18 @@ function preview(state: EditorState, from: number, to: number): { hidden: Span[]
     enter(ref) {
       const node = ref.node;
       if (asWritten.has(node.name)) return false;
+      if (node.name === "Table") {
+        for (let line = state.doc.lineAt(node.from); ; line = state.doc.line(line.number + 1)) {
+          tableLines.push(line.from);
+          if (line.to >= node.to) break;
+        }
+        // The cursor in a table shows it as written; inline elements in its cells follow their rules.
+        if (entered(node)) return undefined;
+        const table = tableLayout(state, node);
+        tables.push(table);
+        for (const row of table.rows) hidden.push(...rowHidden(state, row));
+        return undefined;
+      }
       if (node.name.startsWith("ATXHeading")) {
         for (const mark of children(node, "HeaderMark")) hide(node, headerMark(state, node, mark));
         return undefined;
@@ -108,7 +139,17 @@ function preview(state: EditorState, from: number, to: number): { hidden: Span[]
       }
     },
   });
-  return { hidden: hidden.sort((a, b) => a.from - b.from), code };
+  hidden.sort((a, b) => a.from - b.from);
+  // What two rules hide (an escaped pipe in a Wikilink in a table) is hidden once.
+  const merged: Span[] = [];
+  for (const span of hidden) {
+    const last = merged[merged.length - 1];
+    if (last && span.from <= last.to) last.to = Math.max(last.to, span.to);
+    else merged.push({ ...span });
+  }
+  // Over the whole table, not only the part in view: a column keeps its width while scrolling.
+  if (measuring) for (const table of tables) measure(table, preview(state, table.from, table.to, false).hidden);
+  return { hidden: merged, code, tables, tableLines };
 }
 
 function children(node: SyntaxNode, name: string): Span[] {
@@ -131,12 +172,43 @@ function headerMark(state: EditorState, heading: SyntaxNode, mark: Span): Span {
 const hide = Decoration.replace({});
 const inlineCode = Decoration.mark({ class: "cm-inline-code" });
 
+const tableLine = Decoration.line({ class: "cm-table-line" });
+const rowLine = {
+  header: Decoration.line({ class: "cm-table-line cm-table-row cm-table-header" }),
+  rule: Decoration.line({ class: "cm-table-line cm-table-row cm-table-rule" }),
+  body: Decoration.line({ class: "cm-table-line cm-table-row" }),
+};
+
 function decorations(view: EditorView): DecorationSet {
   const ranges: Range<Decoration>[] = [];
+  // A table across two visible ranges is drawn once.
+  const drawn = new Set<number>();
+  const shown = new Set<number>();
   for (const { from, to } of view.visibleRanges) {
-    const { hidden, code } = preview(view.state, from, to);
+    const { hidden, code, tables, tableLines } = preview(view.state, from, to);
     for (const span of hidden) ranges.push(hide.range(span.from, span.to));
     for (const span of code) ranges.push(inlineCode.range(span.from, span.to));
+    for (const table of tables) {
+      if (drawn.has(table.from)) continue;
+      drawn.add(table.from);
+      for (const row of table.rows) {
+        shown.add(row.lineStart);
+        ranges.push(rowLine[row.kind].range(row.lineStart));
+        row.cells.forEach((cell, column) => {
+          const { width, align } = table.columns[column];
+          // In em, not ch: a bold header's ch is wider than a body's, and the columns must line up.
+          const style = `width: calc(${width} * 0.6em + 1.4em); text-align: ${align}`;
+          const empty = cell.text === "" ? " cm-table-empty" : "";
+          ranges.push(Decoration.mark({ class: `cm-table-cell${empty}`, attributes: { style } }).range(cell.from, cell.to));
+        });
+      }
+    }
+    for (const line of tableLines) {
+      if (!shown.has(line)) {
+        shown.add(line);
+        ranges.push(tableLine.range(line));
+      }
+    }
   }
   return Decoration.set(ranges, true);
 }
@@ -159,5 +231,22 @@ export const livePreview = [
   ),
   EditorView.baseTheme({
     ".cm-inline-code": { backgroundColor: "var(--code-background)", borderRadius: "3px", padding: "0 2px" },
+    // A table's lines never wrap, shown as a table or written, so each keeps one line's height; a
+    // wide one scrolls sideways instead.
+    ".cm-table-line": { whiteSpace: "pre" },
+    // The pipe an empty cell is drawn in: there, not seen, whatever colour the syntax gives it.
+    ".cm-table-empty, .cm-table-empty *": { color: "transparent !important" },
+    ".cm-table-cell": {
+      display: "inline-block",
+      boxSizing: "border-box",
+      padding: "0 0.5em",
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "pre",
+      verticalAlign: "top",
+      borderLeft: "1px solid var(--separator)",
+    },
+    ".cm-table-header": { fontWeight: "600", backgroundColor: "var(--code-background)" },
+    ".cm-table-rule": { backgroundImage: "linear-gradient(var(--separator), var(--separator))", backgroundSize: "100% 1px", backgroundPosition: "center", backgroundRepeat: "no-repeat" },
   }),
 ];

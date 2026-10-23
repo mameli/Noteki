@@ -1,34 +1,6 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { ensureSyntaxTree } from "@codemirror/language";
-import { EditorSelection, EditorState } from "@codemirror/state";
-import { noteLanguage } from "../src/language";
-import { hiddenRanges } from "../src/livepreview";
-
-/**
- * The text as Live preview shows it: `‸` is the cursor (or `‸…‸` a selection), and what is
- * hidden is left out.
- */
-function shown(marked: string): string {
-  const first = marked.indexOf("‸");
-  const second = marked.indexOf("‸", first + 1);
-  const text = marked.replaceAll("‸", "");
-  const anchor = first === -1 ? text.length : first;
-  const head = second === -1 ? anchor : second - 1;
-  const state = EditorState.create({
-    doc: text,
-    selection: EditorSelection.single(anchor, head),
-    extensions: [noteLanguage],
-  });
-  ensureSyntaxTree(state, state.doc.length, 5000);
-  let result = "";
-  let at = 0;
-  for (const { from, to } of hiddenRanges(state)) {
-    result += text.slice(at, from);
-    at = to;
-  }
-  return result + text.slice(at);
-}
+import { shown } from "./helpers";
 
 test("bold, italic, inline code and strikethrough show without their marks", () => {
   assert.equal(shown("**bold**, *it*, _also_, `code` and ~~gone~~\n‸"), "bold, it, also, code and gone\n");
