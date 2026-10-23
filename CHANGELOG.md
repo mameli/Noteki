@@ -61,3 +61,7 @@ Search keeps nothing in memory: each search reads the files. On 5,000 generated 
 | Cold start to a Note shown | 0.80 s | 0.85 s | 0.84 s | 1 s |
 
 In these runs WebKit was at its high (WebContent 60–69 MB, against 30 MB in the Tags runs), which puts even the default at the limit. Noteki's own process at first launch went from 55 MB (ticket 14) to 60 MB over tickets 15–18. The memory budget is the open question of M2: it holds or not depending on WebKit's state.
+
+### Memory budget raised to 180 MB
+
+At the user's request, 23 October 2026: the memory at rest limit goes from 150 to 180 MB. WebKit's processes alone vary from 50 to 90 MB from run to run, which put even the default at the old limit. The tables above keep the limit they were measured against.

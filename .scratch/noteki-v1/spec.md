@@ -10,7 +10,7 @@ I keep my notes in a Markdown **Vault** that I open with Obsidian, and Takku wri
 
 ## Solution
 
-Noteki is a native macOS app that opens the same Vault as Obsidian and leaves it as Obsidian expects. It shows each Note in **Live preview**: Markdown formatted in place, with its syntax visible only where the cursor is, so the same view is for reading and writing. It reads the Frontmatter as a table of **Properties**, tags Notes, resolves Wikilinks and **Backlinks** with Obsidian's rules, searches the Vault and opens images and PDFs. It saves by itself and **Merges** **External changes**, so Takku and Obsidian can write the same Note while I am in it. It stays under 20 MB on disk and 150 MB of memory at rest.
+Noteki is a native macOS app that opens the same Vault as Obsidian and leaves it as Obsidian expects. It shows each Note in **Live preview**: Markdown formatted in place, with its syntax visible only where the cursor is, so the same view is for reading and writing. It reads the Frontmatter as a table of **Properties**, tags Notes, resolves Wikilinks and **Backlinks** with Obsidian's rules, searches the Vault and opens images and PDFs. It saves by itself and **Merges** **External changes**, so Takku and Obsidian can write the same Note while I am in it. It stays under 20 MB on disk and 180 MB of memory at rest.
 
 ## User Stories
 
@@ -131,7 +131,7 @@ Noteki is a native macOS app that opens the same Vault as Obsidian and leaves it
 
 87. As the user, I want Noteki under 20 MB on disk, so that it is a fraction of Obsidian.
 88. As the user, I want Noteki to show my last Note in under a second from a cold start, so that opening a Note is instant.
-89. As the user, I want Noteki under 150 MB of memory at rest with one Note open, so that it can stay open all day.
+89. As the user, I want Noteki under 180 MB of memory at rest with one Note open, so that it can stay open all day.
 90. As the user, I want memory not to grow with every Tab I open, so that keeping many Notes open costs nothing.
 
 ## Implementation Decisions

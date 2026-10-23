@@ -140,5 +140,5 @@ if read:
 if tags:
     both = int(listed[1]) + int(tags[1]) if listed else int(tags[1])
     row(f"Listing and reading the Tags of {tags[0]}", f"{both / 1000:.2f} s", "3 s", both < 3000)
-row(f"Memory at rest ({processes} processes)", f"{memory} MB" if memory else "not measured", "150 MB", bool(memory) and int(memory) < 150)
+row(f"Memory at rest ({processes} processes)", f"{memory} MB" if memory else "not measured", "180 MB", bool(memory) and int(memory) < 180)
 PY

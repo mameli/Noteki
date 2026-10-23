@@ -17,7 +17,7 @@ Measured at the end of every milestone on a generated Vault of 5,000 Notes (see 
 | App on disk | < 20 MB |
 | Cold start to the last Note shown | < 1 s |
 | Index of 5,000 Notes | < 3 s, the window usable before it ends |
-| Memory at rest, one window, one Note | < 150 MB, all processes included |
+| Memory at rest, one window, one Note | < 180 MB, all processes included (150 MB until M2: WebKit alone varies from 50 to 90 MB) |
 
 A feature that breaks the budget waits until it fits.
 
@@ -176,4 +176,4 @@ Each milestone ends with an app the user can use every day.
 - **Native text behaviour in the web view**: select-all, find, Services and accessibility do not work by themselves because CodeMirror draws only the visible lines. MarkEdit's solutions are the starting point.
 - **Live preview that jumps**: hiding and showing syntax changes widths and heights. Every extension is tried on the Vault's longest Meeting notes before M3 ends.
 - **Merge on large rewrites**: when Takku rewrites most of a Note at once, a Conflict may be frequent. If it is, the base is taken at the moment the user starts typing rather than at the last save.
-- **The memory budget**: the WebKit processes alone use about 80 MB of the 150. Measured at M1, before anything else is built on it, and at the end of every milestone. At M2 the budget holds only with the right sidebar hidden; what Tags, Search and the Outline add has to fit in what is left, or be read only when its pane is first shown, as the Backlinks are.
+- **The memory budget**: the WebKit processes alone use 50 to 90 MB, varying from run to run. The limit was 150 MB until M2, where WebKit's high runs put even the default at the limit; it is 180 MB since, still well under Obsidian. Noteki's own process is the steady figure to watch: 60 MB at first launch at M2. What a pane needs from the Notes' text is read when it is first shown, as the Backlinks and the Tags are.
