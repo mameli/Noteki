@@ -7,3 +7,4 @@ node_modules/
 .swiftpm/
 *.xcuserstate
 Config/Local.xcconfig
+Editor/test/.out/

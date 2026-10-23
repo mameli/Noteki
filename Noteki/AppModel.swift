@@ -94,6 +94,22 @@ final class AppModel {
     private var isShowingBacklinks: Bool { isShowingSidebar && rightPane == .backlinks }
     /// A Loose file's window has no right sidebar, whatever the preferences say.
     private var isShowingOutline: Bool { isShowingSidebar && rightPane == .outline && !isLooseFile }
+    /// ⌘E: the user asked for Source mode in this window (Tabs keep their own, ticket 25).
+    var prefersSourceMode = false {
+        didSet { updateSourceMode() }
+    }
+    /// A Note above this size opens in Source mode: Live preview would follow it slowly.
+    private static let largestPreviewed = 5_000_000
+    /// The Note open is too large for Live preview: Source mode, whatever was asked.
+    private(set) var isSourceModeForced = false {
+        didSet { updateSourceMode() }
+    }
+    var isSourceMode: Bool { prefersSourceMode || isSourceModeForced }
+
+    private func updateSourceMode() {
+        editor.isSourceMode = isSourceMode
+    }
+
     /// The Headings of the Note in front, as it is typed, for the Outline.
     private(set) var outline: [Heading] = []
 
@@ -156,6 +172,9 @@ final class AppModel {
         didSet {
             conflict = openNote.flatMap { open in open.conflict.map { .init(mine: open.text, theirs: $0.theirs) } }
             updateOutline()
+            // Opened, reloaded from disk or typed past the limit; no Note, no limit.
+            let forced = (openNote?.text.utf8.count ?? 0) > Self.largestPreviewed
+            if forced != isSourceModeForced { isSourceModeForced = forced }
         }
     }
     /// The open Note's Conflict, for the banner: the user's text as it is now and the file's.

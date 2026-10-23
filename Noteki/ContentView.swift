@@ -51,6 +51,7 @@ struct ContentView: View {
         }
         .navigationTitle(model.shown?.name ?? model.vault?.root.lastPathComponent ?? "Noteki")
         .focusedSceneValue(\.noteEditor, model.isShowingNote ? model.editor : nil)
+        .focusedSceneValue(\.noteWindow, model.isShowingNote ? model : nil)
         .onAppear {
             // Files opened from the Finder bring this window back even after it was closed.
             registerShowMainWindow { openWindow(id: "main") }
@@ -74,6 +75,7 @@ struct LooseFileView: View {
             .navigationTitle(model.shown?.name ?? file.deletingPathExtension().lastPathComponent)
             .navigationDocument(model.looseFileNow ?? file)
             .focusedSceneValue(\.noteEditor, model.isShowingNote ? model.editor : nil)
+            .focusedSceneValue(\.noteWindow, model.isShowingNote ? model : nil)
             .frame(minWidth: 480, minHeight: 360)
     }
 }

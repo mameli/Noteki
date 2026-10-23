@@ -69,6 +69,14 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
         loadPage()
     }
 
+    /// Source mode, or Live preview: kept across Notes, and given to the editor once it is ready.
+    var isSourceMode = false {
+        didSet {
+            guard isReady, isSourceMode != oldValue else { return }
+            run(.sourceMode(on: isSourceMode)) { _ in }
+        }
+    }
+
     /// Shows a Note, at `line` (from 1) if given: where a Backlink points.
     func load(noteID: String, text: String, line: Int? = nil) {
         loaded = (noteID, text, line)
@@ -173,6 +181,7 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
         switch message {
         case .ready:
             isReady = true
+            if isSourceMode { run(.sourceMode(on: true)) { _ in } }
             if let loaded { load(noteID: loaded.noteID, text: loaded.text, line: loaded.line) }
         case .changed(let noteID, let revision, let text):
             // Late keys of the Note just left must not become what a reload shows.

@@ -35,6 +35,7 @@ struct NotekiApp: App {
                 }
                 .keyboardShortcut("0", modifiers: [.command, .option])
             }
+            ViewCommands()
             EditCommands(model: model, showMainWindow: { appDelegate.showMainWindow() })
             ZoomCommands()
         }
@@ -162,6 +163,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 extension FocusedValues {
     /// The window's editor while a Note is in front of it, nil otherwise.
     @Entry var noteEditor: EditorController?
+    /// The window's model while a Note is in front of it: Source mode is its own.
+    @Entry var noteWindow: AppModel?
 }
 
 /// Find and spelling, after Cut, Copy and Paste. Find follows the window: off while an
@@ -237,6 +240,24 @@ struct ZoomActions {
 
 extension FocusedValues {
     @Entry var zoom: ZoomActions?
+}
+
+/// Source mode, for the Note in front of the window.
+private struct ViewCommands: Commands {
+    @FocusedValue(\.noteWindow) private var window
+
+    var body: some Commands {
+        CommandGroup(before: .toolbar) {
+            Toggle("Source Mode", isOn: Binding(
+                get: { window?.isSourceMode ?? false },
+                set: { window?.prefersSourceMode = $0 }
+            ))
+            .keyboardShortcut("e")
+            // A Note too large for Live preview stays in Source mode.
+            .disabled(window == nil || window?.isSourceModeForced == true)
+            Divider()
+        }
+    }
 }
 
 private struct ZoomCommands: Commands {

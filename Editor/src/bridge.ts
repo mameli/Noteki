@@ -26,6 +26,8 @@ export type EditorCommand =
   | { type: "find"; step: "open" | "next" | "previous" }
   /** Which of the Note's links lead nowhere: those are drawn as Unresolved links. */
   | { type: "unresolvedLinks"; noteID: string; inners: string[] }
+  /** Source mode: the Markdown as written, every mark shown. Off, Live preview. */
+  | { type: "sourceMode"; on: boolean }
   /** The cursor at the start of `line`, from 1, in the middle of the view: a search result. */
   | { type: "goToLine"; noteID: string; line: number }
   /** The answer to the `completeLink` with the same `requestID`. */

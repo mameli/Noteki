@@ -6,3 +6,4 @@ The editor's sources are TypeScript in `Editor/`, built with Node into a single 
 
 - The bundle carries a hash of the sources in `Editor/`, and an Xcode build phase fails when it does not match them, so a forgotten rebuild is caught. A hash rather than modification times, which change with every clone.
 - Diffs of the built file are noise: review the sources, not the bundle.
+- The editor's tests (`Editor/test/`) are not in the bundle, nor in its hash: changing a test needs no rebuild.

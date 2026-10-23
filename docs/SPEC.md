@@ -55,13 +55,13 @@ Memory is measured as at first launch: the right sidebar hidden, the left one on
 
 The Note is shown formatted, and the Markdown syntax of an element appears when the cursor is inside it ([ADR 0001](adr/0001-codemirror-in-wkwebview.md)):
 
-- **Inline elements** (bold, italic, `==highlight==`, inline code, links, Wikilinks, `#tags`): the marks appear when the cursor is inside that element, not on the whole line.
+- **Inline elements** (bold, italic, strikethrough, `==highlight==`, inline code, links, Wikilinks, `#tags`): the marks appear when the cursor is inside that element or at its edge, not on the whole line, and only on the cursor's line: an element across lines keeps its marks hidden on the other lines. A selection shows them on the line where it ends. Headings hide their `#`s, shown with the cursor anywhere on the Heading's line; a setext Heading keeps its underline (as written). A Wikilink shows its name or its Alias (an escaped `\|` in a table too), a link its text; reference links and links across lines are left as written. Since ticket 19: bold, italic, strikethrough, inline code (with a background), links, autolinks, Wikilinks and ATX Headings.
 - **Blocks** (tables, code blocks, the Frontmatter, callouts): rendered while the cursor is outside, shown as source when it enters.
-- Showing or hiding syntax never changes the height of a line above the cursor: the text must not jump.
+- Moving the cursor never changes what is shown on the lines above it: the text above the cursor does not jump. The line the cursor leaves may change height as its marks hide, and may be above the cursor afterwards.
 
 Rendered in v1: Headings, emphasis, highlights, lists, task lists (the checkbox is clickable and writes `[x]` in the file), quotes, callouts (`> [!note]`, title and colour, no folding), tables (via codemirror-markdown-tables), code blocks with syntax colouring, horizontal rules, links, Wikilinks, Embeds of images. **Comments** (`%% … %%`) are hidden outside the cursor. Mermaid and math stay visible as code.
 
-⌘E switches the Tab between Live preview and **Source mode**.
+⌘E switches the Tab between Live preview and **Source mode** (the window, until Tabs exist in ticket 25; not remembered).
 
 ### Frontmatter
 
@@ -74,7 +74,7 @@ Rendered in v1: Headings, emphasis, highlights, lists, task lists (the checkbox 
 
 - Noteki saves by itself about one second after the last change, and when the Tab or the app closes. There is no *Save*.
 - It writes the whole file atomically and keeps line endings and the final newline as they were.
-- A Note larger than 5 MB opens in Source mode.
+- A Note larger than 5 MB (5,000,000 bytes of UTF-8) opens in Source mode, and switches to it when it grows past that, typed or reloaded; ⌘E cannot leave it then.
 
 ### External changes
 
@@ -158,7 +158,7 @@ Noteki works with Takku without changes to Takku:
 
 - Swift Testing in `NotekiCore` on a fixture Vault in the repository, written for the purpose: duplicate names, aliases, Embeds, nested Tags, broken YAML, Excluded folders. Never the user's real Vault.
 - Merge tests replay the sequence of writes Takku makes during Processing (atomic writes, rename) against a user still typing.
-- A few JavaScript tests for the Live preview extensions: what is hidden where the cursor is.
+- A few JavaScript tests for the Live preview extensions: what is hidden where the cursor is. `npm test` in `Editor/`: CodeMirror's state with Noteki's extensions under Node, no browser. Not part of the Xcode build, which needs no Node (ADR 0004).
 - `scripts/measure`: generates a Vault of 5,000 Notes and measures the [Budget](#budget). Run at the end of every milestone, results noted in the changelog.
 
 ## Milestones

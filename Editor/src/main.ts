@@ -1,14 +1,14 @@
 import { defaultKeymap, history, historyKeymap, redo, selectAll, undo } from "@codemirror/commands";
-import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { findNext, findPrevious, openSearchPanel, search, searchKeymap } from "@codemirror/search";
-import { Annotation, EditorState, Transaction } from "@codemirror/state";
+import { Annotation, Compartment, EditorState, Transaction } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import { type EditorCommand, type EditorMessage, send } from "./bridge";
 import { linkCompletion, receiveLinkCompletions } from "./completion";
-import { frontmatter } from "./frontmatter";
-import { followWikilinks, linkInners, markUnresolved, unresolvedLinks, wikilinks } from "./wikilink";
+import { noteLanguage } from "./language";
+import { livePreview } from "./livepreview";
+import { followWikilinks, linkInners, markUnresolved, unresolvedLinks } from "./wikilink";
 
 // Colours come from the CSS variables in editor.css, so light and dark follow the system.
 const sourceHighlight = HighlightStyle.define([
@@ -102,11 +102,17 @@ const checkLinksAfterChanges = EditorView.updateListener.of((update) => {
   checkTimer = setTimeout(() => checkLinks(), checkDelay);
 });
 
+/** Live preview, or nothing in Source mode, which the app chooses. */
+const preview = new Compartment();
+let sourceMode = false;
+const previewed = () => (sourceMode ? [] : livePreview);
+
 function initialState(text: string, editable: boolean) {
   return EditorState.create({
     doc: text,
     extensions: [
-      markdown({ base: markdownLanguage, extensions: [frontmatter, wikilinks] }),
+      noteLanguage,
+      preview.of(previewed()),
       followWikilinks((inner) => send({ type: "followLink", inner })),
       unresolvedLinks,
       checkLinksAfterChanges,
@@ -175,6 +181,10 @@ window.noteki = {
       }
       case "unresolvedLinks":
         if (command.noteID === noteID) markUnresolved(view, command.inners);
+        return null;
+      case "sourceMode":
+        sourceMode = command.on;
+        view.dispatch({ effects: preview.reconfigure(previewed()) });
         return null;
       case "goToLine":
         if (command.noteID === noteID) {

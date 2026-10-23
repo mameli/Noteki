@@ -25,6 +25,8 @@ public enum EditorCommand: Encodable, Sendable {
     case find(FindStep)
     /// Which of the Note's links lead nowhere: those `inners` are drawn as Unresolved links.
     case unresolvedLinks(noteID: String, inners: [String])
+    /// Source mode: the Markdown as written, every mark shown. Off, Live preview (SPEC).
+    case sourceMode(on: Bool)
     /// Puts the cursor at the start of `line`, from 1, in the middle of the view: a search result
     /// in the Note already shown.
     case goToLine(noteID: String, line: Int)
@@ -37,10 +39,10 @@ public enum EditorCommand: Encodable, Sendable {
         case next, previous
     }
 
-    public static let types = ["load", "reload", "flush", "clear", "selectAll", "undo", "redo", "find", "unresolvedLinks", "linkCompletions", "goToLine"]
+    public static let types = ["load", "reload", "flush", "clear", "selectAll", "undo", "redo", "find", "unresolvedLinks", "linkCompletions", "goToLine", "sourceMode"]
 
     private enum CodingKeys: String, CodingKey {
-        case type, noteID, revision, text, step, inners, requestID, completions, line
+        case type, noteID, revision, text, step, inners, requestID, completions, line, on
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -73,6 +75,9 @@ public enum EditorCommand: Encodable, Sendable {
             try container.encode("unresolvedLinks", forKey: .type)
             try container.encode(noteID, forKey: .noteID)
             try container.encode(inners, forKey: .inners)
+        case .sourceMode(let on):
+            try container.encode("sourceMode", forKey: .type)
+            try container.encode(on, forKey: .on)
         case .goToLine(let noteID, let line):
             try container.encode("goToLine", forKey: .type)
             try container.encode(noteID, forKey: .noteID)
