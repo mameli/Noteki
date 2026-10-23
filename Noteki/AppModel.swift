@@ -1,6 +1,7 @@
 import AppKit
 import NotekiCore
 import Observation
+import Synchronization
 import os
 
 private let logger = Logger(subsystem: "app.noteki.noteki", category: "vault")
@@ -40,17 +41,31 @@ final class AppModel {
     var selectedTag: String? {
         didSet { updateTagNotes() }
     }
-    enum LeftPane: String { case files, tags }
+    enum LeftPane: String { case files, tags, search }
     /// What the left sidebar shows, remembered in the preferences. Tags are read the first time
     /// the Tags pane is shown.
     var leftPane = LeftPane(rawValue: UserDefaults.standard.string(forKey: AppModel.leftPaneKey) ?? "") ?? .files {
         didSet {
             UserDefaults.standard.set(leftPane.rawValue, forKey: Self.leftPaneKey)
-            guard leftPane == .tags, oldValue != .tags, let index, let vault else { return }
-            tagged.listed(index.notes, in: vault, isWanted: true)
+            guard leftPane != oldValue, let index, let vault else { return }
+            switch leftPane {
+            case .tags: tagged.listed(index.notes, in: vault, isWanted: true)
+            // The files may have changed while the pane was hidden: the results are found again.
+            case .search: if !searchText.isEmpty { search() }
+            case .files: break
+            }
         }
     }
     private static let leftPaneKey = "leftPane"
+    /// What the Search pane looks for; searched again a moment after the typing stops.
+    var searchText = "" {
+        didSet { if searchText != oldValue { search(after: .milliseconds(250)) } }
+    }
+    private(set) var searchResults = SearchResults.none
+    private(set) var isSearching = false
+    private var searchTask: Task<Void, Never>?
+    /// ⌘⇧F asked for the Search field: the pane gives it the keyboard and sets it back.
+    var wantsSearchField = false
     /// The Backlinks of the Note in front, for the right sidebar, and the Note they were found for.
     private(set) var backlinks: [Backlink] = []
     private(set) var backlinksNote: Note?
@@ -379,6 +394,9 @@ final class AppModel {
         selectedTag = nil
         backlinks = []
         backlinksNote = nil
+        searchTask?.cancel()
+        searchResults = .none
+        isSearching = false
         previousNote = nil
         revisions = [:]
         editor.clear()
@@ -422,6 +440,8 @@ final class AppModel {
         guard let index else { return }
         links.listed(index.notes, in: vault, isWanted: isShowingSidebar)
         tagged.listed(index.notes, in: vault, isWanted: leftPane == .tags)
+        // Another Vault, or new Notes: the results are found again.
+        if leftPane == .search, !searchText.isEmpty { search() }
     }
 
     private func connectScans() {
@@ -474,13 +494,54 @@ final class AppModel {
         }
     }
 
+    /// Searches the Vault's files for `searchText`, away from the main thread, after `delay`. A newer
+    /// search drops an older one.
+    private func search(after delay: Duration = .zero) {
+        searchTask?.cancel()
+        let query = SearchQuery(searchText)
+        guard !query.isEmpty, let index, let vault else {
+            searchResults = .none
+            isSearching = false
+            return
+        }
+        isSearching = true
+        searchTask = Task {
+            if delay > .zero { try? await Task.sleep(for: delay) }
+            guard !Task.isCancelled else { return }
+            // A newer search stops the reading of this one, not only its answer.
+            let stopped = Stopped()
+            let found = await withTaskCancellationHandler {
+                await Task.detached { vault.search(query, in: index.notes, isCancelled: stopped.callAsFunction) }.value
+            } onCancel: {
+                stopped.stop()
+            }
+            guard !Task.isCancelled, self.vault?.root == vault.root else { return }
+            searchResults = found
+            isSearching = false
+        }
+    }
+
+    /// The Search pane, ⌘⇧F: shown, and its field given the keyboard.
+    func showSearch() {
+        leftPane = .search
+        wantsSearchField = true
+    }
+
     /// Opens the Note of a Backlink with the cursor on the line that holds the link.
     func open(_ backlink: Backlink) {
-        // Already in front, with the user in it: nothing to move to.
-        guard shown != .note(backlink.note) else { return editor.focus() }
-        lineToShow = (backlink.note, backlink.line)
-        reveal(backlink.note.path)
-        focusEditorWhenShown(backlink.note)
+        open(backlink.note, atLine: backlink.line)
+    }
+
+    /// Opens `note` with the cursor on `line` (from 1), or at its start, and gives it the keyboard.
+    func open(_ note: Note, atLine line: Int?) {
+        if shown == .note(note) {
+            // Already in front: only the cursor moves.
+            if let line { editor.goToLine(noteID: openNoteID, line: line) }
+            return editor.focus()
+        }
+        lineToShow = line.map { (note, $0) }
+        reveal(note.path)
+        focusEditorWhenShown(note)
     }
 
     /// From the Vault's watcher: files changed on disk, by Noteki or another app.
@@ -502,6 +563,8 @@ final class AppModel {
         let changedNotes = paths.compactMap { tree.item(at: $0)?.note }
         links.changed(changedNotes, in: vault)
         tagged.changed(changedNotes, in: vault)
+        // Results that may have changed with the files: a burst of saves counts as one search.
+        if leftPane == .search, !searchText.isEmpty { search(after: .milliseconds(500)) }
         if !isLooseFile, change.mustRescan || paths.contains(where: { appearedOrDisappeared($0, in: vault) }) {
             // A Note or Attachment created or deleted by another app, such as Takku's new
             // Meeting notes: Files lists it without a relaunch.
@@ -895,4 +958,12 @@ private extension TagNode {
     func contains(path wanted: String) -> Bool {
         path == wanted || children.contains { $0.contains(path: wanted) }
     }
+}
+
+/// Set once, read from any thread: a search's reading stops when it is.
+private final class Stopped: Sendable {
+    private let flag = Mutex(false)
+
+    func stop() { flag.withLock { $0 = true } }
+    func callAsFunction() -> Bool { flag.withLock { $0 } }
 }

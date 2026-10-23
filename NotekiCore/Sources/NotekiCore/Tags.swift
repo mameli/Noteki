@@ -97,7 +97,7 @@ public struct TagMap: NoteScanned {
     // MARK: Reading the Tags of a text
 
     /// The Tags of a Markdown text: the `tags` Property, then `#tag` in the text. Each spelling once.
-    private static func tags(in text: String) -> [String] {
+    static func tags(in text: String) -> [String] {
         var found: [String] = []
         MarkdownText.forEachLine(of: text, skippingFrontmatter: true, frontmatter: { found += frontmatterTags(in: $0) }) { _, line in
             if line.contains(hash) { found += hashtags(in: line) }

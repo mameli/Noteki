@@ -44,3 +44,7 @@ With the sidebar shown the memory is over by 5 MB: Noteki 75 MB (59 hidden), of 
 | Listing and reading links / Tags | | 2.2 s | 2.0 s | 3 s |
 
 Correction to the M2 table above: WebKit's processes were 60 to 69 MB of the totals there, and are 30 MB in this run, on the same method. The WebKit figure varies from run to run on this Mac (other apps, the state of WebKit's caches), so the totals of the two tables are not comparable. Noteki's own process is the steady figure: 55 MB at ticket 14, 59 MB now, 70 MB with the right sidebar shown. At worst WebKit's 69 MB, which has been seen, makes the sidebar-shown total 155 MB. Reading the links of 5,000 Notes is 1.5 to 2.2 s, slower than before the reading was shared with Tags (1.5 s); the Tags take 1.8 to 2.0 s.
+
+### Search (ticket 17)
+
+Search keeps nothing in memory: each search reads the files. On 5,000 generated Notes, Release build, files in macOS's cache: 0.19–0.24 s, whether it finds nothing, two Notes or all 5,000 (75,000 lines, of which the first 300 Notes and 10 lines each are listed). A search typed over is stopped where it is, not only its answer dropped.

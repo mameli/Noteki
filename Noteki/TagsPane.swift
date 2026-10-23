@@ -1,37 +1,8 @@
 import NotekiCore
 import SwiftUI
 
-/// The left sidebar's choice between its panes, and the pane.
-struct LeftSidebar: View {
-    @Bindable var model: AppModel
-
-    var body: some View {
-        ZStack {
-            // Files stays alive under the Tags: its open folders are kept.
-            FilesPane(model: model)
-                .opacity(model.leftPane == .files ? 1 : 0)
-                .allowsHitTesting(model.leftPane == .files)
-                .disabled(model.leftPane != .files)
-                .accessibilityHidden(model.leftPane != .files)
-            if model.leftPane == .tags {
-                TagsPane(model: model)
-            }
-        }
-        .safeAreaInset(edge: .top, spacing: 0) {
-            Picker("Pane", selection: $model.leftPane) {
-                Label("Files", systemImage: "folder").tag(AppModel.LeftPane.files)
-                Label("Tags", systemImage: "number").tag(AppModel.LeftPane.tags)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .padding(.horizontal, 10)
-            .padding(.bottom, 6)
-        }
-    }
-}
-
 /// The Tags of the Vault as a tree with the number of Notes, and the Notes of the Tag chosen.
-private struct TagsPane: View {
+struct TagsPane: View {
     @Bindable var model: AppModel
 
     var body: some View {

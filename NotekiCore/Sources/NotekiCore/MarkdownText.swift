@@ -36,7 +36,7 @@ enum MarkdownText {
         }
     }
 
-    private static func lineRanges(of bytes: [UInt8]) -> [Range<Int>] {
+    static func lineRanges(of bytes: [UInt8]) -> [Range<Int>] {
         var lines: [Range<Int>] = []
         // A byte order mark is no part of the first line.
         var start = bytes.starts(with: [0xEF, 0xBB, 0xBF]) ? 3 : 0
@@ -51,6 +51,25 @@ enum MarkdownText {
         }
         lines.append(start..<bytes.count)
         return lines
+    }
+
+    /// Every line, code included, as `forEachLine` counts them: the first is line 1.
+    static func lines(of text: String) -> [String] {
+        let bytes = Array(text.utf8)
+        return lineRanges(of: bytes).map { String(decoding: bytes[$0], as: UTF8.self) }
+    }
+
+    static let excerptWidth = 200
+
+    /// A line as a list shows it: trimmed, and when long cut to a window around the character at
+    /// `offset` (counted in the line as it is), with `…` where it was cut.
+    static func excerpt(of line: String, around offset: Int) -> String {
+        let text = line.trimmingCharacters(in: .whitespaces)
+        guard text.count > excerptWidth else { return text }
+        let at = max(0, offset - line.prefix { $0 == " " || $0 == "\t" }.count)
+        let from = min(max(0, at - excerptWidth / 3), text.count - excerptWidth)
+        let window = text.dropFirst(from).prefix(excerptWidth)
+        return (from > 0 ? "…" : "") + window + (from + excerptWidth < text.count ? "…" : "")
     }
 
     /// How many lines the Frontmatter takes, delimiters included; nil when the Note has none.

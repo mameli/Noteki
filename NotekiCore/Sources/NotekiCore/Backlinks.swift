@@ -80,7 +80,11 @@ public struct LinkMap: NoteScanned {
                     Self.key(of: link.inner) == name
                         && index.resolve(Wikilink(inner: link.inner).target, from: source) == .note(note)
                 }
-                if let leading { found.append(Backlink(note: source, line: number, text: Self.shown(line, around: leading.start))) }
+                guard let leading else { return }
+                // The link's place among the characters of the line, which it is cut around.
+                let offset = String(decoding: line.prefix(leading.start), as: UTF8.self).count
+                let text = MarkdownText.excerpt(of: String(decoding: line, as: UTF8.self), around: offset)
+                found.append(Backlink(note: source, line: number, text: text))
             }
         }
         return found
@@ -108,8 +112,6 @@ public struct LinkMap: NoteScanned {
     }
 
     // MARK: Reading the links of a text
-
-    private static let lineWidth = 200
 
     private static let bracket: UInt8 = 91
     private static let closing: UInt8 = 93
@@ -153,19 +155,5 @@ public struct LinkMap: NoteScanned {
             i += 1
         }
         return nil
-    }
-
-    /// The line as the Backlinks list shows it: trimmed, and when long cut to a window around the
-    /// link that starts at byte `start`, with `…` where it was cut.
-    private static func shown(_ line: ArraySlice<UInt8>, around start: Int) -> String {
-        let full = String(decoding: line, as: UTF8.self)
-        let text = full.trimmingCharacters(in: .whitespaces)
-        guard text.count > lineWidth else { return text }
-        // Where the link is among the characters of the trimmed text.
-        let leading = full.prefix { $0 == " " || $0 == "\t" }.utf8.count
-        let offset = String(decoding: line.prefix(max(0, start - leading)), as: UTF8.self).count
-        let from = min(max(0, offset - lineWidth / 3), text.count - lineWidth)
-        let window = text.dropFirst(from).prefix(lineWidth)
-        return (from > 0 ? "…" : "") + window + (from + lineWidth < text.count ? "…" : "")
     }
 }

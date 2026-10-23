@@ -35,7 +35,7 @@ struct NotekiApp: App {
                 }
                 .keyboardShortcut("0", modifiers: [.command, .option])
             }
-            EditCommands(model: model)
+            EditCommands(model: model, showMainWindow: { appDelegate.showMainWindow() })
             ZoomCommands()
         }
     }
@@ -165,9 +165,11 @@ extension FocusedValues {
 }
 
 /// Find and spelling, after Cut, Copy and Paste. Find follows the window: off while an
-/// Attachment is in front.
+/// Attachment is in front. Search in Vault is the Vault's window's, from any window.
 private struct EditCommands: Commands {
     let model: AppModel
+    /// Search is the Vault's: from a Loose file's window, ⌘⇧F brings the Vault's window.
+    let showMainWindow: () -> Void
     @FocusedValue(\.noteEditor) private var editor
 
     var body: some Commands {
@@ -176,12 +178,21 @@ private struct EditCommands: Commands {
             Menu("Find") {
                 Button("Find…") { editor?.find(.open) }
                     .keyboardShortcut("f")
+                    .disabled(editor == nil)
                 Button("Find Next") { editor?.find(.next) }
                     .keyboardShortcut("g")
+                    .disabled(editor == nil)
                 Button("Find Previous") { editor?.find(.previous) }
                     .keyboardShortcut("g", modifiers: [.command, .shift])
+                    .disabled(editor == nil)
+                Divider()
+                Button("Search in Vault…") {
+                    showMainWindow()
+                    model.showSearch()
+                }
+                .keyboardShortcut("f", modifiers: [.command, .shift])
+                .disabled(model.vault == nil)
             }
-            .disabled(editor == nil)
             SpellingMenu(editor: model.editor.webView)
         }
     }

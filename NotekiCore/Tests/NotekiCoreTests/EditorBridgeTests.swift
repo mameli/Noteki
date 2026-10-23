@@ -36,6 +36,11 @@ struct EditorBridgeTests {
         #expect(try command.json() == #"{"line":2,"noteID":"n1","text":"a\nb","type":"load"}"#)
     }
 
+    @Test("going to a line names the Note it is meant for")
+    func goToLine() throws {
+        #expect(try EditorCommand.goToLine(noteID: "n1", line: 7).json() == #"{"line":7,"noteID":"n1","type":"goToLine"}"#)
+    }
+
     @Test("editing commands from the app's menus need nothing else")
     func editingCommands() throws {
         #expect(try EditorCommand.selectAll.json() == #"{"type":"selectAll"}"#)

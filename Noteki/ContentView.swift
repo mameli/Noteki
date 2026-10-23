@@ -9,8 +9,11 @@ struct ContentView: View {
     let shouldAskForVault: () -> Bool
     @Environment(\.openWindow) private var openWindow
 
+    /// Shown again for ⌘⇧F: Search is in the sidebar.
+    @State private var columns = NavigationSplitViewVisibility.automatic
+
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columns) {
             LeftSidebar(model: model)
                 .navigationSplitViewColumnWidth(min: 200, ideal: 260)
         } detail: {
@@ -42,6 +45,9 @@ struct ContentView: View {
             if model.isShowingSwitcher {
                 QuickSwitcher(model: model)
             }
+        }
+        .onChange(of: model.wantsSearchField) { _, wants in
+            if wants, columns == .detailOnly { columns = .all }
         }
         .navigationTitle(model.shown?.name ?? model.vault?.root.lastPathComponent ?? "Noteki")
         .focusedSceneValue(\.noteEditor, model.isShowingNote ? model.editor : nil)

@@ -25,6 +25,9 @@ public enum EditorCommand: Encodable, Sendable {
     case find(FindStep)
     /// Which of the Note's links lead nowhere: those `inners` are drawn as Unresolved links.
     case unresolvedLinks(noteID: String, inners: [String])
+    /// Puts the cursor at the start of `line`, from 1, in the middle of the view: a search result
+    /// in the Note already shown.
+    case goToLine(noteID: String, line: Int)
     /// The answer to the editor's `completeLink` with the same `requestID`.
     case linkCompletions(requestID: Int, completions: LinkCompletions)
 
@@ -34,7 +37,7 @@ public enum EditorCommand: Encodable, Sendable {
         case next, previous
     }
 
-    public static let types = ["load", "reload", "flush", "clear", "selectAll", "undo", "redo", "find", "unresolvedLinks", "linkCompletions"]
+    public static let types = ["load", "reload", "flush", "clear", "selectAll", "undo", "redo", "find", "unresolvedLinks", "linkCompletions", "goToLine"]
 
     private enum CodingKeys: String, CodingKey {
         case type, noteID, revision, text, step, inners, requestID, completions, line
@@ -70,6 +73,10 @@ public enum EditorCommand: Encodable, Sendable {
             try container.encode("unresolvedLinks", forKey: .type)
             try container.encode(noteID, forKey: .noteID)
             try container.encode(inners, forKey: .inners)
+        case .goToLine(let noteID, let line):
+            try container.encode("goToLine", forKey: .type)
+            try container.encode(noteID, forKey: .noteID)
+            try container.encode(line, forKey: .line)
         case .linkCompletions(let requestID, let completions):
             try container.encode("linkCompletions", forKey: .type)
             try container.encode(requestID, forKey: .requestID)

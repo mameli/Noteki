@@ -92,6 +92,10 @@ _Avoid_: raw mode, plain text, code view
 A Note open in a window. A window has many Tabs and shows one, and each Tab keeps its own cursor, scroll and undo.
 _Avoid_: pane, document window
 
+**Search** (`SearchQuery`):
+Finding the Notes of the Vault that hold every word typed, narrowed by `tag:` and `path:`. Not **Find**, which looks inside the Note in front.
+_Avoid_: find in files, full-text search
+
 **Quick switcher** (`QuickSwitcher`):
 The box that opens a Note by typing part of its name.
 _Avoid_: open dialog, finder, palette

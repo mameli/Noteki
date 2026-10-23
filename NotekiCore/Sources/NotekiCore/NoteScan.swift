@@ -24,17 +24,48 @@ enum NoteScan {
         merge: @Sendable (inout Map, Note, Parsed?) -> Void
     ) {
         let merged = Mutex(map)
-        let chunk = 64
-        DispatchQueue.concurrentPerform(iterations: (notes.count + chunk - 1) / chunk) { part in
-            var read: [(Note, Parsed?)] = []
-            for note in notes[(part * chunk)..<min(notes.count, (part + 1) * chunk)] {
-                read.append((note, (try? vault.text(of: note)).map(parse)))
-            }
+        inChunks(of: notes.count) { positions in
+            let read = positions.map { (notes[$0], (try? vault.text(of: notes[$0])).map(parse)) }
             merged.withLock { map in for (note, parsed) in read { merge(&map, note, parsed) } }
         }
         map = merged.withLock { $0 }
-        // Reading every Note leaves the allocator holding the pages it used for their text: given
-        // back, the app's memory at rest is what is kept, not the scan's peak (SPEC, Budget).
-        if notes.count > chunk { malloc_zone_pressure_relief(nil, 0) }
+        givePagesBack(after: notes.count)
+    }
+
+    /// What `transform` makes of each Note's text, several Notes at a time, in the order of
+    /// `notes`; nil, and a Note that cannot be read, leave nothing. Once `isCancelled`, the Notes not
+    /// read yet are left out.
+    static func map<Result: Sendable>(
+        _ notes: [Note], in vault: Vault, isCancelled: @Sendable () -> Bool = { false },
+        _ transform: @Sendable (Note, String) -> Result?
+    ) -> [Result] {
+        let results = Mutex([Result?](repeating: nil, count: notes.count))
+        inChunks(of: notes.count) { positions in
+            var found: [(Int, Result)] = []
+            for position in positions {
+                // Stopped: the Notes not read yet are not read.
+                if isCancelled() { break }
+                guard let text = try? vault.text(of: notes[position]), let result = transform(notes[position], text) else { continue }
+                found.append((position, result))
+            }
+            results.withLock { all in for (position, result) in found { all[position] = result } }
+        }
+        givePagesBack(after: notes.count)
+        return results.withLock { $0.compactMap(\.self) }
+    }
+
+    private static let chunk = 64
+
+    /// Calls `body` with the positions of a chunk of the Notes, several chunks at a time.
+    private static func inChunks(of count: Int, _ body: (Range<Int>) -> Void) {
+        DispatchQueue.concurrentPerform(iterations: (count + chunk - 1) / chunk) { part in
+            body((part * chunk)..<min(count, (part + 1) * chunk))
+        }
+    }
+
+    /// Reading many Notes leaves the allocator holding the pages it used for their text: given back,
+    /// the app's memory at rest is what is kept, not the scan's peak (SPEC, Budget).
+    private static func givePagesBack(after count: Int) {
+        if count > chunk { malloc_zone_pressure_relief(nil, 0) }
     }
 }

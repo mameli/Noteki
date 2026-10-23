@@ -110,6 +110,12 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
         return applied
     }
 
+    /// The cursor at the start of `line` in the Note shown, as for a search result in it.
+    func goToLine(noteID: String, line: Int) {
+        guard isReady, loaded?.noteID == noteID else { return }
+        run(.goToLine(noteID: noteID, line: line)) { _ in }
+    }
+
     /// The links of the Note shown that lead nowhere, drawn as Unresolved links.
     func markUnresolved(noteID: String, inners: [String]) {
         guard isReady, loaded?.noteID == noteID else { return }

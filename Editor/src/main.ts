@@ -124,6 +124,12 @@ function initialState(text: string, editable: boolean) {
   });
 }
 
+/** The cursor at the start of `number`, from 1, in the middle of the view. */
+function goToLine(number: number) {
+  const line = view.state.doc.line(Math.min(Math.max(number, 1), view.state.doc.lines));
+  view.dispatch({ selection: { anchor: line.from }, effects: EditorView.scrollIntoView(line.from, { y: "center" }) });
+}
+
 const view = new EditorView({
   state: initialState("", false),
   parent: document.getElementById("editor")!,
@@ -139,14 +145,8 @@ window.noteki = {
         noteID = command.noteID;
         view.setState(initialState(command.text, true));
         view.scrollDOM.scrollTop = 0;
-        if (command.line !== undefined) {
-          // A Backlink: the cursor on its line, in the middle of the view.
-          const line = view.state.doc.line(Math.min(Math.max(command.line, 1), view.state.doc.lines));
-          view.dispatch({
-            selection: { anchor: line.from },
-            effects: EditorView.scrollIntoView(line.from, { y: "center" }),
-          });
-        }
+        // A Backlink or a search result: the cursor on its line.
+        if (command.line !== undefined) goToLine(command.line);
         // Ready for typing when the web view has the keyboard: the app gives it after the Quick
         // switcher or a Backlink, while Files keeps it after a click there.
         view.focus();
@@ -175,6 +175,12 @@ window.noteki = {
       }
       case "unresolvedLinks":
         if (command.noteID === noteID) markUnresolved(view, command.inners);
+        return null;
+      case "goToLine":
+        if (command.noteID === noteID) {
+          goToLine(command.line);
+          view.focus();
+        }
         return null;
       case "linkCompletions":
         receiveLinkCompletions(command.requestID, command.completions);
