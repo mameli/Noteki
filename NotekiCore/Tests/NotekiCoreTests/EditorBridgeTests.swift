@@ -106,6 +106,19 @@ struct EditorBridgeTests {
         #expect(try EditorCommand.frontmatter(noteID: "n1", text: "---\na: b", reading: nil).json() == #"{"noteID":"n1","text":"---\na: b","type":"frontmatter"}"#)
     }
 
+    @Test("the editor asks for a Tag added or removed, and the app answers with the Frontmatter to put in place of that text")
+    func tags() throws {
+        #expect(try EditorMessage(json: #"{"type":"addTag","noteID":"n1","text":"---\n---","tag":"x"}"#) == .addTag(noteID: "n1", text: "---\n---", tag: "x"))
+        #expect(try EditorMessage(json: #"{"type":"removeTag","noteID":"n1","text":"---\n---","tag":"x"}"#) == .removeTag(noteID: "n1", text: "---\n---", tag: "x"))
+        #expect(try EditorCommand.replaceFrontmatter(noteID: "n1", text: "a", replacement: "b").json() == #"{"noteID":"n1","replacement":"b","text":"a","type":"replaceFrontmatter"}"#)
+    }
+
+    @Test("the editor asks for the Vault's Tags to complete one, and the app answers that request")
+    func tagCompletions() throws {
+        #expect(try EditorMessage(json: #"{"type":"completeTag","requestID":4}"#) == .completeTag(requestID: 4))
+        #expect(try EditorCommand.tagCompletions(requestID: 4, tags: ["meeting", "client/axo"]).json() == #"{"requestID":4,"tags":["meeting","client\/axo"],"type":"tagCompletions"}"#)
+    }
+
     @Test("clearing the editor needs nothing else")
     func clear() throws {
         #expect(try EditorCommand.clear.json() == #"{"type":"clear"}"#)

@@ -28,6 +28,8 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
     var onCheckLinks: (_ noteID: String, _ inners: [String]) -> Void = { _, _ in }
     /// The Notes to offer when the user types `[[`.
     var linkCompletions: () -> LinkCompletions = { .none }
+    /// The Vault's Tags to offer when the user adds one, given to `answer` once they are read.
+    var tagCompletions: (_ answer: @escaping @MainActor ([String]) -> Void) -> Void = { $0([]) }
 
     private var isReady = false
     /// What the editor shows, or will show once it is ready.
@@ -203,10 +205,23 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
             onCheckLinks(noteID, inners)
         case .completeLink(let requestID):
             run(.linkCompletions(requestID: requestID, completions: linkCompletions())) { _ in }
+        case .addTag(let noteID, let text, let tag):
+            edit(.add(tag), noteID: noteID, text: text)
+        case .removeTag(let noteID, let text, let tag):
+            edit(.remove(tag), noteID: noteID, text: text)
+        case .completeTag(let requestID):
+            tagCompletions { [weak self] tags in self?.run(.tagCompletions(requestID: requestID, tags: tags)) { _ in } }
         case .readFrontmatter(let noteID, let text):
             // Read here: it needs nothing of the Vault, and a Loose file has Properties too.
             run(.frontmatter(noteID: noteID, text: text, reading: Frontmatter(of: text)?.reading)) { _ in }
         }
+    }
+
+    /// The Frontmatter `text` with a Tag added or removed, back to the editor to put in place;
+    /// nothing when NotekiCore changes nothing (YAML it cannot read is never rewritten).
+    private func edit(_ edit: TagEdit, noteID: String, text: String) {
+        guard let replacement = Frontmatter.editingTags(edit, in: text) else { return }
+        run(.replaceFrontmatter(noteID: noteID, text: text, replacement: replacement)) { _ in }
     }
 
     private func loadPage() {

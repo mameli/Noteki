@@ -110,3 +110,87 @@ struct FrontmatterTests {
         ]))
     }
 }
+
+@Suite("Writing Tags")
+struct TagWritingTests {
+    @Test("an added Tag ends the `tags` list, one item per line; nothing else changes, Tags in the text least of all")
+    func add() {
+        let text = "---\ntitle: x\ntags:\n  - meeting\ndate: 1\n---\nBody #inline\n"
+
+        #expect(Frontmatter.editingTags(.add("client/axo"), in: text) == "---\ntitle: x\ntags:\n  - meeting\n  - client/axo\ndate: 1\n---\nBody #inline\n")
+    }
+
+    @Test("Tags written otherwise become a list one item per line, without quotes or #")
+    func rewritten() {
+        #expect(Frontmatter.editingTags(.add("new"), in: "---\ntags: [meeting, \"b\"]\n---\n") == "---\ntags:\n  - meeting\n  - b\n  - new\n---\n")
+        #expect(Frontmatter.editingTags(.add("new"), in: "---\ntags: a, b\n---\n") == "---\ntags:\n  - a\n  - b\n  - new\n---\n")
+        #expect(Frontmatter.editingTags(.add("new"), in: "---\ntags: meeting\n---\n") == "---\ntags:\n  - meeting\n  - new\n---\n")
+        #expect(Frontmatter.editingTags(.add("new"), in: "---\ntags:\nx: y\n---\n") == "---\ntags:\n  - new\nx: y\n---\n")
+    }
+
+    @Test("without a `tags` Property, one is added at the end of the Frontmatter")
+    func noTags() {
+        #expect(Frontmatter.editingTags(.add("new"), in: "---\ntitle: x\n---\nBody") == "---\ntitle: x\ntags:\n  - new\n---\nBody")
+        #expect(Frontmatter.editingTags(.add("new"), in: "---\n---\nBody") == "---\ntags:\n  - new\n---\nBody")
+    }
+
+    @Test("a removed Tag leaves the others; the last one leaves an empty list")
+    func remove() {
+        #expect(Frontmatter.editingTags(.remove("b"), in: "---\ntags:\n  - a\n  - B\nx: y\n---\n") == "---\ntags:\n  - a\nx: y\n---\n")
+        #expect(Frontmatter.editingTags(.remove("#a"), in: "---\ntags: [a]\n---\n") == "---\ntags: []\n---\n")
+    }
+
+    @Test("the lines after the last item stay; blank lines between the items go")
+    func around() {
+        let text = "---\ntags:\n  - a\n\n  - b\n\n# end\nx: y\n---\n"
+
+        #expect(Frontmatter.editingTags(.remove("a"), in: text) == "---\ntags:\n  - b\n\n# end\nx: y\n---\n")
+    }
+
+    @Test("a comment among the Tags' lines would be lost: such a Property is left alone")
+    func comments() {
+        #expect(Frontmatter.editingTags(.add("c"), in: "---\ntags: [a, b] # keep\n---\n") == nil)
+        #expect(Frontmatter.editingTags(.add("c"), in: "---\ntags: alpha #beta\n---\n") == nil)
+        #expect(Frontmatter.editingTags(.add("c"), in: "---\ntags: # mine\n  - a\n---\n") == nil)
+        #expect(Frontmatter.editingTags(.remove("a"), in: "---\ntags:\n  - a\n  # old\n  - b\n---\n") == nil)
+    }
+
+    @Test("a word YAML reads as no text, written bare, is not added; a list holding one is left alone")
+    func reserved() {
+        #expect(Frontmatter.editingTags(.add("null"), in: "---\ntags: [a]\n---\n") == nil)
+        #expect(Frontmatter.editingTags(.add("True"), in: "---\ntags: [a]\n---\n") == nil)
+        #expect(Frontmatter.editingTags(.add("c"), in: "---\ntags: [\"false\"]\n---\n") == nil)
+    }
+
+    @Test("a Tag spelled as one already there, one not there to remove, or no Tag at all changes nothing")
+    func nothing() {
+        let text = "---\ntags: [Meeting]\n---\n"
+
+        #expect(Frontmatter.editingTags(.add("meeting"), in: text) == nil)
+        #expect(Frontmatter.editingTags(.add("#Meeting"), in: text) == nil)
+        #expect(Frontmatter.editingTags(.remove("other"), in: text) == nil)
+        #expect(Frontmatter.editingTags(.add("two words"), in: text) == nil)
+        #expect(Frontmatter.editingTags(.add("1abc"), in: text) == nil)
+        #expect(Frontmatter.editingTags(.add(""), in: text) == nil)
+        #expect(Frontmatter.editingTags(.add("#New"), in: text) == "---\ntags:\n  - Meeting\n  - New\n---\n")
+    }
+
+    @Test("Tags Noteki could not write back as they are, in quotes for what they hold, are never rewritten")
+    func quoted() {
+        #expect(Frontmatter.editingTags(.add("c"), in: "---\ntags: [\"a #b\"]\n---\n") == nil)
+        #expect(Frontmatter.editingTags(.add("c"), in: "---\ntags:\n  - \"x: y\"\n---\n") == nil)
+        #expect(Frontmatter.editingTags(.add("c"), in: "---\ntags:\n  - two words\n---\n") == nil)
+        #expect(Frontmatter.editingTags(.add("c"), in: "---\ntags: [\"client/axo\"]\n---\n") == "---\ntags:\n  - client/axo\n  - c\n---\n")
+    }
+
+    @Test("YAML Noteki cannot read, or no Frontmatter, is never rewritten")
+    func unreadable() {
+        #expect(Frontmatter.editingTags(.add("x"), in: "---\ntags: [a]\nb:\n  c: d\n---\n") == nil)
+        #expect(Frontmatter.editingTags(.add("x"), in: "# Note\n") == nil)
+    }
+
+    @Test("the Note's line ends are kept")
+    func lineEnds() {
+        #expect(Frontmatter.editingTags(.add("b"), in: "---\r\ntags: [a]\r\n---\r\nBody") == "---\r\ntags:\r\n  - a\r\n  - b\r\n---\r\nBody")
+    }
+}

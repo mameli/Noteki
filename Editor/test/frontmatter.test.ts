@@ -36,7 +36,8 @@ test("away from the cursor, the Properties are a table: keys, then values as wri
   assert.equal(shownWith(note + "‸", reading), "\ntitleRetro\ntagsab\nlist\nx\nempty\n\nBody");
   const table = renderedFrontmatter(answered(stateOf(note + "‸"), reading))!;
   assert.equal(table.keyWidth, 5);
-  assert.deepEqual(table.items.map(({ from, to }) => note.slice(from, to)), ["a", "b", "x"]);
+  assert.deepEqual(table.items.map(({ from, to }) => note.slice(from, to)), ["x"]);
+  assert.deepEqual(table.tags.chips.map((chip) => chip.name), ["a", "b"]);
   assert.deepEqual(table.values.map(({ from, to }) => note.slice(from, to)), ["Retro"]);
 });
 
@@ -70,4 +71,36 @@ test("a Note opens with the cursor where its text starts, after the Frontmatter"
   assert.equal(bodyStart(stateOf(note)), note.indexOf("Body"));
   assert.equal(bodyStart(stateOf("---\na: b\n---")), 12);
   assert.equal(bodyStart(stateOf("# Title")), 0);
+});
+
+test("the `tags` Property's values are chips, a field to add one after the last; without it, the field is on the table's top", () => {
+  const tagged = "---\ntags:\n  - meeting\n  - '#client/axo'\nx: [a, b]\n---\nBody‸";
+  const answer: FrontmatterReading = {
+    properties: [
+      { key: "tags", keySpan: { line: 2, from: 0, to: 4 }, value: { kind: "list", items: [{ line: 3, from: 4, to: 11 }, { line: 4, from: 5, to: 16 }] } },
+      { key: "x", keySpan: { line: 5, from: 0, to: 1 }, value: { kind: "list", items: [{ line: 5, from: 4, to: 5 }, { line: 5, from: 7, to: 8 }] } },
+    ],
+  };
+  const table = renderedFrontmatter(answered(stateOf(tagged), answer))!;
+  assert.deepEqual(table.tags.chips.map((chip) => chip.name), ["meeting", "client/axo"]);
+  assert.equal(table.tags.addAt, tagged.indexOf("'\nx:") + 1);
+  assert.deepEqual(table.items.map(({ from, to }) => tagged.slice(from, to)), ["a", "b"]);
+
+  const untagged = "---\ntitle: x\n---\nBody‸";
+  const titled: FrontmatterReading = { properties: [{ key: "title", keySpan: { line: 2, from: 0, to: 5 }, value: { kind: "text", span: { line: 2, from: 7, to: 8 } } }] };
+  assert.equal(renderedFrontmatter(answered(stateOf(untagged), titled))!.tags.addAt, 3);
+});
+
+test("Tags written in one text are a chip each", () => {
+  const text = "---\ntags: a b, c\n---\nBody‸";
+  const answer: FrontmatterReading = { properties: [{ key: "tags", keySpan: { line: 2, from: 0, to: 4 }, value: { kind: "text", span: { line: 2, from: 6, to: 12 } } }] };
+  const table = renderedFrontmatter(answered(stateOf(text), answer))!;
+  assert.deepEqual(table.tags.chips.map((chip) => [chip.name, text.slice(chip.from, chip.to)]), [["a", "a"], ["b", "b"], ["c", "c"]]);
+  assert.equal(shown(text, (state) => answered(state, answer)), "\ntagsabc\n\nBody");
+});
+
+test("an item of the list is one chip, whatever it holds", () => {
+  const text = "---\ntags:\n  - client a\n---\nBody‸";
+  const answer: FrontmatterReading = { properties: [{ key: "tags", keySpan: { line: 2, from: 0, to: 4 }, value: { kind: "list", items: [{ line: 3, from: 4, to: 12 }] } }] };
+  assert.deepEqual(renderedFrontmatter(answered(stateOf(text), answer))!.tags.chips.map((chip) => chip.name), ["client a"]);
 });

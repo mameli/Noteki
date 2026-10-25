@@ -36,6 +36,8 @@ final class AppModel {
     var isReadingTags: Bool { tagged.isReading || !tagged.hasRead }
     /// The Tags as a tree, and the Notes of the Tag chosen, for the Tags pane.
     private(set) var tagTree: [TagNode] = []
+    /// The editor's requests for the Vault's Tags made before they were read: answered once they are.
+    private var tagAnswers: [@MainActor ([String]) -> Void] = []
     private(set) var notesOfSelectedTag: [Note] = []
     /// The path of the Tag chosen in the tree.
     var selectedTag: String? {
@@ -266,6 +268,14 @@ final class AppModel {
             guard let self, let index else { return .none }
             return index.linkCompletions(recent: recentNotes)
         }
+        editor.tagCompletions = { [weak self] answer in
+            // Before Files is listed, or in a Loose file, there are no Tags to offer.
+            guard let self, let index, let vault else { return answer([]) }
+            tagAnswers.append(answer)
+            // The Tags are read the first time they are needed, as for the Tags pane.
+            tagged.listed(index.notes, in: vault, isWanted: true)
+            answerTagCompletions()
+        }
         editor.onCheckLinks = { [weak self] noteID, inners in
             guard let self, noteID == openNoteID else { return }
             openNoteLinks = inners
@@ -472,6 +482,8 @@ final class AppModel {
         links.reset()
         tagged.reset()
         tagTree = []
+        // Asked about the Vault left: an answer from this one would be wrong.
+        tagAnswers = []
         notesOfSelectedTag = []
         selectedTag = nil
         backlinks = []
@@ -540,9 +552,19 @@ final class AppModel {
         let tree = tagged.map.tree()
         // Not assigned when the same: the outline is not drawn again for every save.
         if tree != tagTree { tagTree = tree }
+        answerTagCompletions()
         // A Tag no Note has any more is no longer chosen.
         if let selectedTag, !tagTree.contains(where: { $0.contains(path: selectedTag) }) { self.selectedTag = nil }
         updateTagNotes()
+    }
+
+    /// The Tags, once read, to the editor's requests.
+    private func answerTagCompletions() {
+        guard !tagAnswers.isEmpty, tagged.hasRead, !tagged.isReading else { return }
+        let names = tagged.map.completions()
+        let answers = tagAnswers
+        tagAnswers = []
+        for answer in answers { answer(names) }
     }
 
     private func updateTagNotes() {

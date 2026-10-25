@@ -41,7 +41,14 @@ export type EditorCommand =
    * The answer to `readFrontmatter`: the `text` it asked about and its reading, none when the
    * Frontmatter never closes. The table is drawn only while the Frontmatter is still that text.
    */
-  | { type: "frontmatter"; noteID: string; text: string; reading?: FrontmatterReading };
+  | { type: "frontmatter"; noteID: string; text: string; reading?: FrontmatterReading }
+  /**
+   * The answer to `addTag` or `removeTag`: what to put in place of the Frontmatter `text`, only
+   * while it is still that text.
+   */
+  | { type: "replaceFrontmatter"; noteID: string; text: string; replacement: string }
+  /** The answer to the `completeTag` with the same `requestID`: the Vault's Tags. */
+  | { type: "tagCompletions"; requestID: number; tags: string[] };
 
 /** What `[[` offers: the Notes opened recently, the latest first, then all the others. */
 export interface LinkCompletions {
@@ -70,7 +77,13 @@ export type EditorMessage =
   /** The user typed `[[`: which Notes can the link lead to? Answered by `linkCompletions`. */
   | { type: "completeLink"; requestID: number }
   /** The Frontmatter, from its first `---` line to its last: how does it read? */
-  | { type: "readFrontmatter"; noteID: string; text: string };
+  | { type: "readFrontmatter"; noteID: string; text: string }
+  /** A Tag added in the Properties table: `text` is the Frontmatter. */
+  | { type: "addTag"; noteID: string; text: string; tag: string }
+  /** A chip's ×: remove `tag` from the Frontmatter `text`. */
+  | { type: "removeTag"; noteID: string; text: string; tag: string }
+  /** The user is adding a Tag: which Tags does the Vault have? */
+  | { type: "completeTag"; requestID: number };
 
 declare global {
   interface Window {

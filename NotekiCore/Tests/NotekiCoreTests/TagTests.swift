@@ -31,6 +31,17 @@ struct TagTests {
         ])
     }
 
+    @Test("the Tags offered to add one: every level as most Notes write it, those most Notes have first")
+    func completions() throws {
+        let (tags, _) = try map([
+            "a.md": "#Client/axo #meeting",
+            "b.md": "#client/bnp #meeting",
+            "c.md": "#client/axo",
+        ])
+
+        #expect(tags.completions() == ["client", "client/axo", "meeting", "client/bnp"])
+    }
+
     @Test("only the tags Property counts, and only in the Frontmatter at the top")
     func onlyTags() throws {
         let (tags, _) = try map([

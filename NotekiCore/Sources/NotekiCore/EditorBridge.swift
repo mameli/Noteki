@@ -39,6 +39,12 @@ public enum EditorCommand: Encodable, Sendable {
     /// none when the Frontmatter never closes. The editor draws the Properties table only while
     /// its Frontmatter is still that text.
     case frontmatter(noteID: String, text: String, reading: Frontmatter.Reading?)
+    /// The answer to `addTag` or `removeTag`: the Frontmatter `text` the editor asked about, and
+    /// what to put in its place. The editor applies it only while its Frontmatter is still `text`.
+    case replaceFrontmatter(noteID: String, text: String, replacement: String)
+    /// The answer to the editor's `completeTag` with the same `requestID`: the Vault's Tags, those
+    /// most Notes have first.
+    case tagCompletions(requestID: Int, tags: [String])
 
     public enum FindStep: String, Sendable {
         /// Show the find bar, with the selection as the text to find.
@@ -46,10 +52,10 @@ public enum EditorCommand: Encodable, Sendable {
         case next, previous
     }
 
-    public static let types = ["load", "reload", "flush", "clear", "selectAll", "undo", "redo", "find", "unresolvedLinks", "linkCompletions", "goToLine", "sourceMode", "embeds", "frontmatter"]
+    public static let types = ["load", "reload", "flush", "clear", "selectAll", "undo", "redo", "find", "unresolvedLinks", "linkCompletions", "goToLine", "sourceMode", "embeds", "frontmatter", "replaceFrontmatter", "tagCompletions"]
 
     private enum CodingKeys: String, CodingKey {
-        case type, noteID, revision, text, step, inners, requestID, completions, line, on, files, reading
+        case type, noteID, revision, text, step, inners, requestID, completions, line, on, files, reading, replacement, tags
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -102,6 +108,15 @@ public enum EditorCommand: Encodable, Sendable {
             try container.encode(noteID, forKey: .noteID)
             try container.encode(text, forKey: .text)
             try container.encodeIfPresent(reading, forKey: .reading)
+        case .replaceFrontmatter(let noteID, let text, let replacement):
+            try container.encode("replaceFrontmatter", forKey: .type)
+            try container.encode(noteID, forKey: .noteID)
+            try container.encode(text, forKey: .text)
+            try container.encode(replacement, forKey: .replacement)
+        case .tagCompletions(let requestID, let tags):
+            try container.encode("tagCompletions", forKey: .type)
+            try container.encode(requestID, forKey: .requestID)
+            try container.encode(tags, forKey: .tags)
         }
     }
 
@@ -128,11 +143,18 @@ public enum EditorMessage: Decodable, Equatable, Sendable {
     /// The Note's Frontmatter, from its first `---` line to its last: how does it read?
     /// Answered by `frontmatter`.
     case readFrontmatter(noteID: String, text: String)
+    /// The user added a Tag in the Properties table: `text` is the Frontmatter. Answered by
+    /// `replaceFrontmatter`, or not at all when nothing changes.
+    case addTag(noteID: String, text: String, tag: String)
+    /// The user clicked a chip's ×: remove `tag` from the Frontmatter `text`. Answered as `addTag`.
+    case removeTag(noteID: String, text: String, tag: String)
+    /// The user is adding a Tag: which Tags does the Vault have? Answered by `tagCompletions`.
+    case completeTag(requestID: Int)
 
-    public static let types = ["ready", "changed", "followLink", "checkLinks", "completeLink", "readFrontmatter"]
+    public static let types = ["ready", "changed", "followLink", "checkLinks", "completeLink", "readFrontmatter", "addTag", "removeTag", "completeTag"]
 
     private enum CodingKeys: String, CodingKey {
-        case type, noteID, revision, text, inner, inners, requestID
+        case type, noteID, revision, text, inner, inners, requestID, tag
     }
 
     public init(json: String) throws {
@@ -160,6 +182,13 @@ public enum EditorMessage: Decodable, Equatable, Sendable {
             )
         case "completeLink":
             self = .completeLink(requestID: try container.decode(Int.self, forKey: .requestID))
+        case "addTag", "removeTag":
+            let noteID = try container.decode(String.self, forKey: .noteID)
+            let text = try container.decode(String.self, forKey: .text)
+            let tag = try container.decode(String.self, forKey: .tag)
+            self = type == "addTag" ? .addTag(noteID: noteID, text: text, tag: tag) : .removeTag(noteID: noteID, text: text, tag: tag)
+        case "completeTag":
+            self = .completeTag(requestID: try container.decode(Int.self, forKey: .requestID))
         case "readFrontmatter":
             self = .readFrontmatter(
                 noteID: try container.decode(String.self, forKey: .noteID),

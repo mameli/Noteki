@@ -8,6 +8,7 @@ import { type EditorCommand, type EditorMessage, send } from "./bridge";
 import { linkCompletion, receiveLinkCompletions } from "./completion";
 import { embeddedFile, embedFiles, embedImages, setEmbeds } from "./embeds";
 import { bodyStart, frontmatterReading, frontmatterText, setFrontmatter } from "./frontmatter";
+import { type TagEditing, tagEditing } from "./tagchips";
 import { highlightTag } from "./highlight";
 import { noteLanguage } from "./language";
 import { livePreview } from "./livepreview";
@@ -125,6 +126,28 @@ const readFrontmatterAfterChanges = EditorView.updateListener.of((update) => {
   if (update.docChanged) readFrontmatter();
 });
 
+/** The Tag completions asked for and not answered yet, by request. */
+const tagRequests = new Map<number, (tags: string[]) => void>();
+let lastTagRequest = 0;
+
+/** A Tag added or removed asks the app to write the Frontmatter; its answer replaces it. */
+const tagEditingByApp: TagEditing = {
+  add(state, tag) {
+    const text = frontmatterText(state);
+    if (noteID !== null && text !== null) send({ type: "addTag", noteID, text, tag });
+  },
+  remove(state, tag) {
+    const text = frontmatterText(state);
+    if (noteID !== null && text !== null) send({ type: "removeTag", noteID, text, tag });
+  },
+  complete() {
+    lastTagRequest += 1;
+    const requestID = lastTagRequest;
+    send({ type: "completeTag", requestID });
+    return new Promise((resolve) => tagRequests.set(requestID, resolve));
+  },
+};
+
 /** Live preview, or nothing in Source mode, which the app chooses. */
 const preview = new Compartment();
 let sourceMode = false;
@@ -148,6 +171,7 @@ function initialState(text: string, editable: boolean) {
       unresolvedLinks,
       checkLinksAfterChanges,
       readFrontmatterAfterChanges,
+      tagEditing.of(tagEditingByApp),
       linkCompletion((requestID) => send({ type: "completeLink", requestID })),
       noteTheme,
       syntaxHighlighting(sourceHighlight),
@@ -220,6 +244,17 @@ window.noteki = {
         return null;
       case "frontmatter":
         if (command.noteID === noteID) view.dispatch({ effects: setFrontmatter.of({ text: command.text, reading: command.reading ?? null }) });
+        return null;
+      case "replaceFrontmatter": {
+        // Only over the Frontmatter it was written from, at the top: one typed since is not
+        // overwritten.
+        if (command.noteID !== noteID || frontmatterText(view.state) !== command.text) return null;
+        view.dispatch({ changes: { from: 0, to: command.text.length, insert: command.replacement }, userEvent: "input" });
+        return null;
+      }
+      case "tagCompletions":
+        tagRequests.get(command.requestID)?.(command.tags);
+        tagRequests.delete(command.requestID);
         return null;
       case "embeds":
         if (command.noteID === noteID) view.dispatch({ effects: setEmbeds.of(command.files) });

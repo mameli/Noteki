@@ -78,10 +78,7 @@ public struct Frontmatter: Equatable, Sendable {
 
     /// The Frontmatter at the top of a Note's text; nil when there is none, or it never closes.
     public init?(of text: String) {
-        let lines = Self.lines(of: text)
-        guard let first = lines.first, Self.isDelimiter(first, dots: false),
-              let end = lines.indices.dropFirst().first(where: { Self.isDelimiter(lines[$0], dots: true) })
-        else { return nil }
+        guard let (lines, end) = Self.lines(of: Array(text.utf16)) else { return nil }
         reading = Self.read(lines[1..<end])
     }
 
@@ -233,23 +230,34 @@ public struct Frontmatter: Equatable, Sendable {
         return at
     }
 
-    /// The Note's lines in UTF-16, as CodeMirror splits them: `\n`, `\r\n` and `\r` end one.
-    private static func lines(of text: String) -> [[UInt16]] {
-        var lines: [[UInt16]] = [[]]
-        var previous: UInt16 = 0
-        for unit in text.utf16 {
-            if unit == newline, previous == carriageReturn {
-                previous = unit
-                continue
-            }
+    /// The Note's lines in UTF-16, and the index of the Frontmatter's closing line; nil when the
+    /// Note has no Frontmatter or it never closes.
+    private static func lines(of units: [UInt16], _ ranges: [Range<Int>]? = nil) -> (lines: [[UInt16]], end: Int)? {
+        let lines = (ranges ?? lineRanges(of: units)).map { Array(units[$0]) }
+        guard let first = lines.first, isDelimiter(first, dots: false),
+              let end = lines.indices.dropFirst().first(where: { isDelimiter(lines[$0], dots: true) })
+        else { return nil }
+        return (lines, end)
+    }
+
+    /// Where each line is, its line end left out, as CodeMirror splits them: `\n`, `\r\n` and `\r`
+    /// end one.
+    private static func lineRanges(of units: [UInt16]) -> [Range<Int>] {
+        var ranges: [Range<Int>] = []
+        var start = 0
+        var at = 0
+        while at < units.count {
+            let unit = units[at]
             if unit == newline || unit == carriageReturn {
-                lines.append([])
+                ranges.append(start..<at)
+                at += unit == carriageReturn && at + 1 < units.count && units[at + 1] == newline ? 2 : 1
+                start = at
             } else {
-                lines[lines.count - 1].append(unit)
+                at += 1
             }
-            previous = unit
         }
-        return lines
+        ranges.append(start..<units.count)
+        return ranges
     }
 
     /// `---`, or with `dots` also `...`, and spaces after it.
@@ -266,4 +274,88 @@ public struct Frontmatter: Equatable, Sendable {
     private static let openBracket: UInt16 = 91, closeBracket: UInt16 = 93, openBrace: UInt16 = 123
     /// What starts YAML that is not a plain text: maps, blocks of text, anchors, types, directives.
     private static let indicators: Set<UInt16> = Set("{}[]|>&*!%@`\"'?,".utf16)
+}
+
+/// A Tag added to the Note's `tags` Property, or removed from it.
+public enum TagEdit: Equatable, Sendable {
+    case add(String)
+    case remove(String)
+}
+
+extension Frontmatter {
+    /// The Note's text with its `tags` Property edited, written as a YAML list one item per line,
+    /// without quotes or `#` (SPEC, Frontmatter): only those lines change, Tags in the text never.
+    /// Without a `tags` Property, one is added at the end of the Frontmatter. Nil when nothing
+    /// changes: a Tag already there in any case, one not there to remove, no Tag at all, no
+    /// Frontmatter, YAML Noteki cannot read, or Tags it could not write back as they are; it
+    /// never rewrites those.
+    public static func editingTags(_ edit: TagEdit, in text: String) -> String? {
+        var units = Array(text.utf16)
+        let ranges = lineRanges(of: units)
+        guard let (lines, end) = lines(of: units, ranges), case .properties(let properties) = read(lines[1..<end]) else { return nil }
+        let property = properties.first { $0.key == "tags" }
+        let cut = { (span: LineSpan) in String(decoding: lines[span.line - 1][span.from..<span.to], as: UTF16.self) }
+        var tags: [String] = switch property?.value {
+        case .text(let span)?: cut(span).split { $0 == "," || $0 == " " || $0 == "\t" }.map(String.init)
+        case .list(let items)?: items.map(cut)
+        case .none?, nil: []
+        }
+        tags = tags.map(withoutHash).filter { !$0.isEmpty }
+        // Written back plain, a Tag in quotes for what it holds (`"a #b"`, `"x: y"`, `"null"`)
+        // would read otherwise, and a comment among its lines would be lost: such a Property is
+        // left alone.
+        guard tags.allSatisfy(isWritable), !(property.map { hasComment(property: $0, lines) } ?? false) else { return nil }
+        switch edit {
+        case .add(let tag):
+            let tag = withoutHash(tag)
+            guard isWritable(tag), !tags.contains(where: { $0.lowercased() == tag.lowercased() }) else { return nil }
+            tags.append(tag)
+        case .remove(let tag):
+            let tag = withoutHash(tag).lowercased()
+            guard tags.contains(where: { $0.lowercased() == tag }) else { return nil }
+            tags.removeAll { $0.lowercased() == tag }
+        }
+        let lineEnd = text.contains("\r\n") ? "\r\n" : text.contains("\r") ? "\r" : "\n"
+        let written = (tags.isEmpty ? ["tags: []"] : ["tags:"] + tags.map { "  - \($0)" }).joined(separator: lineEnd)
+        if let property {
+            // From the key's line to its last item's.
+            var last = property.keySpan.line
+            if case .list(let items) = property.value, let item = items.last { last = item.line }
+            units.replaceSubrange(ranges[property.keySpan.line - 1].lowerBound..<ranges[last - 1].upperBound, with: written.utf16)
+        } else {
+            units.insert(contentsOf: (written + lineEnd).utf16, at: ranges[end].lowerBound)
+        }
+        return String(decoding: units, as: UTF16.self)
+    }
+
+    /// A Tag YAML reads back as it is when written plain: not `null`, `true` or `false`.
+    private static func isWritable(_ tag: String) -> Bool {
+        TagMap.validTag(tag) == tag && !["null", "true", "false"].contains(tag.lowercased())
+    }
+
+    /// Whether a comment is among the lines of `property`, from its key to its last item: outside
+    /// its values, a `#` after a space or starting a line.
+    private static func hasComment(property: Property, _ lines: [[UInt16]]) -> Bool {
+        var spans = [property.keySpan]
+        switch property.value {
+        case .none: break
+        case .text(let span): spans.append(span)
+        case .list(let items): spans += items
+        }
+        let last = spans.map(\.line).max() ?? property.keySpan.line
+        for number in property.keySpan.line...last {
+            var units = lines[number - 1]
+            for span in spans where span.line == number {
+                units.replaceSubrange(span.from..<span.to, with: repeatElement(UInt16(120), count: span.to - span.from))
+            }
+            for (index, unit) in units.enumerated() where unit == hash {
+                if index == 0 || units[index - 1] == space || units[index - 1] == tab { return true }
+            }
+        }
+        return false
+    }
+
+    private static func withoutHash(_ tag: String) -> String {
+        tag.hasPrefix("#") ? String(tag.dropFirst()) : tag
+    }
 }

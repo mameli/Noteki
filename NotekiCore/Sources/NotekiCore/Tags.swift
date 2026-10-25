@@ -47,6 +47,21 @@ public struct TagMap: NoteScanned {
     }
 
     /// The Tags as a tree, each level by name, with the number of Notes at or under it.
+    /// The Tags offered to add one to a Note: every level as most Notes write it, those most Notes
+    /// have first, then by name.
+    public func completions() -> [String] {
+        var tags: [(name: String, count: Int)] = []
+        func add(_ nodes: [TagNode], under parent: String) {
+            for node in nodes {
+                let name = parent.isEmpty ? node.name : parent + "/" + node.name
+                tags.append((name, node.noteCount))
+                add(node.children, under: name)
+            }
+        }
+        add(tree(), under: "")
+        return tags.sorted { $0.count != $1.count ? $0.count > $1.count : $0.name < $1.name }.map(\.name)
+    }
+
     public func tree() -> [TagNode] {
         var counts: [String: Int] = [:]
         // The spellings of each level, by Notes that write them: the most written is shown.
@@ -142,7 +157,7 @@ public struct TagMap: NoteScanned {
 
     /// The Tag a text starts with, nil if it starts with no letter: its characters are letters,
     /// digits, `_`, `-` and `/`, without an empty level.
-    private static func validTag(_ text: String) -> String? {
+    static func validTag(_ text: String) -> String? {
         let tag = String(text.prefix { $0.isLetter || $0.isDecimalDigit || $0 == "_" || $0 == "-" || $0 == "/" })
         guard tag.first?.isLetter == true else { return nil }
         // A level left empty ends the Tag: `a//b` is `a`, `a/` is `a`.

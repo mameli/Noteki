@@ -5,6 +5,7 @@ import type { SyntaxNode } from "@lezer/common";
 import { calloutOf, calloutTheme, drawCallout, quoteMarks, type RenderedCallout } from "./callouts";
 import { embeddedFile } from "./embeds";
 import { drawFrontmatter, frontmatterLayout, frontmatterReading, frontmatterTheme, type RenderedFrontmatter } from "./frontmatter";
+import { tagChipsTheme } from "./tagchips";
 import { CheckboxWidget, isTicked, taskTheme } from "./tasks";
 import { measure, type RenderedTable, rowHidden, tableLayout } from "./tables";
 import { linesOf, type Span } from "./text";
@@ -364,6 +365,7 @@ export const livePreview = [
   taskTheme,
   calloutTheme,
   frontmatterTheme,
+  tagChipsTheme,
   EditorView.baseTheme({
     ".cm-inline-code": { backgroundColor: "var(--code-background)", borderRadius: "3px", padding: "0 2px" },
     // A table's lines never wrap, shown as a table or written, so each keeps one line's height; a

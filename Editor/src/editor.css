@@ -16,6 +16,7 @@
   --quote-text: var(--quote);
   --frontmatter-text: var(--syntax);
   --error: #e93147;
+  --accent-rgb: 0, 100, 209;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -24,6 +25,7 @@
     --background: #1e1e1e;
     --syntax: #6e6e73;
     --link: #5aa9ff;
+    --accent-rgb: 90, 169, 255;
     --quote: #a1a1a6;
     --panel: #2a2a2c;
     --separator: #3a3a3c;

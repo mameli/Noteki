@@ -4,6 +4,7 @@ import { Decoration, EditorView, WidgetType } from "@codemirror/view";
 import { styleTags, tags } from "@lezer/highlight";
 import type { MarkdownConfig } from "@lezer/markdown";
 import type { SyntaxNode } from "@lezer/common";
+import { AddTagWidget, TagChipWidget } from "./tagchips";
 import { linesOf, type Span } from "./text";
 
 // The YAML block at the very top of a Note, between `---` lines, as Obsidian reads it.
@@ -109,6 +110,8 @@ export interface RenderedFrontmatter extends Span {
   values: Span[];
   /** The lists' items, one per line or side by side. */
   items: Span[];
+  /** The `tags` Property's chips, and where the field to add one is. */
+  tags: { chips: TagChip[]; addAt: number };
   /** What hides: the `---` lines, the colons, quotes, brackets, commas, dashes and comments. */
   hidden: Span[];
   /** The start of the lines of items under their key. */
@@ -124,7 +127,9 @@ export interface RenderedFrontmatter extends Span {
 export function frontmatterLayout(state: EditorState, node: SyntaxNode, entered: boolean): RenderedFrontmatter | null {
   const answer = state.field(frontmatterReading, false);
   if (!answer?.reading || answer.text !== state.sliceDoc(node.from, node.to)) return null;
-  const empty = { from: node.from, to: node.to, keyWidth: 0, keys: [], values: [], items: [], hidden: [], itemLines: [] };
+  // Without a `tags` Property, a Tag is added from the table's top.
+  const tags = { chips: [], addAt: state.doc.lineAt(node.from).to };
+  const empty = { from: node.from, to: node.to, keyWidth: 0, keys: [], values: [], items: [], tags, hidden: [], itemLines: [] };
   if ("unreadable" in answer.reading) return { ...empty, unreadableLine: answer.reading.unreadable };
   if (entered) return null;
   const at = (span: LineSpan) => {
@@ -140,26 +145,28 @@ export function frontmatterLayout(state: EditorState, node: SyntaxNode, entered:
     layout.keys.push(key);
     layout.keyWidth = Math.max(layout.keyWidth, property.key.length);
     const keyLine = state.doc.line(property.keySpan.line);
+    const isTags = property.key === "tags";
+    // The Tags are chips: a text of several, `a, b`, a chip each, as NotekiCore reads it.
+    const values: LineSpan[] = property.value.kind === "text" ? [property.value.span] : property.value.kind === "list" ? property.value.items : [];
+    const cells = isTags && property.value.kind === "text" ? values.flatMap((cell) => tagsIn(state, cell)) : values;
     // What shows on each line, in order: what is between and after them hides.
     const shown: Span[] = [key];
-    if (property.value.kind === "text") {
-      const value = at(property.value.span);
-      layout.values.push(value);
-      shown.push(value);
-    } else if (property.value.kind === "list") {
-      for (const item of property.value.items) {
-        const span = at(item);
-        layout.items.push(span);
-        if (item.line === property.keySpan.line) {
-          shown.push(span);
-        } else {
-          const line = state.doc.line(item.line);
-          layout.itemLines.push(line.from);
-          hideAround(layout.hidden, line, [span]);
-        }
+    let lastLine = keyLine;
+    for (const cell of cells) {
+      const span = at(cell);
+      if (isTags) layout.tags.chips.push({ ...span, name: state.sliceDoc(span.from, span.to).replace(/^#/, "") });
+      else if (property.value.kind === "text") layout.values.push(span);
+      else layout.items.push(span);
+      if (cell.line === property.keySpan.line) {
+        shown.push(span);
+      } else {
+        lastLine = state.doc.line(cell.line);
+        layout.itemLines.push(lastLine.from);
+        hideAround(layout.hidden, lastLine, [span]);
       }
     }
     hideAround(layout.hidden, keyLine, shown);
+    if (isTags) layout.tags.addAt = lastLine.to;
   }
   // A comment on a line of its own: an empty row. The app reads past it, so it says nothing of it.
   for (const line of linesOf(state, first.to + 1, last.from - 1)) {
@@ -167,6 +174,17 @@ export function frontmatterLayout(state: EditorState, node: SyntaxNode, entered:
   }
   layout.hidden.sort((a, b) => a.from - b.from);
   return layout;
+}
+
+/** A Tag of the `tags` Property, drawn as a chip: `name` without its `#`. */
+export interface TagChip extends Span {
+  name: string;
+}
+
+/** The Tags in a text value, `a, b` or `a b`, each where it is written. */
+function tagsIn(state: EditorState, cell: LineSpan): LineSpan[] {
+  const text = state.doc.line(cell.line).text.slice(cell.from, cell.to);
+  return [...text.matchAll(/[^\s,]+/g)].map((found) => ({ line: cell.line, from: cell.from + found.index, to: cell.from + found.index + found[0].length }));
 }
 
 /** Hides what `line` holds between and after the spans shown on it, and before the first. */
@@ -221,6 +239,9 @@ export function drawFrontmatter(state: EditorState, node: SyntaxNode, layout: Re
   }
   if (!drawn) return ranges;
   ranges.push(label.range(state.doc.lineAt(node.from).to));
+  for (const chip of layout.tags.chips) ranges.push(Decoration.replace({ widget: new TagChipWidget(chip.name) }).range(chip.from, chip.to));
+  const present = layout.tags.chips.map((chip) => chip.name);
+  ranges.push(Decoration.widget({ widget: new AddTagWidget(present), side: 2 }).range(layout.tags.addAt));
   for (const span of layout.keys) ranges.push(keyMark.range(span.from, span.to));
   for (const span of layout.values) if (span.from < span.to) ranges.push(valueMark.range(span.from, span.to));
   for (const span of layout.items) if (span.from < span.to) ranges.push(itemMark.range(span.from, span.to));
