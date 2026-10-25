@@ -1,3 +1,5 @@
+import type { EmbeddedFile } from "./embeds";
+
 // The messages between the app and the editor, as JSON with a `type`. Their Swift twins are in
 // NotekiCore's EditorBridge.swift: a test checks both sides name the same commands and messages.
 
@@ -26,6 +28,8 @@ export type EditorCommand =
   | { type: "find"; step: "open" | "next" | "previous" }
   /** Which of the Note's links lead nowhere: those are drawn as Unresolved links. */
   | { type: "unresolvedLinks"; noteID: string; inners: string[] }
+  /** The files the Note's Embeds and Markdown images show, by what the editor asked about. */
+  | { type: "embeds"; noteID: string; files: Record<string, EmbeddedFile> }
   /** Source mode: the Markdown as written, every mark shown. Off, Live preview. */
   | { type: "sourceMode"; on: boolean }
   /** The cursor at the start of `line`, from 1, in the middle of the view: a search result. */

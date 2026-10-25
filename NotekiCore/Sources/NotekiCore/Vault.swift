@@ -166,7 +166,7 @@ public struct Vault: Sendable {
     }
 
     /// Whether any folder on the way to this path, or the path itself, is an Excluded folder.
-    private func isInExcludedFolder(_ path: String) -> Bool {
+    func isInExcludedFolder(_ path: String) -> Bool {
         var folder = root
         for component in path.split(separator: "/") {
             folder = folder.appending(path: String(component))

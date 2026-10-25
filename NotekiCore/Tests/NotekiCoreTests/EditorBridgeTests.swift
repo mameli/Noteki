@@ -36,6 +36,16 @@ struct EditorBridgeTests {
         #expect(try command.json() == #"{"line":2,"noteID":"n1","text":"a\nb","type":"load"}"#)
     }
 
+    @Test("the files of a Note's Embeds go with what the editor asked about")
+    func embeds() throws {
+        let command = EditorCommand.embeds(noteID: "n1", files: [
+            "a.png": EmbeddedFile(path: "Media/a.png", kind: .image, width: 4, height: 3),
+            "Doc.pdf": EmbeddedFile(path: "Doc.pdf", kind: .pdf, width: nil, height: nil),
+        ])
+
+        #expect(try command.json() == #"{"files":{"Doc.pdf":{"kind":"pdf","path":"Doc.pdf"},"a.png":{"height":3,"kind":"image","path":"Media\/a.png","width":4}},"noteID":"n1","type":"embeds"}"#)
+    }
+
     @Test("Source mode is on or off")
     func sourceMode() throws {
         #expect(try EditorCommand.sourceMode(on: true).json() == #"{"on":true,"type":"sourceMode"}"#)

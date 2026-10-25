@@ -1,6 +1,8 @@
 import { ensureSyntaxTree } from "@codemirror/language";
 import { EditorSelection, EditorState } from "@codemirror/state";
+import { embedFiles } from "../src/embeds";
 import { noteLanguage } from "../src/language";
+import { unresolved } from "../src/wikilink";
 import { hiddenRanges } from "../src/livepreview";
 
 /** A Note's state for `marked`: `‸` is the cursor, `‸…‸` a selection; at the end without one. */
@@ -13,7 +15,7 @@ export function stateOf(marked: string): EditorState {
   const state = EditorState.create({
     doc: text,
     selection: EditorSelection.single(anchor, head),
-    extensions: [noteLanguage],
+    extensions: [noteLanguage, embedFiles, unresolved],
   });
   ensureSyntaxTree(state, state.doc.length, 5000);
   return state;

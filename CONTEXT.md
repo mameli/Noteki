@@ -67,11 +67,11 @@ The text a Wikilink shows instead of the Note's name: `[[name|alias]]`.
 _Avoid_: label, display name
 
 **Embed** (`Embed`):
-A Wikilink with `!` in front, `![[file]]`: an image is shown in the Note, a PDF becomes a link to it.
+A Wikilink with `!` in front, `![[file]]`: an image is shown in the Note, a PDF becomes a link to it. A Markdown image `![](file)` is shown the same way, its path found as an Embed's is.
 _Avoid_: transclusion, inline image
 
 **Unresolved link** (`UnresolvedLink`):
-A Wikilink whose name matches no Note in the Vault. Following it creates that Note.
+A Wikilink whose name matches no Note in the Vault, or an Embed of a file that is not there. Following a Wikilink to a missing Note creates that Note.
 _Avoid_: broken link, dead link
 
 **Backlink** (`Backlink`):

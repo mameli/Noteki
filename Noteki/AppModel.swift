@@ -148,6 +148,7 @@ final class AppModel {
     private var isSwitcherOnScreen = false
     /// The Note chosen in the Quick switcher: the editor takes the keyboard once it is shown.
     private var noteToFocus: Note?
+    private var embedQuery: Task<Void, Never>?
     /// The links of the open Note, as the editor last reported them.
     private var openNoteLinks: [String] = []
     /// The Note or Attachment selected, nil before the first choice.
@@ -272,8 +273,8 @@ final class AppModel {
         }
     }
 
-    /// Tells the editor which of the open Note's links lead nowhere: again whenever the index
-    /// changes, so a link turns resolved once its Note exists.
+    /// Tells the editor which of the open Note's links lead nowhere, and what its Embeds show: again
+    /// whenever the index changes, so a link turns resolved once its Note exists.
     private func markUnresolvedLinks() {
         guard let open = openNote else { return }
         // Without an index (Files not listed yet, a Loose file) nothing is known to be missing.
@@ -281,6 +282,27 @@ final class AppModel {
             openNoteLinks.filter { index.resolve(Wikilink(inner: $0).target, from: open.note) == nil }
         } ?? []
         editor.markUnresolved(noteID: openNoteID, inners: unresolved)
+        showEmbeds()
+    }
+
+    /// Tells the editor what the open Note's Embeds show: the images (their size read from their
+    /// files, away from the main thread) and the PDFs. A newer answer drops an older one.
+    private func showEmbeds() {
+        embedQuery?.cancel()
+        guard let open = openNote, let index, let vault else { return }
+        let noteID = openNoteID
+        let inners = openNoteLinks
+        embedQuery = Task {
+            let files = await Task.detached {
+                var files: [String: EmbeddedFile] = [:]
+                for inner in inners {
+                    if let file = vault.embed(inner, from: open.note, in: index) { files[inner] = file }
+                }
+                return files
+            }.value
+            guard !Task.isCancelled else { return }
+            editor.showEmbeds(noteID: noteID, files: files)
+        }
     }
 
     /// Opens the Note or Attachment a clicked Wikilink leads to, resolved from the open Note as
@@ -438,6 +460,8 @@ final class AppModel {
 
     private func activate(_ vault: Vault) {
         self.vault = vault
+        // A Loose file's folder may be ~ or ~/Downloads: its window embeds nothing, serves nothing.
+        editor.images.vault = isLooseFile ? nil : vault
         pendingReveal = nil
         watcher = VaultWatcher(root: vault.root) { [weak self] change in self?.filesChanged(change) }
         tree = []
@@ -619,6 +643,8 @@ final class AppModel {
         // A Note changed on disk, saved by Noteki or not: its links are read again. Those new to
         // Files are read once Files lists them.
         let changedNotes = paths.compactMap { tree.item(at: $0)?.note }
+        // An image replaced on disk: its new version and size, so the editor loads it again.
+        if paths.contains(where: { Attachment(path: $0)?.kind == .image }) { showEmbeds() }
         links.changed(changedNotes, in: vault)
         tagged.changed(changedNotes, in: vault)
         // Results that may have changed with the files: a burst of saves counts as one search.

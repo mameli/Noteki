@@ -2,6 +2,8 @@ import { syntaxTree } from "@codemirror/language";
 import type { EditorState, Range } from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import type { SyntaxNode } from "@lezer/common";
+import { embeddedFile } from "./embeds";
+import { isUnresolved } from "./wikilink";
 import { measure, type RenderedTable, rowHidden, type Span, tableLayout } from "./tables";
 
 export type { RenderedTable } from "./tables";
@@ -20,7 +22,7 @@ const emphasis: Record<string, string> = {
 };
 
 /** Elements whose text is shown as it is written: code, and what later tickets render. */
-const asWritten = new Set(["FencedCode", "CodeBlock", "Image", "Embed", "HTMLBlock", "Frontmatter"]);
+const asWritten = new Set(["FencedCode", "CodeBlock", "HTMLBlock", "Frontmatter"]);
 
 /**
  * What Live preview hides between `from` and `to`, in order: the marks of the elements the
@@ -102,6 +104,18 @@ function preview(state: EditorState, from: number, to: number, measuring = true)
         return false;
       }
       switch (node.name) {
+        case "Embed":
+        case "Image": {
+          // An image the app found is drawn under the line (embeds.ts): its source hides as a whole,
+          // as one mark. A PDF Embed shows its name or Alias, a link that opens it, and so does a
+          // missing file's, faded as an Unresolved link. The rest is as written.
+          const file = embeddedFile(state, node);
+          if (file?.kind === "image") hide(node, { from: node.from, to: node.to });
+          else if (node.name === "Embed" && (file?.kind === "pdf" || isUnresolved(state, state.doc.sliceString(node.from + 3, node.to - 2)))) {
+            for (const span of bracketed(state, node, 3)) hide(node, span);
+          }
+          return false;
+        }
         case "Link": {
           const marks = children(node, "LinkMark");
           // `[text](url "title")`: the brackets, and from `]` to the end. A reference link
@@ -118,20 +132,7 @@ function preview(state: EditorState, from: number, to: number, measuring = true)
           for (const mark of children(node, "LinkMark")) hide(node, mark);
           return false;
         case "Wikilink": {
-          const marks = children(node, "WikilinkMark");
-          if (marks.length !== 2) return false;
-          // `[[target|alias]]` shows the alias: the target goes with the opening brackets. In a
-          // table the pipe is escaped, `[[target\\|alias]]`, and the backslash goes too. An
-          // empty Alias shows the target.
-          const inner = state.doc.sliceString(marks[0].to, marks[1].from);
-          const pipe = inner.indexOf("|");
-          if (pipe !== -1 && inner.slice(pipe + 1).trim() === "") {
-            hide(node, marks[0]);
-            hide(node, { from: marks[0].to + (inner[pipe - 1] === "\\" ? pipe - 1 : pipe), to: marks[1].to });
-          } else {
-            hide(node, { from: marks[0].from, to: pipe === -1 ? marks[0].to : marks[0].to + pipe + 1 });
-            hide(node, marks[1]);
-          }
+          for (const span of bracketed(state, node, 2)) hide(node, span);
           return false;
         }
         default:
@@ -150,6 +151,24 @@ function preview(state: EditorState, from: number, to: number, measuring = true)
   // Over the whole table, not only the part in view: a column keeps its width while scrolling.
   if (measuring) for (const table of tables) measure(table, preview(state, table.from, table.to, false).hidden);
   return { hidden: merged, code, tables, tableLines };
+}
+
+/**
+ * What a Wikilink or an Embed hides of itself (`open` is its opening's length, `[[` or `![[`): its
+ * brackets, and with an Alias, `target|`. In a table the pipe is escaped, `target\\|alias`, and the
+ * backslash goes too. An empty Alias shows the target.
+ */
+function bracketed(state: EditorState, node: SyntaxNode, open: number): Span[] {
+  const inner = state.doc.sliceString(node.from + open, node.to - 2);
+  const pipe = inner.indexOf("|");
+  const start = node.from + open;
+  if (pipe !== -1 && inner.slice(pipe + 1).trim() === "") {
+    return [{ from: node.from, to: start }, { from: start + (inner[pipe - 1] === "\\" ? pipe - 1 : pipe), to: node.to }];
+  }
+  return [
+    { from: node.from, to: pipe === -1 ? start : start + pipe + 1 },
+    { from: node.to - 2, to: node.to },
+  ];
 }
 
 function children(node: SyntaxNode, name: string): Span[] {

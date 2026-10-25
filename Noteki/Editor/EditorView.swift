@@ -57,8 +57,12 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
         }
     }
 
+    /// The Vault's images, for the Embeds the editor draws.
+    let images = ImageSchemeHandler()
+
     override init() {
         let configuration = WKWebViewConfiguration()
+        configuration.setURLSchemeHandler(images, forURLScheme: ImageSchemeHandler.scheme)
         webView = EditorWebView(frame: .zero, configuration: configuration)
         super.init()
         webView.onCommand = { [weak self] command in self?.perform(command) }
@@ -128,6 +132,12 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
     func markUnresolved(noteID: String, inners: [String]) {
         guard isReady, loaded?.noteID == noteID else { return }
         run(.unresolvedLinks(noteID: noteID, inners: inners)) { _ in }
+    }
+
+    /// The files the Note's Embeds show: the editor draws the images and links the PDFs.
+    func showEmbeds(noteID: String, files: [String: EmbeddedFile]) {
+        guard isReady, loaded?.noteID == noteID else { return }
+        run(.embeds(noteID: noteID, files: files)) { _ in }
     }
 
     /// Empties the editor and stops it taking typing: no Note is open.

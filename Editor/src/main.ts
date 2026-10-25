@@ -6,6 +6,7 @@ import { EditorView, keymap } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import { type EditorCommand, type EditorMessage, send } from "./bridge";
 import { linkCompletion, receiveLinkCompletions } from "./completion";
+import { embeddedFile, embedFiles, embedImages, setEmbeds } from "./embeds";
 import { noteLanguage } from "./language";
 import { livePreview } from "./livepreview";
 import { followWikilinks, linkInners, markUnresolved, unresolvedLinks } from "./wikilink";
@@ -105,15 +106,21 @@ const checkLinksAfterChanges = EditorView.updateListener.of((update) => {
 /** Live preview, or nothing in Source mode, which the app chooses. */
 const preview = new Compartment();
 let sourceMode = false;
-const previewed = () => (sourceMode ? [] : livePreview);
+const previewed = () => (sourceMode ? [] : [livePreview, embedImages]);
 
 function initialState(text: string, editable: boolean) {
   return EditorState.create({
     doc: text,
     extensions: [
       noteLanguage,
+      // What the app said about the Embeds stays across Source mode: the images come back with it.
+      embedFiles,
       preview.of(previewed()),
-      followWikilinks((inner) => send({ type: "followLink", inner })),
+      // An image drawn under its line hides its source: a click there places the cursor.
+      followWikilinks(
+        (inner) => send({ type: "followLink", inner }),
+        (state, node) => !(node.name === "Embed" && embeddedFile(state, node)?.kind === "image"),
+      ),
       unresolvedLinks,
       checkLinksAfterChanges,
       linkCompletion((requestID) => send({ type: "completeLink", requestID })),
@@ -181,6 +188,9 @@ window.noteki = {
       }
       case "unresolvedLinks":
         if (command.noteID === noteID) markUnresolved(view, command.inners);
+        return null;
+      case "embeds":
+        if (command.noteID === noteID) view.dispatch({ effects: setEmbeds.of(command.files) });
         return null;
       case "sourceMode":
         sourceMode = command.on;

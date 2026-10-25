@@ -1,4 +1,4 @@
-import type { SyntaxNode } from "@lezer/common";
+import type { SyntaxNode, SyntaxNodeRef } from "@lezer/common";
 import { ensureSyntaxTree, syntaxTree } from "@codemirror/language";
 import { type EditorState, RangeSetBuilder, StateEffect, StateField, type Text } from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
@@ -51,28 +51,48 @@ export const wikilinks: MarkdownConfig = {
   ],
 };
 
-/** What is between a Wikilink's or an Embed's brackets; null for any other node. */
-function innerOf(node: { name: string; from: number; to: number }, doc: Text): string | null {
-  if (node.name !== "Wikilink" && node.name !== "Embed") return null;
-  return doc.sliceString(node.from + (node.name === "Embed" ? 3 : 2), node.to - 2);
+/**
+ * What a link leads to, as the app resolves it: what is between a Wikilink's or an Embed's
+ * brackets, or a Markdown image's URL decoded (`%20` is a space). Null for any other node, and for
+ * an image on the web, which is not a file of the Vault.
+ */
+export function innerOf(node: SyntaxNodeRef, doc: Text): string | null {
+  if (node.name === "Wikilink" || node.name === "Embed") {
+    return doc.sliceString(node.from + (node.name === "Embed" ? 3 : 2), node.to - 2);
+  }
+  if (node.name !== "Image") return null;
+  const url = node.node.getChild("URL");
+  if (!url) return null;
+  let address = doc.sliceString(url.from, url.to);
+  if (address.startsWith("<") && address.endsWith(">")) address = address.slice(1, -1);
+  if (address.includes("://")) return null;
+  try {
+    return decodeURIComponent(address);
+  } catch {
+    return address;
+  }
 }
 
-/** The Wikilink or Embed at a document position, with what is between its brackets. */
-function linkAt(view: EditorView, pos: number): { from: number; to: number; inner: string } | null {
+/**
+ * The Wikilink or Embed at a document position, with what is between its brackets: what a click
+ * follows. Not a Markdown image: its text is no link to follow.
+ */
+function linkAt(view: EditorView, pos: number): { from: number; to: number; inner: string; node: SyntaxNode } | null {
   for (let node: SyntaxNode | null = syntaxTree(view.state).resolveInner(pos, 1); node; node = node.parent) {
+    if (node.name !== "Wikilink" && node.name !== "Embed") continue;
     const inner = innerOf(node, view.state.doc);
-    if (inner !== null) return { from: node.from, to: node.to, inner };
+    if (inner !== null) return { from: node.from, to: node.to, inner, node };
   }
   return null;
 }
 
 /**
- * A click on a Wikilink or Embed follows it, unless the cursor was already in that link: then
+ * A click on a Wikilink or Embed follows it (`follows` may say not), unless the cursor was already in that link: then
  * the click places the cursor, to edit it, as in Obsidian's live preview. Followed on release
  * and only without a drag, so a selection can start on a link; not with Control (the context
  * menu) nor while an input method is composing.
  */
-export function followWikilinks(follow: (inner: string) => void) {
+export function followWikilinks(follow: (inner: string) => void, follows: (state: EditorState, node: SyntaxNode) => boolean = () => true) {
   let pressed: { inner: string; x: number; y: number } | null = null;
   return EditorView.domEventHandlers({
     mousedown(event, view) {
@@ -82,7 +102,8 @@ export function followWikilinks(follow: (inner: string) => void) {
       const pos = view.posAtCoords({ x: event.clientX, y: event.clientY }, false);
       if (pos === null) return false;
       const found = linkAt(view, pos);
-      if (!found) return false;
+      // An image drawn under its line has its source hidden: a click there places the cursor.
+      if (!found || !follows(view.state, found.node)) return false;
       const head = view.state.selection.main.head;
       if (head >= found.from && head <= found.to && view.hasFocus) return false;
       pressed = { inner: found.inner, x: event.clientX, y: event.clientY };
@@ -101,8 +122,8 @@ export function followWikilinks(follow: (inner: string) => void) {
 }
 
 /**
- * Every Wikilink and Embed in the document, what is between their brackets, once each; null
- * while the document is not parsed to the end (a very long Note): ask again later.
+ * What every Wikilink, Embed and Markdown image of the document asks for (`innerOf`), once each;
+ * null while the document is not parsed to the end (a very long Note): ask again later.
  */
 export function linkInners(state: EditorState): string[] | null {
   // At most a few milliseconds of parsing here: the rest goes on in the background.
@@ -120,16 +141,21 @@ export function linkInners(state: EditorState): string[] | null {
   return [...inners].sort();
 }
 
-const setUnresolved = StateEffect.define<Set<string>>();
+export const setUnresolved = StateEffect.define<Set<string>>();
 
 /** The links the app said lead nowhere, by what is between their brackets. */
-const unresolved = StateField.define<Set<string>>({
+export const unresolved = StateField.define<Set<string>>({
   create: () => new Set(),
   update(value, transaction) {
     for (const effect of transaction.effects) if (effect.is(setUnresolved)) value = effect.value;
     return value;
   },
 });
+
+/** Whether the app said this link leads nowhere. */
+export function isUnresolved(state: EditorState, inner: string): boolean {
+  return state.field(unresolved, false)?.has(inner) ?? false;
+}
 
 export function markUnresolved(view: EditorView, inners: string[]) {
   view.dispatch({ effects: setUnresolved.of(new Set(inners)) });

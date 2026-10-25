@@ -25,6 +25,9 @@ public enum EditorCommand: Encodable, Sendable {
     case find(FindStep)
     /// Which of the Note's links lead nowhere: those `inners` are drawn as Unresolved links.
     case unresolvedLinks(noteID: String, inners: [String])
+    /// The files the Note's Embeds and Markdown images show, by what the editor asked about: the
+    /// editor draws the images and links the PDFs.
+    case embeds(noteID: String, files: [String: EmbeddedFile])
     /// Source mode: the Markdown as written, every mark shown. Off, Live preview (SPEC).
     case sourceMode(on: Bool)
     /// Puts the cursor at the start of `line`, from 1, in the middle of the view: a search result
@@ -39,10 +42,10 @@ public enum EditorCommand: Encodable, Sendable {
         case next, previous
     }
 
-    public static let types = ["load", "reload", "flush", "clear", "selectAll", "undo", "redo", "find", "unresolvedLinks", "linkCompletions", "goToLine", "sourceMode"]
+    public static let types = ["load", "reload", "flush", "clear", "selectAll", "undo", "redo", "find", "unresolvedLinks", "linkCompletions", "goToLine", "sourceMode", "embeds"]
 
     private enum CodingKeys: String, CodingKey {
-        case type, noteID, revision, text, step, inners, requestID, completions, line, on
+        case type, noteID, revision, text, step, inners, requestID, completions, line, on, files
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -75,6 +78,10 @@ public enum EditorCommand: Encodable, Sendable {
             try container.encode("unresolvedLinks", forKey: .type)
             try container.encode(noteID, forKey: .noteID)
             try container.encode(inners, forKey: .inners)
+        case .embeds(let noteID, let files):
+            try container.encode("embeds", forKey: .type)
+            try container.encode(noteID, forKey: .noteID)
+            try container.encode(files, forKey: .files)
         case .sourceMode(let on):
             try container.encode("sourceMode", forKey: .type)
             try container.encode(on, forKey: .on)
