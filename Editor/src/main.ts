@@ -7,6 +7,7 @@ import { tags } from "@lezer/highlight";
 import { type EditorCommand, type EditorMessage, send } from "./bridge";
 import { linkCompletion, receiveLinkCompletions } from "./completion";
 import { embeddedFile, embedFiles, embedImages, setEmbeds } from "./embeds";
+import { bodyStart, frontmatterReading, frontmatterText, setFrontmatter } from "./frontmatter";
 import { highlightTag } from "./highlight";
 import { noteLanguage } from "./language";
 import { livePreview } from "./livepreview";
@@ -27,7 +28,9 @@ const sourceHighlight = HighlightStyle.define([
   { tag: tags.link, color: "var(--link)" },
   { tag: tags.url, color: "var(--link)" },
   { tag: tags.monospace, fontFamily: "var(--mono)" },
-  { tag: [tags.processingInstruction, tags.meta, tags.contentSeparator], color: "var(--syntax)" },
+  { tag: [tags.processingInstruction, tags.contentSeparator], color: "var(--syntax)" },
+  // The Frontmatter: through a variable the Properties table sets, its values in the text's colour.
+  { tag: tags.meta, color: "var(--frontmatter-text)" },
   { tag: tags.comment, color: "var(--syntax)" },
 ]);
 
@@ -106,6 +109,22 @@ const checkLinksAfterChanges = EditorView.updateListener.of((update) => {
   checkTimer = setTimeout(() => checkLinks(), checkDelay);
 });
 
+/** The Frontmatter last asked about, so an unchanged one is not asked about again. */
+let askedFrontmatter: string | null = null;
+
+/** Asks the app how the Frontmatter reads: it draws the Properties table from the answer. */
+function readFrontmatter() {
+  if (noteID === null) return;
+  const text = frontmatterText(view.state);
+  if (text === null || text === askedFrontmatter) return;
+  askedFrontmatter = text;
+  send({ type: "readFrontmatter", noteID, text });
+}
+
+const readFrontmatterAfterChanges = EditorView.updateListener.of((update) => {
+  if (update.docChanged) readFrontmatter();
+});
+
 /** Live preview, or nothing in Source mode, which the app chooses. */
 const preview = new Compartment();
 let sourceMode = false;
@@ -118,6 +137,8 @@ function initialState(text: string, editable: boolean) {
       noteLanguage,
       // What the app said about the Embeds stays across Source mode: the images come back with it.
       embedFiles,
+      // The app's answer too: the table comes back with Live preview.
+      frontmatterReading,
       preview.of(previewed()),
       // An image drawn under its line hides its source: a click there places the cursor.
       followWikilinks(
@@ -126,6 +147,7 @@ function initialState(text: string, editable: boolean) {
       ),
       unresolvedLinks,
       checkLinksAfterChanges,
+      readFrontmatterAfterChanges,
       linkCompletion((requestID) => send({ type: "completeLink", requestID })),
       noteTheme,
       syntaxHighlighting(sourceHighlight),
@@ -161,12 +183,16 @@ window.noteki = {
         noteID = command.noteID;
         view.setState(initialState(command.text, true));
         view.scrollDOM.scrollTop = 0;
-        // A Backlink or a search result: the cursor on its line.
+        // A Backlink or a search result: the cursor on its line. Otherwise where the text starts,
+        // after the Frontmatter, which stays a table.
         if (command.line !== undefined) goToLine(command.line);
+        else view.dispatch({ selection: { anchor: bodyStart(view.state) } });
         // Ready for typing when the web view has the keyboard: the app gives it after the Quick
         // switcher or a Backlink, while Files keeps it after a click there.
         view.focus();
         checkLinks(true);
+        askedFrontmatter = null;
+        readFrontmatter();
         return null;
       }
       case "clear": {
@@ -191,6 +217,9 @@ window.noteki = {
       }
       case "unresolvedLinks":
         if (command.noteID === noteID) markUnresolved(view, command.inners);
+        return null;
+      case "frontmatter":
+        if (command.noteID === noteID) view.dispatch({ effects: setFrontmatter.of({ text: command.text, reading: command.reading ?? null }) });
         return null;
       case "embeds":
         if (command.noteID === noteID) view.dispatch({ effects: setEmbeds.of(command.files) });

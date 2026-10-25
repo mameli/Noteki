@@ -1,4 +1,5 @@
 import type { EmbeddedFile } from "./embeds";
+import type { FrontmatterReading } from "./frontmatter";
 
 // The messages between the app and the editor, as JSON with a `type`. Their Swift twins are in
 // NotekiCore's EditorBridge.swift: a test checks both sides name the same commands and messages.
@@ -35,7 +36,12 @@ export type EditorCommand =
   /** The cursor at the start of `line`, from 1, in the middle of the view: a search result. */
   | { type: "goToLine"; noteID: string; line: number }
   /** The answer to the `completeLink` with the same `requestID`. */
-  | { type: "linkCompletions"; requestID: number; completions: LinkCompletions };
+  | { type: "linkCompletions"; requestID: number; completions: LinkCompletions }
+  /**
+   * The answer to `readFrontmatter`: the `text` it asked about and its reading, none when the
+   * Frontmatter never closes. The table is drawn only while the Frontmatter is still that text.
+   */
+  | { type: "frontmatter"; noteID: string; text: string; reading?: FrontmatterReading };
 
 /** What `[[` offers: the Notes opened recently, the latest first, then all the others. */
 export interface LinkCompletions {
@@ -62,7 +68,9 @@ export type EditorMessage =
   /** The Note's links, what is between their brackets: which lead nowhere? */
   | { type: "checkLinks"; noteID: string; inners: string[] }
   /** The user typed `[[`: which Notes can the link lead to? Answered by `linkCompletions`. */
-  | { type: "completeLink"; requestID: number };
+  | { type: "completeLink"; requestID: number }
+  /** The Frontmatter, from its first `---` line to its last: how does it read? */
+  | { type: "readFrontmatter"; noteID: string; text: string };
 
 declare global {
   interface Window {

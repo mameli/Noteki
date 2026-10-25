@@ -203,6 +203,9 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
             onCheckLinks(noteID, inners)
         case .completeLink(let requestID):
             run(.linkCompletions(requestID: requestID, completions: linkCompletions())) { _ in }
+        case .readFrontmatter(let noteID, let text):
+            // Read here: it needs nothing of the Vault, and a Loose file has Properties too.
+            run(.frontmatter(noteID: noteID, text: text, reading: Frontmatter(of: text)?.reading)) { _ in }
         }
     }
 

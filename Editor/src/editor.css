@@ -14,6 +14,8 @@
   --code-background: rgba(0, 0, 0, 0.05);
   --highlight: rgba(255, 208, 0, 0.4);
   --quote-text: var(--quote);
+  --frontmatter-text: var(--syntax);
+  --error: #e93147;
 }
 
 @media (prefers-color-scheme: dark) {

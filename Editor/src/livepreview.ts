@@ -4,12 +4,14 @@ import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate
 import type { SyntaxNode } from "@lezer/common";
 import { calloutOf, calloutTheme, drawCallout, quoteMarks, type RenderedCallout } from "./callouts";
 import { embeddedFile } from "./embeds";
+import { drawFrontmatter, frontmatterLayout, frontmatterReading, frontmatterTheme, type RenderedFrontmatter } from "./frontmatter";
 import { CheckboxWidget, isTicked, taskTheme } from "./tasks";
 import { measure, type RenderedTable, rowHidden, tableLayout } from "./tables";
 import { linesOf, type Span } from "./text";
 import { isUnresolved } from "./wikilink";
 
 export type { RenderedCallout } from "./callouts";
+export type { RenderedFrontmatter } from "./frontmatter";
 export type { RenderedTable } from "./tables";
 
 // Live preview (SPEC, Live preview): bold, italic, strikethrough, highlights, inline code, links,
@@ -29,7 +31,7 @@ const emphasis: Record<string, string> = {
 };
 
 /** Elements whose text is shown as it is written: code, and what later tickets render. */
-const asWritten = new Set(["FencedCode", "CodeBlock", "HTMLBlock", "Frontmatter"]);
+const asWritten = new Set(["FencedCode", "CodeBlock", "HTMLBlock"]);
 
 /**
  * What Live preview hides between `from` and `to`, in order: the marks of the elements the
@@ -53,6 +55,14 @@ export function renderedCallouts(state: EditorState, from = 0, to = state.doc.le
   return preview(state, from, to).callouts;
 }
 
+/**
+ * The Frontmatter as Live preview draws it: its Properties table, or the line the app could not
+ * read; null while it is written as it is (the cursor in it, no answer from the app yet) or none.
+ */
+export function renderedFrontmatter(state: EditorState): RenderedFrontmatter | null {
+  return preview(state, 0, state.doc.length).frontmatter?.layout ?? null;
+}
+
 /** A task's checkbox, drawn at `at`, the end of its hidden bullet and brackets. */
 export interface RenderedTask {
   at: number;
@@ -73,6 +83,7 @@ interface Preview {
   tables: RenderedTable[];
   tasks: RenderedTask[];
   callouts: RenderedCallout[];
+  frontmatter: { node: SyntaxNode; layout: RenderedFrontmatter | null } | null;
   /** The text of done tasks, crossed out. */
   doneTasks: Span[];
   /** The start of every table line, shown as a table or written: none wraps (tables.ts). */
@@ -99,6 +110,7 @@ function preview(state: EditorState, from: number, to: number, measuring = true)
   const tasks: RenderedTask[] = [];
   const doneTasks: Span[] = [];
   const callouts: RenderedCallout[] = [];
+  let frontmatter: Preview["frontmatter"] = null;
   const tableLines: number[] = [];
   // A table is written while a cursor or a selection's end is in it: ⌘A leaves tables shown.
   const entered = (table: Span) => state.selection.ranges.some((range) => range.head >= table.from && range.head <= table.to);
@@ -126,6 +138,13 @@ function preview(state: EditorState, from: number, to: number, measuring = true)
         tables.push(table);
         for (const row of table.rows) hidden.push(...rowHidden(state, row));
         return undefined;
+      }
+      if (node.name === "Frontmatter") {
+        // The Properties table, drawn in place while the cursor is out of it (frontmatter.ts).
+        const layout = frontmatterLayout(state, node, entered(node));
+        frontmatter = { node, layout };
+        if (layout) hidden.push(...layout.hidden);
+        return false;
       }
       if (node.name.startsWith("ATXHeading")) {
         for (const mark of children(node, "HeaderMark")) hide(node, headerMark(state, node, mark));
@@ -232,7 +251,7 @@ function preview(state: EditorState, from: number, to: number, measuring = true)
   }
   // Over the whole table, not only the part in view: a column keeps its width while scrolling.
   if (measuring) for (const table of tables) measure(table, preview(state, table.from, table.to, false).hidden);
-  return { hidden: merged, code, tables, tasks, callouts, doneTasks, tableLines };
+  return { hidden: merged, code, tables, tasks, callouts, frontmatter, doneTasks, tableLines };
 }
 
 /**
@@ -287,8 +306,13 @@ function decorations(view: EditorView): DecorationSet {
   const drawn = new Set<number>();
   const shown = new Set<number>();
   const calloutLines = new Set<number>();
+  let frontmatterDrawn = false;
   for (const { from, to } of view.visibleRanges) {
-    const { hidden, code, tables, tasks, callouts, doneTasks, tableLines } = preview(view.state, from, to);
+    const { hidden, code, tables, tasks, callouts, frontmatter, doneTasks, tableLines } = preview(view.state, from, to);
+    if (frontmatter && !frontmatterDrawn) {
+      frontmatterDrawn = true;
+      ranges.push(...drawFrontmatter(view.state, frontmatter.node, frontmatter.layout));
+    }
     for (const span of hidden) ranges.push(hide.range(span.from, span.to));
     for (const span of code) ranges.push(inlineCode.range(span.from, span.to));
     for (const task of tasks) ranges.push(Decoration.widget({ widget: new CheckboxWidget(task.checked), side: 1 }).range(task.at));
@@ -328,7 +352,9 @@ export const livePreview = [
       }
       update(update: ViewUpdate) {
         const parsed = syntaxTree(update.startState) !== syntaxTree(update.state);
-        if (update.docChanged || update.selectionSet || update.viewportChanged || parsed) {
+        // The app's answer about the Frontmatter draws the Properties table.
+        const answered = update.startState.field(frontmatterReading, false) !== update.state.field(frontmatterReading, false);
+        if (update.docChanged || update.selectionSet || update.viewportChanged || parsed || answered) {
           this.decorations = decorations(update.view);
         }
       }
@@ -337,6 +363,7 @@ export const livePreview = [
   ),
   taskTheme,
   calloutTheme,
+  frontmatterTheme,
   EditorView.baseTheme({
     ".cm-inline-code": { backgroundColor: "var(--code-background)", borderRadius: "3px", padding: "0 2px" },
     // A table's lines never wrap, shown as a table or written, so each keeps one line's height; a

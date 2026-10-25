@@ -1,6 +1,7 @@
 import { ensureSyntaxTree } from "@codemirror/language";
 import { EditorSelection, EditorState } from "@codemirror/state";
 import { embedFiles } from "../src/embeds";
+import { frontmatterReading } from "../src/frontmatter";
 import { noteLanguage } from "../src/language";
 import { unresolved } from "../src/wikilink";
 import { hiddenRanges } from "../src/livepreview";
@@ -15,15 +16,18 @@ export function stateOf(marked: string): EditorState {
   const state = EditorState.create({
     doc: text,
     selection: EditorSelection.single(anchor, head),
-    extensions: [noteLanguage, embedFiles, unresolved],
+    extensions: [noteLanguage, embedFiles, unresolved, frontmatterReading],
   });
   ensureSyntaxTree(state, state.doc.length, 5000);
   return state;
 }
 
-/** The text as Live preview shows it: what is hidden is left out, line breaks kept. */
-export function shown(marked: string): string {
-  const state = stateOf(marked);
+/**
+ * The text as Live preview shows it: what is hidden is left out, line breaks kept. `then` may
+ * change the state first, as the app's answers do.
+ */
+export function shown(marked: string, then: (state: EditorState) => EditorState = (state) => state): string {
+  const state = then(stateOf(marked));
   const text = state.doc.toString();
   let result = "";
   let at = 0;

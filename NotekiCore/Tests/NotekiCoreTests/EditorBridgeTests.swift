@@ -95,6 +95,17 @@ struct EditorBridgeTests {
         #expect(try EditorCommand.linkCompletions(requestID: 3, completions: completions).json() == #"{"completions":{"others":[{"folder":"","link":"Home","name":"Home"}],"recent":[{"folder":"Meetings","link":"Retro","name":"Retro"}]},"requestID":3,"type":"linkCompletions"}"#)
     }
 
+    @Test("the editor asks for its Frontmatter read, and the app answers with the same text and where each Property is")
+    func frontmatter() throws {
+        let text = "---\ntitle: \"Retro\"\ntags: [a, b]\nempty:\n---"
+
+        #expect(try EditorMessage(json: #"{"type":"readFrontmatter","noteID":"n1","text":"---\nx: y\n---"}"#) == .readFrontmatter(noteID: "n1", text: "---\nx: y\n---"))
+        let reading = try #require(Frontmatter(of: text)).reading
+        #expect(try EditorCommand.frontmatter(noteID: "n1", text: text, reading: reading).json() == #"{"noteID":"n1","reading":{"properties":[{"key":"title","keySpan":{"from":0,"line":2,"to":5},"value":{"kind":"text","span":{"from":8,"line":2,"to":13}}},{"key":"tags","keySpan":{"from":0,"line":3,"to":4},"value":{"items":[{"from":7,"line":3,"to":8},{"from":10,"line":3,"to":11}],"kind":"list"}},{"key":"empty","keySpan":{"from":0,"line":4,"to":5},"value":{"kind":"none"}}]},"text":"---\ntitle: \"Retro\"\ntags: [a, b]\nempty:\n---","type":"frontmatter"}"#)
+        #expect(try EditorCommand.frontmatter(noteID: "n1", text: "---\na: |\n---", reading: .unreadable(line: 2)).json() == #"{"noteID":"n1","reading":{"unreadable":2},"text":"---\na: |\n---","type":"frontmatter"}"#)
+        #expect(try EditorCommand.frontmatter(noteID: "n1", text: "---\na: b", reading: nil).json() == #"{"noteID":"n1","text":"---\na: b","type":"frontmatter"}"#)
+    }
+
     @Test("clearing the editor needs nothing else")
     func clear() throws {
         #expect(try EditorCommand.clear.json() == #"{"type":"clear"}"#)

@@ -35,6 +35,10 @@ public enum EditorCommand: Encodable, Sendable {
     case goToLine(noteID: String, line: Int)
     /// The answer to the editor's `completeLink` with the same `requestID`.
     case linkCompletions(requestID: Int, completions: LinkCompletions)
+    /// The answer to the editor's `readFrontmatter`: the `text` it asked about, and its reading;
+    /// none when the Frontmatter never closes. The editor draws the Properties table only while
+    /// its Frontmatter is still that text.
+    case frontmatter(noteID: String, text: String, reading: Frontmatter.Reading?)
 
     public enum FindStep: String, Sendable {
         /// Show the find bar, with the selection as the text to find.
@@ -42,10 +46,10 @@ public enum EditorCommand: Encodable, Sendable {
         case next, previous
     }
 
-    public static let types = ["load", "reload", "flush", "clear", "selectAll", "undo", "redo", "find", "unresolvedLinks", "linkCompletions", "goToLine", "sourceMode", "embeds"]
+    public static let types = ["load", "reload", "flush", "clear", "selectAll", "undo", "redo", "find", "unresolvedLinks", "linkCompletions", "goToLine", "sourceMode", "embeds", "frontmatter"]
 
     private enum CodingKeys: String, CodingKey {
-        case type, noteID, revision, text, step, inners, requestID, completions, line, on, files
+        case type, noteID, revision, text, step, inners, requestID, completions, line, on, files, reading
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -93,6 +97,11 @@ public enum EditorCommand: Encodable, Sendable {
             try container.encode("linkCompletions", forKey: .type)
             try container.encode(requestID, forKey: .requestID)
             try container.encode(completions, forKey: .completions)
+        case .frontmatter(let noteID, let text, let reading):
+            try container.encode("frontmatter", forKey: .type)
+            try container.encode(noteID, forKey: .noteID)
+            try container.encode(text, forKey: .text)
+            try container.encodeIfPresent(reading, forKey: .reading)
         }
     }
 
@@ -116,8 +125,11 @@ public enum EditorMessage: Decodable, Equatable, Sendable {
     case checkLinks(noteID: String, inners: [String])
     /// The user typed `[[`: which Notes can the link lead to? Answered by `linkCompletions`.
     case completeLink(requestID: Int)
+    /// The Note's Frontmatter, from its first `---` line to its last: how does it read?
+    /// Answered by `frontmatter`.
+    case readFrontmatter(noteID: String, text: String)
 
-    public static let types = ["ready", "changed", "followLink", "checkLinks", "completeLink"]
+    public static let types = ["ready", "changed", "followLink", "checkLinks", "completeLink", "readFrontmatter"]
 
     private enum CodingKeys: String, CodingKey {
         case type, noteID, revision, text, inner, inners, requestID
@@ -148,6 +160,11 @@ public enum EditorMessage: Decodable, Equatable, Sendable {
             )
         case "completeLink":
             self = .completeLink(requestID: try container.decode(Int.self, forKey: .requestID))
+        case "readFrontmatter":
+            self = .readFrontmatter(
+                noteID: try container.decode(String.self, forKey: .noteID),
+                text: try container.decode(String.self, forKey: .text)
+            )
         default:
             throw DecodingError.dataCorruptedError(
                 forKey: .type, in: container, debugDescription: "Unknown editor message \(type)"
