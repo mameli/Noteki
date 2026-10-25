@@ -7,6 +7,7 @@ import { tags } from "@lezer/highlight";
 import { type EditorCommand, type EditorMessage, send } from "./bridge";
 import { linkCompletion, receiveLinkCompletions } from "./completion";
 import { embeddedFile, embedFiles, embedImages, setEmbeds } from "./embeds";
+import { highlightTag } from "./highlight";
 import { noteLanguage } from "./language";
 import { livePreview } from "./livepreview";
 import { followWikilinks, linkInners, markUnresolved, unresolvedLinks } from "./wikilink";
@@ -20,10 +21,12 @@ const sourceHighlight = HighlightStyle.define([
   { tag: tags.strong, fontWeight: "700" },
   { tag: tags.emphasis, fontStyle: "italic" },
   { tag: tags.strikethrough, textDecoration: "line-through" },
+  { tag: highlightTag, backgroundColor: "var(--highlight)", borderRadius: "2px" },
+  // Before links, which win in a quote. Through a variable a callout sets: its text is not grey.
+  { tag: tags.quote, color: "var(--quote-text)" },
   { tag: tags.link, color: "var(--link)" },
   { tag: tags.url, color: "var(--link)" },
   { tag: tags.monospace, fontFamily: "var(--mono)" },
-  { tag: tags.quote, color: "var(--quote)" },
   { tag: [tags.processingInstruction, tags.meta, tags.contentSeparator], color: "var(--syntax)" },
   { tag: tags.comment, color: "var(--syntax)" },
 ]);

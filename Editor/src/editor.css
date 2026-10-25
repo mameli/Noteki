@@ -12,6 +12,8 @@
   --panel: #f5f5f7;
   --separator: #d2d2d7;
   --code-background: rgba(0, 0, 0, 0.05);
+  --highlight: rgba(255, 208, 0, 0.4);
+  --quote-text: var(--quote);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -24,6 +26,7 @@
     --panel: #2a2a2c;
     --separator: #3a3a3c;
     --code-background: rgba(255, 255, 255, 0.08);
+    --highlight: rgba(255, 208, 0, 0.3);
   }
 }
 

@@ -52,6 +52,14 @@ _Avoid_: label, category, keyword
 Text between `%%` marks: part of the Note, hidden while reading. Takku uses it to mark the part of the Meeting note it rewrites.
 _Avoid_: hidden text, annotation
 
+**Task** (`Task`):
+An item of a list that starts with `[ ]`, or `[x]` once done: shown with a checkbox the user ticks.
+_Avoid_: todo, checkbox (that is how it is drawn)
+
+**Callout** (`Callout`):
+A quote whose first line starts with `[!type]`, such as `> [!warning] Title`: drawn as a box in the colour of its type, with its title.
+_Avoid_: admonition, alert, box
+
 **Heading** (`Heading`):
 A Markdown title in a Note: a line starting with `#` to `######`, or a paragraph underlined with `===` or `---`. The Headings of a Note make its Outline.
 _Avoid_: section, title (that is the Note's name)

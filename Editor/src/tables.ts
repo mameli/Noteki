@@ -1,15 +1,11 @@
 import type { EditorState } from "@codemirror/state";
 import type { SyntaxNode } from "@lezer/common";
+import type { Span } from "./text";
 
 // Tables in Live preview (SPEC, Live preview; ADR 0008): drawn in place, row by row. Every row
 // stays one line, its pipes hidden and its cells side by side in columns, and the delimiter row a
 // rule: the height is the same whether the table is shown or written, so nothing jumps when the
 // cursor enters or leaves it.
-
-export interface Span {
-  from: number;
-  to: number;
-}
 
 export type Align = "left" | "center" | "right";
 
