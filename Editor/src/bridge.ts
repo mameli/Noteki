@@ -55,7 +55,12 @@ export type EditorCommand =
    */
   | { type: "replaceFrontmatter"; noteID: string; text: string; replacement: string }
   /** The answer to the `completeTag` with the same `requestID`: the Vault's Tags. */
-  | { type: "tagCompletions"; requestID: number; tags: string[] };
+  | { type: "tagCompletions"; requestID: number; tags: string[] }
+  /**
+   * Text written for the user, as typed: the Embeds of a Pasted image in place of the selection,
+   * or of dropped files at `point`, where they were dropped (CSS pixels from the top left).
+   */
+  | { type: "insert"; noteID: string; text: string; point?: { x: number; y: number } };
 
 /** What `[[` offers: the Notes opened recently, the latest first, then all the others. */
 export interface LinkCompletions {

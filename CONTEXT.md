@@ -19,7 +19,7 @@ An image or a PDF in the Vault. Noteki shows it but does not edit it.
 _Avoid_: asset, media, resource
 
 **Pasted image** (`PastedImage`):
-An image the user pastes into a Note: Noteki saves it as an Attachment next to the Note and puts an Embed of it where the cursor is.
+An image the user pastes into a Note: Noteki saves it as an Attachment next to the Note and puts an Embed of it where the cursor is. An image file dropped on a Note from the Finder is copied next to it the same way, under its own name, but is no Pasted image.
 _Avoid_: screenshot (that is Takku's), clipboard image
 
 **Excluded folder** (`ExcludedFolder`):

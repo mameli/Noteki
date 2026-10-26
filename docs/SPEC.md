@@ -118,7 +118,13 @@ Noteki watches the Vault with FSEvents ([ADR 0005](adr/0005-merge-external-chang
 - A Markdown image's URL is a path, `%20` read as a space, found as a Wikilink is; an image on the web (`https://…`) is not fetched and stays as written.
 - `![[file.pdf]]` is shown as a link to the PDF (its name, or its Alias), which opens in a Tab. An Embed of a missing file shows its name, faded as an Unresolved link; a missing Markdown image stays as written, faded. An Embed of a Note stays as written (not before someone needs it).
 - In a Loose file's window nothing is embedded: its folder is not indexed.
-- **Pasted image**: pasting an image saves it as `Pasted image YYYYMMDDHHmmss.png` in the Note's folder and writes `![[Pasted image YYYYMMDDHHmmss.png]]` at the cursor. Dropping an image file from the Finder copies it next to the Note the same way, keeping its name.
+- **Pasted image**: pasting an image saves it as `Pasted image YYYYMMDDHHmmss.png` (the Mac's time) in the Note's folder, converted to PNG if needed, and writes `![[Pasted image YYYYMMDDHHmmss.png]]` in place of the selection. Dropping an image file from the Finder copies it next to the Note the same way, keeping its name, and writes its Embed where it is dropped; image files copied in the Finder paste as if dropped. Always the Note's folder: Obsidian's attachment folder setting is not read.
+  - A name already taken, in any letter case, gets a number: `Pasted image 20261026093005 1.png`, `photo 2.png`. No file is ever overwritten.
+  - An image the Vault already lists is not copied: its Embed is written by its name, or by its path when the name leads to another file from that Note. One in an Excluded folder is copied, the Vault does not list it.
+  - Several files dropped together are embedded one per line. Files that are not images are left out, and a drop with no image goes to the editor as before; an image that cannot be copied is left out, the others embedded.
+  - The characters a Wikilink cannot hold (`[`, `]`, `|`, `#`, `^`) and those Obsidian refuses on a Mac (`\`, `:`) become spaces in the copy's name: the Embed would lead nowhere.
+  - Text on the pasteboard wins over an image: a copy from a document or a table carries a picture of itself.
+  - Undo takes the Embed out of the Note; the file stays. Not in a Loose file's window, nor before Files is listed: there the paste or the drop goes to the editor as text would. An image dragged from a browser (no file) is not taken.
 
 ### Backlinks
 

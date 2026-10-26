@@ -46,6 +46,14 @@ struct EditorBridgeTests {
         #expect(try command.json() == #"{"files":{"Doc.pdf":{"kind":"pdf","path":"Doc.pdf"},"a.png":{"height":3,"kind":"image","path":"Media\/a.png","width":4}},"noteID":"n1","type":"embeds"}"#)
     }
 
+    @Test("text to write goes to a Note, at the point where files were dropped or else at the cursor")
+    func insert() throws {
+        let dropped = EditorCommand.insert(noteID: "n1", text: "![[a.png]]", point: .init(x: 12, y: 40.5))
+
+        #expect(try dropped.json() == #"{"noteID":"n1","point":{"x":12,"y":40.5},"text":"![[a.png]]","type":"insert"}"#)
+        #expect(try EditorCommand.insert(noteID: "n1", text: "x", point: nil).json() == #"{"noteID":"n1","text":"x","type":"insert"}"#)
+    }
+
     @Test("Source mode is on or off")
     func sourceMode() throws {
         #expect(try EditorCommand.sourceMode(on: true).json() == #"{"on":true,"type":"sourceMode"}"#)

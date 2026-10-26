@@ -11,6 +11,7 @@ import { bodyStart, frontmatterReading, frontmatterText, setFrontmatter } from "
 import { broughtBack, changeTo, fromDisk } from "./states";
 import { type TagEditing, tagEditing } from "./tagchips";
 import { highlightTag } from "./highlight";
+import { insertion } from "./insert";
 import { noteLanguage } from "./language";
 import { livePreview } from "./livepreview";
 import { followWikilinks, linkInners, markUnresolved, unresolvedLinks } from "./wikilink";
@@ -324,6 +325,13 @@ window.noteki = {
       case "goToLine":
         if (command.noteID === noteID) {
           goToLine(command.line);
+          view.focus();
+        }
+        return null;
+      case "insert":
+        if (command.noteID === noteID) {
+          const at = command.point ? view.posAtCoords(command.point, false) : undefined;
+          view.dispatch(insertion(view.state, command.text, at));
           view.focus();
         }
         return null;

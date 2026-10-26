@@ -1,7 +1,7 @@
 import Foundation
 
-/// The folder of Notes and Attachments Noteki has open. It only reads: nothing is ever written
-/// inside it but the Notes the user edits (ADR 0002).
+/// The folder of Notes and Attachments Noteki has open. Nothing is ever written inside it but
+/// the Notes the user edits or creates and the images pasted or dropped into them (ADR 0002).
 public struct Vault: Sendable {
     public let root: URL
 
@@ -104,7 +104,7 @@ public struct Vault: Sendable {
 
     /// The path of the file at `path` as it is named on disk, which may differ in letter case on
     /// a case-insensitive volume; nil when there is none.
-    private func existingFile(at path: String) -> String? {
+    func existingFile(at path: String) -> String? {
         let file = fileURL(path)
         guard FileManager.default.fileExists(atPath: file.path(percentEncoded: false)) else { return nil }
         let folder = file.deletingLastPathComponent()
@@ -175,7 +175,7 @@ public struct Vault: Sendable {
         return false
     }
 
-    private func fileURL(_ path: String) -> URL {
+    func fileURL(_ path: String) -> URL {
         root.appending(path: path, directoryHint: .notDirectory)
     }
 

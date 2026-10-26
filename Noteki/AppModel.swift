@@ -313,6 +313,8 @@ final class AppModel {
             tagged.listed(index.notes, in: vault, isWanted: true)
             answerTagCompletions()
         }
+        editor.takesImages = { [weak self] in self?.takesImages ?? false }
+        editor.onImages = { [weak self] images, point in self?.embed(images, at: point) }
         editor.onCheckLinks = { [weak self] noteID, inners in
             guard let self, noteID == openNoteID else { return }
             openNoteLinks = inners
@@ -350,6 +352,35 @@ final class AppModel {
             guard !Task.isCancelled else { return }
             editor.showEmbeds(noteID: noteID, files: files)
         }
+    }
+
+    /// Pasted and dropped images are written next to the Note in front, once Files is listed:
+    /// not in a Loose file's folder, which is no Vault. Otherwise WebKit gets them.
+    private var takesImages: Bool {
+        guard !isLooseFile, index != nil, let open = openNote else { return false }
+        return noteInFront == open.note && editor.canInsert(into: openNoteID)
+    }
+
+    /// A Pasted image, or image files pasted or dropped on the Note in front: written in the
+    /// Vault next to it (SPEC, Pasted image) and their Embeds into it.
+    private func embed(_ images: EditorWebView.IncomingImages, at point: EditorCommand.Point?) {
+        guard takesImages, let vault, let index, let open = openNote else { return }
+        let embeds: String?
+        do {
+            switch images {
+            case .pasted(let png): embeds = try vault.pasteImage(png, into: open.note)
+            case .files(let files): embeds = try vault.dropFiles(files, onto: open.note, in: index)
+            }
+        } catch {
+            logger.error("Cannot write the pasted or dropped images: \(error.localizedDescription, privacy: .public)")
+            NSSound.beep()
+            return
+        }
+        // Files with no image among them: nothing written.
+        guard let embeds else { return NSSound.beep() }
+        editor.insert(noteID: openNoteID, text: embeds, at: point)
+        // Listed at once, so the Embeds show their images without waiting for the watcher.
+        refreshTree(of: vault)
     }
 
     /// Opens the Note or Attachment a clicked Wikilink leads to, resolved from the open Note as

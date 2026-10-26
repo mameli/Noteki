@@ -50,6 +50,21 @@ public enum EditorCommand: Encodable, Sendable {
     /// The answer to the editor's `completeTag` with the same `requestID`: the Vault's Tags, those
     /// most Notes have first.
     case tagCompletions(requestID: Int, tags: [String])
+    /// Writes `text` for the user, as typed: the Embeds of a Pasted image in place of the
+    /// selection, or of dropped files at `point`, where they were dropped in the web view (in its
+    /// CSS pixels from the top left).
+    case insert(noteID: String, text: String, point: Point?)
+
+    /// A place in the web view, in CSS pixels from its top left.
+    public struct Point: Encodable, Equatable, Sendable {
+        public let x: Double
+        public let y: Double
+
+        public init(x: Double, y: Double) {
+            self.x = x
+            self.y = y
+        }
+    }
 
     public enum FindStep: String, Sendable {
         /// Show the find bar, with the selection as the text to find.
@@ -57,10 +72,10 @@ public enum EditorCommand: Encodable, Sendable {
         case next, previous
     }
 
-    public static let types = ["load", "restore", "drop", "reload", "flush", "clear", "selectAll", "undo", "redo", "find", "unresolvedLinks", "linkCompletions", "goToLine", "sourceMode", "embeds", "frontmatter", "replaceFrontmatter", "tagCompletions"]
+    public static let types = ["load", "restore", "drop", "reload", "flush", "clear", "selectAll", "undo", "redo", "find", "unresolvedLinks", "linkCompletions", "goToLine", "sourceMode", "embeds", "frontmatter", "replaceFrontmatter", "tagCompletions", "insert"]
 
     private enum CodingKeys: String, CodingKey {
-        case type, noteID, revision, text, step, inners, requestID, completions, line, on, files, reading, replacement, tags, noteIDs
+        case type, noteID, revision, text, step, inners, requestID, completions, line, on, files, reading, replacement, tags, noteIDs, point
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -129,6 +144,11 @@ public enum EditorCommand: Encodable, Sendable {
             try container.encode("tagCompletions", forKey: .type)
             try container.encode(requestID, forKey: .requestID)
             try container.encode(tags, forKey: .tags)
+        case .insert(let noteID, let text, let point):
+            try container.encode("insert", forKey: .type)
+            try container.encode(noteID, forKey: .noteID)
+            try container.encode(text, forKey: .text)
+            try container.encodeIfPresent(point, forKey: .point)
         }
     }
 

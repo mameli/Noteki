@@ -30,6 +30,11 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
     var linkCompletions: () -> LinkCompletions = { .none }
     /// The Vault's Tags to offer when the user adds one, given to `answer` once they are read.
     var tagCompletions: (_ answer: @escaping @MainActor ([String]) -> Void) -> Void = { $0([]) }
+    /// Whether pasted and dropped images go to `onImages` now; otherwise WebKit gets them.
+    var takesImages: () -> Bool = { false }
+    /// An image pasted, or image files pasted or dropped at `point`: the app writes them in the
+    /// Vault and gives their Embeds to `insert`.
+    var onImages: (_ images: EditorWebView.IncomingImages, _ point: EditorCommand.Point?) -> Void = { _, _ in }
 
     private var isReady = false
     /// What the editor shows, or will show once it is ready.
@@ -68,6 +73,8 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
         webView = EditorWebView(frame: .zero, configuration: configuration)
         super.init()
         webView.onCommand = { [weak self] command in self?.perform(command) }
+        webView.takesImages = { [weak self] in self?.takesImages() ?? false }
+        webView.onImages = { [weak self] images, point in self?.onImages(images, point) }
         // Through a weak proxy: the controller keeps its handlers alive.
         configuration.userContentController.add(WeakMessageHandler(self), name: "noteki")
         webView.underPageBackgroundColor = .textBackgroundColor
@@ -154,6 +161,18 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
     func showEmbeds(noteID: String, files: [String: EmbeddedFile]) {
         guard isReady, loaded?.noteID == noteID else { return }
         run(.embeds(noteID: noteID, files: files)) { _ in }
+    }
+
+    /// Whether `insert` can write in the Note loaded as `noteID` now.
+    func canInsert(into noteID: String) -> Bool {
+        isReady && loaded?.noteID == noteID
+    }
+
+    /// Writes `text` in the Note shown as if typed: at `point` where files were dropped, otherwise
+    /// in place of the selection.
+    func insert(noteID: String, text: String, at point: EditorCommand.Point?) {
+        guard canInsert(into: noteID) else { return }
+        run(.insert(noteID: noteID, text: text, point: point)) { _ in }
     }
 
     /// Empties the editor and stops it taking typing: no Note is open.
