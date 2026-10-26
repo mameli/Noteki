@@ -56,6 +56,10 @@ struct ContentView: View {
         .onChange(of: model.wantsSearchField) { _, wants in
             if wants, columns == .detailOnly { columns = .all }
         }
+        // A name to type in Files, as after ⌘N: the sidebar shows.
+        .onChange(of: model.renaming) { _, renaming in
+            if renaming != nil, columns == .detailOnly { columns = .all }
+        }
         .navigationTitle(model.shown?.name ?? model.vault?.root.lastPathComponent ?? "Noteki")
         .focusedSceneValue(\.noteEditor, model.isShowingNote ? model.editor : nil)
         .focusedSceneValue(\.noteWindow, model.isShowingNote ? model : nil)
@@ -160,13 +164,116 @@ struct NoteDetail: View {
     }
 }
 
+/// The Vault's folders and files. A click opens, ⌘-click in a new Tab; the menu creates,
+/// renames and moves to the Trash; dragging a row onto a folder moves it there, onto the empty
+/// space below to the root.
 struct FilesPane: View {
+    @Bindable var model: AppModel
+    @FocusState private var hasKeyboard: Bool
+
+    var body: some View {
+        List(selection: $model.selection) {
+            FileRows(items: model.tree, model: model)
+        }
+        .focused($hasKeyboard)
+        .contextMenu(forSelectionType: String.self) { paths in
+            let item = paths.first.flatMap { model.tree.item(at: $0) }
+            // In the folder clicked, the folder of the file clicked, or the root.
+            let folder = item.map { $0.children != nil ? $0.path : folderOf($0.path) } ?? ""
+            Button("New Note") { model.newNote(in: folder) }
+            Button("New Folder") { model.newFolder(in: folder) }
+            if let item {
+                Divider()
+                Button("Rename") { model.startRename(item.path) }
+                Button("Move to Trash") { model.trash(item.path) }
+            }
+        }
+        .background {
+            // ⌘⌫, as in the Finder, only while Files has the keyboard: in the editor it deletes
+            // to the start of the line. Delete alone is too easy to press.
+            Button("Move to Trash") { if let selection = model.selection { model.trash(selection) } }
+                .keyboardShortcut(.delete, modifiers: .command)
+                .disabled(!hasKeyboard || model.selection == nil || model.renaming != nil)
+                .opacity(0)
+                .accessibilityHidden(true)
+        }
+        .dropDestination(for: String.self) { paths, _ in
+            model.move(paths, into: "")
+            return true
+        }
+    }
+}
+
+/// The rows of a level of Files, folders opened as the model keeps them: a row to name, after
+/// ⌘N or New Folder, has its folders opened.
+private struct FileRows: View {
+    let items: [VaultItem]
     @Bindable var model: AppModel
 
     var body: some View {
-        List(model.tree, children: \.children, selection: $model.selection) { item in
-            Label(item.name, systemImage: item.symbolName)
+        ForEach(items) { item in
+            if let children = item.children {
+                DisclosureGroup(isExpanded: isExpanded(item.path)) {
+                    // A level inside a level: its type cannot be named within itself.
+                    AnyView(FileRows(items: children, model: model))
+                } label: {
+                    FileRow(item: item, model: model)
+                }
+            } else {
+                FileRow(item: item, model: model)
+            }
         }
+    }
+
+    private func isExpanded(_ folder: String) -> Binding<Bool> {
+        Binding(
+            get: { model.expandedFolders.contains(folder) },
+            set: { open in
+                if open { model.expandedFolders.insert(folder) } else { model.expandedFolders.remove(folder) }
+            }
+        )
+    }
+}
+
+/// A row of Files: its name, or a field to type a new one.
+private struct FileRow: View {
+    let item: VaultItem
+    @Bindable var model: AppModel
+    @State private var name = ""
+    @FocusState private var isTyping: Bool
+
+    var body: some View {
+        Group {
+            if model.renaming == item.path {
+                Label {
+                    TextField("Name", text: $name)
+                        .focused($isTyping)
+                        .onSubmit(commit)
+                        .onExitCommand { model.cancelRename(item.path) }
+                        .onAppear {
+                            name = item.editableName
+                            isTyping = true
+                        }
+                        // A click elsewhere keeps the name typed, as in the Finder.
+                        .onChange(of: isTyping) { _, typing in if !typing { commit() } }
+                } icon: {
+                    Image(systemName: item.symbolName)
+                }
+            } else {
+                Label(item.name, systemImage: item.symbolName)
+            }
+        }
+        .draggable(item.path)
+        // Onto a file: into its folder.
+        .dropDestination(for: String.self) { paths, _ in
+            model.move(paths, into: item.children != nil ? item.path : folderOf(item.path))
+            return true
+        }
+    }
+
+    private func commit() {
+        guard model.renaming == item.path else { return }
+        model.rename(item.path, to: name)
     }
 }
 
@@ -178,6 +285,15 @@ extension VaultItem: @retroactive Identifiable {
         switch self {
         case .folder(_, let children): children
         case .note, .attachment: nil
+        }
+    }
+
+    /// The name as Files lets the user type it: a Note's and an Attachment's without extension.
+    var editableName: String {
+        switch self {
+        case .folder: name
+        case .note(let note): note.name
+        case .attachment(let attachment): (attachment.name as NSString).deletingPathExtension
         }
     }
 

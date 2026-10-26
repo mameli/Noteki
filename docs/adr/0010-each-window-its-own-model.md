@@ -16,3 +16,4 @@ Within a window, each Tab keeps its Note open. The Note of the Tab in front is i
 - A second window costs its web view and a second listing of the Vault; Tabs cost only their text.
 - Choosing another Vault in any window applies to the first one; the other windows close, as they showed the Vault left.
 - The Tabs of every window are kept in the app's preferences, per Vault, the first window's first. They come back at launch, without the Tabs whose file is gone, and the other windows open again with theirs.
+- Since ticket 27, a file renamed, moved or put in the Trash by Noteki itself is told to the other windows at once, not left to the file event: a folder's move reaches the watcher as the folder alone, and the Notes inside it would not be followed. Edits and saves still reach the other windows only from disk.

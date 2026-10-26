@@ -133,6 +133,12 @@ public struct OpenNote: Sendable {
         return .reload(Reload(data: data, mine: text, text: merged))
     }
 
+    /// Noteki itself renamed or moved the Note, or a folder it is in, from `old` to `new`: it
+    /// follows at once, without waiting for the file event.
+    public mutating func moved(from old: String, to new: String) {
+        if let path = pathAfterMove(note.path, from: old, to: new) { note = Note(path: path) }
+    }
+
     /// Writes the text on screen where the deleted file was, and follows it again.
     public mutating func saveAgain() throws {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)

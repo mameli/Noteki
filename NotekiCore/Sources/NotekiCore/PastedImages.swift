@@ -6,10 +6,10 @@ extension Vault {
     /// cursor. A name already taken gets a number, as `Pasted image 20261026093005 1.png`.
     public func pasteImage(_ png: Data, into note: Note, at date: Date = .now) throws -> String {
         let name = "Pasted image " + Self.pastedImageMoment.string(from: date)
-        let attachment = try save(as: name, extension: "png", in: note.folder) { file in
+        let path = try writeNew(as: name, extension: "png", in: note.folder) { file in
             try png.write(to: file, options: .withoutOverwriting)
         }
-        return Self.embed(attachment.name)
+        return Self.embed(lastComponent(of: path))
     }
 
     /// The Embeds of files dropped from the Finder on a Note, one per line; nil when none is an
@@ -31,36 +31,16 @@ extension Vault {
             }
             let name = Self.linkable((file.lastPathComponent as NSString).deletingPathExtension)
             do {
-                let copied = try save(as: name, extension: file.pathExtension, in: note.folder) { destination in
+                let copied = try writeNew(as: name, extension: file.pathExtension, in: note.folder) { destination in
                     try FileManager.default.copyItem(at: file, to: destination)
                 }
-                embeds.append(Self.embed(copied.name))
+                embeds.append(Self.embed(lastComponent(of: copied)))
             } catch {
                 failure = failure ?? error
             }
         }
         if embeds.isEmpty, let failure { throw failure }
         return embeds.isEmpty ? nil : embeds.joined(separator: "\n")
-    }
-
-    /// Writes a new file in `folder` with `write`, under `name` or, when a file has it (in any
-    /// letter case, on a volume that ignores case as a Mac's does by default), `name 1`, `name 2`…:
-    /// never over an existing file, even one another app writes in between.
-    private func save(as name: String, extension fileExtension: String, in folder: String, write: (URL) throws -> Void) throws -> Attachment {
-        try FileManager.default.createDirectory(at: fileURL(folder), withIntermediateDirectories: true)
-        for number in 0... {
-            let fileName = (number == 0 ? name : "\(name) \(number)") + "." + fileExtension
-            let path = folder.isEmpty ? fileName : folder + "/" + fileName
-            guard existingFile(at: path) == nil else { continue }
-            do {
-                try write(fileURL(path))
-                // An image's extension, as the callers give it.
-                return Attachment(path: path)!
-            } catch CocoaError.fileWriteFileExists {
-                continue
-            }
-        }
-        fatalError("No free name for \(name)")
     }
 
     private static func embed(_ link: String) -> String {

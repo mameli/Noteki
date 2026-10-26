@@ -414,6 +414,210 @@ final class AppModel {
         }
     }
 
+    // MARK: File operations (SPEC, Files)
+
+    /// The row of Files whose name is being typed: a Note just made with ⌘N, or Rename. Its
+    /// folders open, so the row is on screen.
+    var renaming: String? {
+        didSet {
+            var folder = renaming.map(folderOf) ?? ""
+            while !folder.isEmpty {
+                expandedFolders.insert(folder)
+                folder = folderOf(folder)
+            }
+        }
+    }
+    /// The folders open in Files, by their paths.
+    var expandedFolders: Set<String> = []
+
+    /// What Noteki did to the Vault's files, for every window of it to follow.
+    enum FileChange {
+        case moved(from: String, to: String)
+        case trashed(String)
+    }
+    /// Hands this window's change to the other windows of the Vault (VaultWindows, ADR 0010).
+    @ObservationIgnored var onFileChange: (FileChange) -> Void = { _ in }
+
+    /// ⌘N: `Untitled.md` in the folder of the Note or Attachment in front, the root without one,
+    /// opened in the Tab in front with its name in Files ready to type over.
+    func newNote() {
+        newNote(in: placeInFront.map(\.folder) ?? "")
+    }
+
+    /// From Files' menu: a new Note in `folder`, named there.
+    func newNote(in folder: String) {
+        guard !isLooseFile else { return }
+        operate { vault in
+            let note = try vault.newNote(in: folder)
+            self.leftPane = .files
+            self.renaming = note.path
+            // Opened once Files lists it, right after.
+            self.pendingReveal = (note.path, false)
+            return nil
+        }
+    }
+
+    /// From Files' menu: the row's name to type, once it is selected and its file opened, so
+    /// that the selection taking the keyboard does not end the typing.
+    func startRename(_ path: String) {
+        if selection != path { selection = path }
+        afterTransition { self.renaming = path }
+    }
+
+    /// From Files' menu: a new folder in `folder`, named there.
+    func newFolder(in folder: String) {
+        operate { vault in
+            let path = try vault.newFolder(in: folder)
+            self.leftPane = .files
+            self.renaming = path
+            return nil
+        }
+    }
+
+    /// The name typed in Files: the file or folder takes it; Wikilinks to it are not updated (v1).
+    func rename(_ path: String, to name: String) {
+        renaming = nil
+        let current = tree.item(at: path)?.editableName
+        // Unchanged, as Escape or a click elsewhere leaves a new Note's name.
+        if name.trimmingCharacters(in: .whitespaces) != current {
+            operate { vault in .moved(from: path, to: try vault.rename(path, to: name)) }
+        }
+        focusIfNoteInFront(path)
+    }
+
+    /// Escape while typing a name: it stays as it was.
+    func cancelRename(_ path: String) {
+        renaming = nil
+        focusIfNoteInFront(path)
+    }
+
+    /// The Note in front just named, as after ⌘N: the editor takes the keyboard for its text.
+    private func focusIfNoteInFront(_ path: String) {
+        if case .note(let note)? = shown, note.path == path { editor.focus() }
+    }
+
+    /// Files dragged onto a folder of Files, or onto the root; those not in the Vault are ignored.
+    func move(_ paths: [String], into folder: String) {
+        for path in paths where tree.item(at: path) != nil && folderOf(path) != folder {
+            operate { vault in .moved(from: path, to: try vault.move(path, into: folder)) }
+        }
+    }
+
+    /// Move to Trash: never deleted for good. The Tabs that showed it close.
+    func trash(_ path: String) {
+        operate { vault in
+            try vault.trash(path)
+            return .trashed(path)
+        }
+    }
+
+    /// Runs a file operation after the Note open is saved, so no save goes to the old name, then
+    /// has every window follow it and Files list it. A refusal is told, as the Finder tells it.
+    private func operate(_ operation: @escaping (Vault) throws -> FileChange?) {
+        afterTransition {
+            guard let vault = self.vault else { return }
+            await self.editor.flush()
+            self.pendingSave?.cancel()
+            await self.saveNow()
+            do {
+                if let change = try operation(vault) {
+                    await self.apply(change)
+                    self.onFileChange(change)
+                }
+            } catch {
+                Self.tell(error)
+            }
+            await self.listTree(of: vault, refresh: true)
+        }
+    }
+
+    /// Another window's file operation: in turn with this window's switches, its Tabs, Notes
+    /// and Files follow.
+    func follow(_ change: FileChange) {
+        afterTransition {
+            await self.apply(change)
+            if let vault = self.vault { await self.listTree(of: vault, refresh: true) }
+        }
+    }
+
+    private func apply(_ change: FileChange) async {
+        switch change {
+        case .moved(let old, let new): followMove(from: old, to: new)
+        case .trashed(let path): await closeTabs(under: path)
+        }
+    }
+
+    private func followMove(from old: String, to new: String) {
+        tabs.renamed(from: old, to: new)
+        if var open = openNote, pathAfterMove(open.note.path, from: old, to: new) != nil {
+            let before = open.note
+            open.moved(from: old, to: new)
+            openNote = open
+            if shown == .note(before) { shown = .note(open.note) }
+        }
+        if case .attachment(let attachment)? = shown, let path = pathAfterMove(attachment.path, from: old, to: new) {
+            shown = Attachment(path: path).map(Shown.attachment)
+        }
+        for (tab, entry) in behind where pathAfterMove(entry.open.note.path, from: old, to: new) != nil {
+            var open = entry.open
+            open.moved(from: old, to: new)
+            behind[tab] = (open, entry.noteID)
+        }
+        previousNote?.moved(from: old, to: new)
+        recentNotes = recentNotes.map { note in pathAfterMove(note.path, from: old, to: new).map(Note.init(path:)) ?? note }
+        rememberRecentNotes()
+        if let renaming, let path = pathAfterMove(renaming, from: old, to: new) { self.renaming = path }
+        expandedFolders = Set(expandedFolders.map { pathAfterMove($0, from: old, to: new) ?? $0 })
+        if let selection, let path = pathAfterMove(selection, from: old, to: new) {
+            isFollowingTab = true
+            self.selection = path
+            isFollowingTab = false
+        }
+    }
+
+    /// The Tabs that showed what went to the Trash close, their Notes saved: the file is in the
+    /// Trash as it was saved. A Note whose text is only on screen (edits not saved, a Conflict)
+    /// keeps its Tab, and the banner of a deleted Note follows from the file event.
+    private func closeTabs(under path: String) async {
+        let isInTrash = { (shown: String) in pathAfterMove(shown, from: path, to: path) != nil }
+        await editor.flush()
+        await saveNow()
+        let frontStays = openNote.map { $0.hasUnsavedEdits || $0.conflict != nil } ?? false
+        for tab in tabs.all where isInTrash(tab.path) && !(tab.id == tabs.front?.id && frontStays) {
+            if tab.id == tabs.front?.id {
+                pendingSave?.cancel()
+                if openNote != nil { statesToDrop.append(openNoteID) }
+                openNote = nil
+            } else if let entry = behind.removeValue(forKey: tab.id) {
+                statesToDrop.append(entry.noteID)
+            }
+            tabs.close(tab.id)
+            sourceModeTabs.remove(tab.id)
+        }
+        if let previous = previousNote, isInTrash(previous.note.path) { previousNote = nil }
+        recentNotes.removeAll { isInTrash($0.path) }
+        rememberRecentNotes()
+        await present()
+    }
+
+    private static func tell(_ error: any Error) {
+        let alert = NSAlert()
+        switch error {
+        case Vault.FileError.exists(let path):
+            alert.messageText = "The name “\((path as NSString).lastPathComponent)” is already taken."
+            alert.informativeText = "Choose another name."
+        case Vault.FileError.invalidName:
+            alert.messageText = "This name cannot be used."
+            alert.informativeText = "A name cannot be empty, start with a dot, be a folder Noteki does not list (node_modules), or contain / \\ : [ ] # ^ or |."
+        case Vault.FileError.intoItself:
+            return NSSound.beep()
+        default:
+            alert.messageText = "The operation could not be done."
+            alert.informativeText = error.localizedDescription
+        }
+        alert.runModal()
+    }
+
     var canShowSwitcher: Bool { index != nil }
 
     func showSwitcher(in window: NSWindow?) {
@@ -1309,7 +1513,7 @@ extension Duration {
     var milliseconds: Int64 { components.seconds * 1000 + components.attoseconds / 1_000_000_000_000_000 }
 }
 
-private extension [VaultItem] {
+extension [VaultItem] {
     var noteCount: Int {
         reduce(0) { count, item in
             switch item {

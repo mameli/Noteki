@@ -198,7 +198,8 @@ func fold(_ text: String) -> String {
     text.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: nil)
 }
 
-func folderOf(_ path: String) -> String {
+/// The folder a path is in, from the Vault's root; "" at the root.
+public func folderOf(_ path: String) -> String {
     guard let slash = path.lastIndex(of: "/") else { return "" }
     return String(path[..<slash])
 }

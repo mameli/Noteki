@@ -41,11 +41,7 @@ public struct Tab: Codable, Equatable, Sendable, Identifiable {
     }
 
     mutating func renamed(from old: String, to new: String) {
-        history = history.map { path in
-            if path == old { return new }
-            if path.hasPrefix(old + "/") { return new + path.dropFirst(old.count) }
-            return path
-        }
+        history = history.map { pathAfterMove($0, from: old, to: new) ?? $0 }
     }
 }
 

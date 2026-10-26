@@ -20,7 +20,7 @@ struct NotekiApp: App {
         }
         .defaultSize(width: 1100, height: 750)
         .commands {
-            CommandGroup(after: .newItem) {
+            CommandGroup(replacing: .newItem) {
                 VaultCommands(main: model, windows: appDelegate.windows, showMainWindow: { appDelegate.showMainWindow() })
             }
             CommandGroup(after: .sidebar) {
@@ -66,6 +66,14 @@ final class VaultWindows {
         restoreSaved()
         main.onTabsChanged = { [weak self] _ in self?.remember() }
         main.onVaultChanged = { [weak self] in self?.vaultChanged() }
+        shareFileChanges(of: main)
+    }
+
+    /// A file renamed, moved or put in the Trash in one window: the others follow.
+    private func shareFileChanges(of model: AppModel) {
+        model.onFileChange = { [weak self, weak model] change in
+            for window in self?.all ?? [] where window !== model { window.follow(change) }
+        }
     }
 
     var all: [AppModel] { [main] + order.compactMap { models[$0] } }
@@ -79,6 +87,7 @@ final class VaultWindows {
         models[id] = model
         order.append(id)
         model.onTabsChanged = { [weak self] _ in self?.remember() }
+        shareFileChanges(of: model)
         remember()
         return id
     }
@@ -283,6 +292,12 @@ private struct VaultCommands: View {
     @Environment(\.openWindow) private var openWindow
 
     var body: some View {
+        Button("New Note") {
+            if window == nil { showMainWindow() }
+            (window ?? main).newNote()
+        }
+        .keyboardShortcut("n")
+        .disabled(main.vault == nil)
         Button("New Window") {
             if let id = windows.add() { openWindow(id: "vault", value: id) }
         }
