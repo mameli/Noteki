@@ -1,5 +1,6 @@
 import type { EmbeddedFile } from "./embeds";
 import type { FrontmatterReading } from "./frontmatter";
+import type { EditorSettings } from "./settings";
 
 // The messages between the app and the editor, as JSON with a `type`. Their Swift twins are in
 // NotekiCore's EditorBridge.swift: a test checks both sides name the same commands and messages.
@@ -60,7 +61,9 @@ export type EditorCommand =
    * Text written for the user, as typed: the Embeds of a Pasted image in place of the selection,
    * or of dropped files at `point`, where they were dropped (CSS pixels from the top left).
    */
-  | { type: "insert"; noteID: string; text: string; point?: { x: number; y: number } };
+  | { type: "insert"; noteID: string; text: string; point?: { x: number; y: number } }
+  /** The text's font, size and line width changed in Settings. */
+  | { type: "settings"; settings: EditorSettings };
 
 /** What `[[` offers: the Notes opened recently, the latest first, then all the others. */
 export interface LinkCompletions {
@@ -101,6 +104,8 @@ declare global {
   interface Window {
     /** The reply to a `flush` (a message as JSON) or a `reload` ("applied"), else null. */
     noteki: { receive(command: EditorCommand): string | null };
+    /** Set by the app before the page loads (ADR 0004): the text is drawn right from the start. */
+    notekiSettings?: EditorSettings;
     webkit?: { messageHandlers: { noteki: { postMessage(message: string): void } } };
   }
 }

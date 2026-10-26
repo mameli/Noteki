@@ -55,6 +55,9 @@ public enum EditorCommand: Encodable, Sendable {
     /// CSS pixels from the top left).
     case insert(noteID: String, text: String, point: Point?)
 
+    /// The text's font, size and line width changed in Settings.
+    case settings(EditorSettings)
+
     /// A place in the web view, in CSS pixels from its top left.
     public struct Point: Encodable, Equatable, Sendable {
         public let x: Double
@@ -72,10 +75,10 @@ public enum EditorCommand: Encodable, Sendable {
         case next, previous
     }
 
-    public static let types = ["load", "restore", "drop", "reload", "flush", "clear", "selectAll", "undo", "redo", "find", "unresolvedLinks", "linkCompletions", "goToLine", "sourceMode", "embeds", "frontmatter", "replaceFrontmatter", "tagCompletions", "insert"]
+    public static let types = ["load", "restore", "drop", "reload", "flush", "clear", "selectAll", "undo", "redo", "find", "unresolvedLinks", "linkCompletions", "goToLine", "sourceMode", "embeds", "frontmatter", "replaceFrontmatter", "tagCompletions", "insert", "settings"]
 
     private enum CodingKeys: String, CodingKey {
-        case type, noteID, revision, text, step, inners, requestID, completions, line, on, files, reading, replacement, tags, noteIDs, point
+        case type, noteID, revision, text, step, inners, requestID, completions, line, on, files, reading, replacement, tags, noteIDs, point, settings
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -149,6 +152,9 @@ public enum EditorCommand: Encodable, Sendable {
             try container.encode(noteID, forKey: .noteID)
             try container.encode(text, forKey: .text)
             try container.encodeIfPresent(point, forKey: .point)
+        case .settings(let settings):
+            try container.encode("settings", forKey: .type)
+            try container.encode(settings, forKey: .settings)
         }
     }
 

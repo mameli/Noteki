@@ -4,9 +4,14 @@ import Foundation
 /// the Notes the user edits or creates and the images pasted or dropped into them (ADR 0002).
 public struct Vault: Sendable {
     public let root: URL
+    /// The folders the user excludes in Settings, by their paths from the root, lowercased: a
+    /// Mac's volume ignores case, so `archive` is the folder `Archive`. Excluded folders with what
+    /// they hold, as the hidden ones are.
+    public let excludedFolders: Set<String>
 
-    public init(root: URL) {
+    public init(root: URL, excludedFolders: [String] = []) {
         self.root = root.standardizedFileURL
+        self.excludedFolders = Set(excludedFolders.map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "/")).lowercased() }.filter { !$0.isEmpty })
     }
 
     /// The folders, Notes and Attachments of the Vault: at each level folders first, then the
@@ -168,9 +173,11 @@ public struct Vault: Sendable {
     /// Whether any folder on the way to this path, or the path itself, is an Excluded folder.
     func isInExcludedFolder(_ path: String) -> Bool {
         var folder = root
+        var folderPath = ""
         for component in path.split(separator: "/") {
             folder = folder.appending(path: String(component))
-            if isExcludedFolder(folder) { return true }
+            folderPath = folderPath.isEmpty ? String(component) : folderPath + "/" + component
+            if isExcludedFolder(folder, path: folderPath) { return true }
         }
         return false
     }
@@ -192,7 +199,7 @@ public struct Vault: Sendable {
             guard let isDirectory = try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory else { continue }
             if isDirectory {
                 // A folder the user cannot read is left out rather than hiding the whole Vault.
-                guard !isExcludedFolder(url), let children = try? items(in: url, relativePath: path) else {
+                guard !isExcludedFolder(url, path: path), let children = try? items(in: url, relativePath: path) else {
                     continue
                 }
                 folders.append(.folder(path: path, children: children))
@@ -209,12 +216,14 @@ public struct Vault: Sendable {
     private static let codeFolderNames: Set<String> = ["node_modules", "venv", "__pycache__"]
 
     /// Excluded folders are neither listed nor read: hidden ones (`.obsidian`, `.venv`), the
-    /// environments and dependencies of code, and any folder that is a repository of its own,
-    /// whose `.git` is a folder or, for submodules and worktrees, a file. Only asked of folders
-    /// below the root, so a Vault kept in git (obsidian-git) is not excluded from itself.
-    private func isExcludedFolder(_ folder: URL) -> Bool {
+    /// environments and dependencies of code, any folder that is a repository of its own, whose
+    /// `.git` is a folder or, for submodules and worktrees, a file, and those the user excludes.
+    /// Only asked of folders below the root, so a Vault kept in git (obsidian-git) is not
+    /// excluded from itself.
+    private func isExcludedFolder(_ folder: URL, path: String) -> Bool {
         let name = folder.lastPathComponent
         return name.hasPrefix(".")
+            || excludedFolders.contains(path.lowercased())
             || Self.codeFolderNames.contains(name)
             || FileManager.default.fileExists(atPath: folder.appending(path: ".git").path(percentEncoded: false))
     }

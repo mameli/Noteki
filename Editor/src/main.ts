@@ -12,6 +12,7 @@ import { broughtBack, changeTo, fromDisk } from "./states";
 import { type TagEditing, tagEditing } from "./tagchips";
 import { highlightTag } from "./highlight";
 import { insertion } from "./insert";
+import { applySettings } from "./settings";
 import { noteLanguage } from "./language";
 import { livePreview } from "./livepreview";
 import { followWikilinks, linkInners, markUnresolved, unresolvedLinks } from "./wikilink";
@@ -39,7 +40,7 @@ const sourceHighlight = HighlightStyle.define([
 
 // Set here rather than in editor.css: CodeMirror's base theme would win over a stylesheet.
 const noteTheme = EditorView.theme({
-  ".cm-scroller": { fontFamily: "var(--system-font)", fontSize: "15px", lineHeight: "1.6" },
+  ".cm-scroller": { fontFamily: "var(--text-font)", fontSize: "var(--text-size)", lineHeight: "1.6" },
   ".cm-content": { maxWidth: "var(--line-width)", margin: "0 auto", padding: "2rem 1.5rem 40vh" },
   ".cm-panels": {
     backgroundColor: "var(--panel)",
@@ -194,6 +195,8 @@ function goToLine(number: number) {
   view.dispatch({ selection: { anchor: line.from }, effects: EditorView.scrollIntoView(line.from, { y: "center" }) });
 }
 
+if (window.notekiSettings) applySettings(window.notekiSettings);
+
 const view = new EditorView({
   state: initialState("", false),
   parent: document.getElementById("editor")!,
@@ -327,6 +330,13 @@ window.noteki = {
           goToLine(command.line);
           view.focus();
         }
+        return null;
+      case "settings":
+        applySettings(command.settings);
+        // Lines change height with the font: CodeMirror measures them again, and once more when
+        // the new font has loaded, if it was not yet.
+        view.requestMeasure();
+        void document.fonts.ready.then(() => view.requestMeasure());
         return null;
       case "insert":
         if (command.noteID === noteID) {

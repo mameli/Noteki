@@ -258,6 +258,7 @@ final class AppModel {
         looseFile = nil
         connectEditor()
         connectScans()
+        followExcludedFolders()
         guard let path = UserDefaults.standard.string(forKey: Self.vaultPathKey) else { return }
         var isFolder: ObjCBool = false
         if FileManager.default.fileExists(atPath: path, isDirectory: &isFolder), isFolder.boolValue {
@@ -274,6 +275,7 @@ final class AppModel {
         looseFile = nil
         connectEditor()
         connectScans()
+        followExcludedFolders()
         activate(Vault(root: root))
     }
 
@@ -287,6 +289,36 @@ final class AppModel {
     }
 
     private var isLooseFile: Bool { looseFile != nil }
+
+    @ObservationIgnored private var settingsObserver: (any NSObjectProtocol)?
+
+    /// Excluded folders changed in Settings for this Vault: Files, the index and Search leave
+    /// them out from now on. The Tabs inside a folder newly left out close, their Notes saved:
+    /// no change on disk would reach them any more (ADR 0005).
+    private func followExcludedFolders() {
+        settingsObserver = NotificationCenter.default.addObserver(
+            forName: AppSettings.excludedFoldersChanged, object: nil, queue: .main
+        ) { [weak self] notification in
+            let root = notification.object as? String
+            MainActor.assumeIsolated {
+                guard let self, let vault = self.vault, root == vault.root.path(percentEncoded: false) else { return }
+                let updated = Vault(root: vault.root, excludedFolders: AppSettings.shared.excludedFolders(of: vault.root))
+                let leftOut = updated.excludedFolders.subtracting(vault.excludedFolders)
+                self.vault = updated
+                self.editor.images.vault = updated
+                self.afterTransition {
+                    // Tabs show paths as on disk; the folders are kept lowercased.
+                    for tab in self.tabs.all {
+                        let path = tab.path.lowercased()
+                        if let folder = leftOut.first(where: { path.hasPrefix($0 + "/") }) {
+                            await self.closeTabs(under: String(tab.path.prefix(folder.count)))
+                        }
+                    }
+                    await self.listTree(of: updated, refresh: true)
+                }
+            }
+        }
+    }
 
     /// Where the Loose file is now, after any Followed rename.
     var looseFileNow: URL? {
@@ -864,7 +896,9 @@ final class AppModel {
         onVaultChanged()
     }
 
-    private func activate(_ vault: Vault) {
+    private func activate(_ chosen: Vault) {
+        // With the folders the user excludes from it; a Loose file's folder is no Vault.
+        let vault = isLooseFile ? chosen : Vault(root: chosen.root, excludedFolders: AppSettings.shared.excludedFolders(of: chosen.root))
         self.vault = vault
         // A Loose file's folder may be ~ or ~/Downloads: its window embeds nothing, serves nothing.
         editor.images.vault = isLooseFile ? nil : vault

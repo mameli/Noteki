@@ -70,8 +70,10 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
     override init() {
         let configuration = WKWebViewConfiguration()
         configuration.setURLSchemeHandler(images, forURLScheme: ImageSchemeHandler.scheme)
+        configuration.userContentController.addUserScript(Self.settingsScript())
         webView = EditorWebView(frame: .zero, configuration: configuration)
         super.init()
+        NotificationCenter.default.addObserver(self, selector: #selector(settingsChanged), name: AppSettings.editorChanged, object: nil)
         webView.onCommand = { [weak self] command in self?.perform(command) }
         webView.takesImages = { [weak self] in self?.takesImages() ?? false }
         webView.onImages = { [weak self] images, point in self?.onImages(images, point) }
@@ -88,6 +90,23 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
             guard isReady, isSourceMode != oldValue else { return }
             run(.sourceMode(on: isSourceMode)) { _ in }
         }
+    }
+
+    /// The settings as the page reads them before it loads (ADR 0004): the first Note is drawn
+    /// with them, without a round trip. Also after a reload, as they are now.
+    private static func settingsScript() -> WKUserScript {
+        let json = (try? AppSettings.shared.editor.json()) ?? "null"
+        return WKUserScript(source: "window.notekiSettings = \(json);", injectionTime: .atDocumentStart, forMainFrameOnly: true)
+    }
+
+    /// Settings changed: the Note shown is drawn again with them at once.
+    @objc private func settingsChanged() {
+        // The editor's only user script.
+        let scripts = webView.configuration.userContentController
+        scripts.removeAllUserScripts()
+        scripts.addUserScript(Self.settingsScript())
+        guard isReady else { return }
+        run(.settings(AppSettings.shared.editor)) { _ in }
     }
 
     /// Shows a Note, at `line` (from 1) if given: where a Backlink points.
@@ -227,6 +246,8 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
         case .ready:
             isReady = true
             if isSourceMode { run(.sourceMode(on: true)) { _ in } }
+            // Settings changed while the page loaded may have missed its script.
+            run(.settings(AppSettings.shared.editor)) { _ in }
             if let loaded { load(noteID: loaded.noteID, text: loaded.text, line: loaded.line) }
         case .changed(let noteID, let revision, let text):
             // Late keys of the Note just left must not become what a reload shows.

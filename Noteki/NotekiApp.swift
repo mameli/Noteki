@@ -40,6 +40,9 @@ struct NotekiApp: App {
         }
         .defaultSize(width: 1100, height: 750)
         .restorationBehavior(.disabled)
+        Settings {
+            SettingsView(model: model)
+        }
     }
 }
 

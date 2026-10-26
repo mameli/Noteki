@@ -38,7 +38,7 @@ Memory is measured as at first launch: the right sidebar hidden, the left one on
 - At first launch Noteki asks for the Vault folder and remembers it. *File → Open Vault…* changes it. One Vault at a time.
 - Noteki writes nothing in the Vault but Notes and Attachments ([ADR 0002](adr/0002-coexist-with-obsidian.md)). Settings live outside the Vault, in the app's preferences and in `~/Library/Application Support/Noteki/`.
 - **Listed and indexed**: `.md` Notes; images (`png`, `jpg`, `jpeg`, `gif`, `webp`, `svg`, `heic`) and `pdf` as **Attachments**. Every other file is ignored, in the sidebar too.
-- **Excluded folders**: every folder whose name starts with `.`; `node_modules`, `.venv`, `venv`, `__pycache__`; every folder that contains a `.git` of its own (a repository inside the Vault), the Vault's own root excepted; the folders the user adds in *Settings*. In the user's Vault this leaves out about 13,000 SVG files and the code repositories under `Projects/` and `Sandbox/`.
+- **Excluded folders**: every folder whose name starts with `.`; `node_modules`, `.venv`, `venv`, `__pycache__`; every folder that contains a `.git` of its own (a repository inside the Vault), the Vault's own root excepted; the folders the user adds in *Settings*, per Vault, by their path from its root in any letter case (a folder renamed or moved outside Noteki is no longer excluded; the folder chosen must be inside the Vault and not already left out). A folder newly excluded closes the Tabs inside it, their Notes saved first: no change on disk would reach them any more. In the user's Vault this leaves out about 13,000 SVG files and the code repositories under `Projects/` and `Sandbox/`.
 
 ## Window
 
@@ -56,6 +56,9 @@ Memory is measured as at first launch: the right sidebar hidden, the left one on
   - A Loose file's window has one Tab and no tab bar.
 - Images and PDFs open in the centre in a native view (an image view, PDFKit), in a Tab like a Note.
 - Appearance follows the system light or dark mode. One theme. *Settings* chooses the text font, its size and the maximum line width.
+  - The font is any family installed, the system font by default; the size from 10 to 32 points, 15 by default; the line width from 480 to 1,600 points, 736 by default (46 rem). *Restore Defaults* puts them back. A point is a CSS pixel of the editor.
+  - They apply at once to every window's editor, Loose files' too. The page gets them before it loads (ADR 0004): the first Note is drawn with them, without a round trip.
+  - *Settings* shows the Excluded folders of the first window's Vault.
 
 ## Notes
 
