@@ -80,4 +80,21 @@ At the user's request, 23 October 2026: the memory at rest limit goes from 150 t
 
 Twenty Tabs add 4 MB to Noteki's own process (their Notes' text) and one web view for all of them. WebContent with 20 Tabs is 11 to 38 MB above the runs without, inside its spread from run to run (69 to 132 MB today). Bringing back 20 Tabs adds 0.04–0.14 s to the start.
 
-The budget is over today with or without Tabs: WebKit's GPU process is 112–116 MB in every run, against 13 MB at the first measure (M1), whatever the window's size. The Mac was recording its screen during these runs, which may be the cause; it is not Noteki's change. The cold start without Tabs is 0.92–1.00 s, against 0.72–0.90 s before.
+The budget is over today with or without Tabs: WebKit's GPU process is 112–116 MB in every run, against 13 MB at the first measure (M1). The cold start without Tabs is 0.92–1.00 s, against 0.72–0.90 s before.
+
+### WebKit's GPU process while the editor has the keyboard
+
+Why the GPU process is at 113 MB in the Tabs runs and was at 13 MB before, 26 October 2026, nothing recording the screen:
+
+| WKWebView, window of 600 × 400 on the Mac's own display | GPU process |
+|---|---|
+| A page with one line of text | 10 MB |
+| Noteki's editor, no Note | 9 MB |
+| Noteki's editor with a Note, the editor having the keyboard | 106–108 MB |
+| The same, the keyboard taken from the editor | 10 MB |
+| A bare `<textarea>` or `contenteditable`, with the keyboard | 110–111 MB |
+| The same, in a window shown but not the active one | 11 MB |
+
+About 100 MB of the GPU process are WebKit's on macOS 26 whenever a text field of a web view has the keyboard in the active window. Any text field costs it, a transparent caret too, and it does not shrink over time. It goes when another app is active or the window is minimized. Neither the window's size nor the Note's length change it, and the build of ticket 18 costs the same today. Noteki's editor needs the keyboard to be typed into, so this is the cost of typing in a web view, not of Noteki's code.
+
+The earlier measures had the keyboard elsewhere. At M1 a Note loaded did not take the keyboard; from ticket 14 it does, but those measures were launched in the background, where no window opens. The Tabs runs are the first in the foreground since ticket 14, so the first to count it. Without it, today's runs without Tabs come to about 150–180 MB, at the limit as before.

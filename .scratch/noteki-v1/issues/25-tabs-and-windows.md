@@ -60,4 +60,4 @@ Fixed during that check:
 
 A closed window's model and web view stay in memory until a menu is next opened or a shortcut used: SwiftUI keeps the menus' actions, built while that window was in front, until it builds them again.
 
-Memory with 20 Tabs, in CHANGELOG.md: Noteki's own process grows by 4 MB, WebKit's WebContent by 11 to 38 MB, inside its spread from run to run; one web view for all the Tabs. The start is 0.04–0.14 s slower with 20 Tabs to bring back. Today's totals are over the budget with or without Tabs, WebKit's GPU process being at 112–116 MB in every run.
+Memory with 20 Tabs, in CHANGELOG.md: Noteki's own process grows by 4 MB, WebKit's WebContent by 11 to 38 MB, inside its spread from run to run; one web view for all the Tabs. The start is 0.04–0.14 s slower with 20 Tabs to bring back. Today's totals are over the budget with or without Tabs: WebKit's GPU process takes about 100 MB more whenever the editor has the keyboard in the active window, which the earlier measures never had (CHANGELOG.md).
