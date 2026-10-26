@@ -98,3 +98,7 @@ Why the GPU process is at 113 MB in the Tabs runs and was at 13 MB before, 26 Oc
 About 100 MB of the GPU process are WebKit's on macOS 26 whenever a text field of a web view has the keyboard in the active window. Any text field costs it, a transparent caret too, and it does not shrink over time. It goes when another app is active or the window is minimized. Neither the window's size nor the Note's length change it, and the build of ticket 18 costs the same today. Noteki's editor needs the keyboard to be typed into, so this is the cost of typing in a web view, not of Noteki's code.
 
 The earlier measures had the keyboard elsewhere. At M1 a Note loaded did not take the keyboard; from ticket 14 it does, but those measures were launched in the background, where no window opens. The Tabs runs are the first in the foreground since ticket 14, so the first to count it. Without it, today's runs without Tabs come to about 150–180 MB, at the limit as before.
+
+### Memory budget raised to 280 MB
+
+At the user's request, 26 October 2026: the memory at rest limit goes from 180 to 280 MB, counting WebKit's cost while the editor has the keyboard (about 100 MB, above). The measure keeps the keyboard in the editor, as a Note shown at launch takes it. The runs of the Tabs table are then within the limit without Tabs (251–278 MB), and over with 20 Tabs (287–322 MB).

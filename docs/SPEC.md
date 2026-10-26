@@ -17,7 +17,7 @@ Measured at the end of every milestone on a generated Vault of 5,000 Notes (see 
 | App on disk | < 20 MB |
 | Cold start to the last Note shown | < 1 s |
 | Index of 5,000 Notes | < 3 s, the window usable before it ends |
-| Memory at rest, one window, one Note | < 180 MB, all processes included (150 MB until M2: WebKit alone varies from 50 to 90 MB) |
+| Memory at rest, one window, one Note, the editor having the keyboard | < 280 MB, all processes included (150 MB until M2, 180 MB until ticket 25: WebKit alone varies from 50 to 90 MB, and takes about 100 MB more while a text field has the keyboard) |
 
 A feature that breaks the budget waits until it fits.
 
@@ -194,4 +194,4 @@ Each milestone ends with an app the user can use every day.
 - **Native text behaviour in the web view**: select-all, find, Services and accessibility do not work by themselves because CodeMirror draws only the visible lines. MarkEdit's solutions are the starting point.
 - **Live preview that jumps**: hiding and showing syntax changes widths and heights. Every extension is tried on the Vault's longest Meeting notes before M3 ends.
 - **Merge on large rewrites**: when Takku rewrites most of a Note at once, a Conflict may be frequent. If it is, the base is taken at the moment the user starts typing rather than at the last save.
-- **The memory budget**: the WebKit processes alone use 50 to 90 MB, varying from run to run. The limit was 150 MB until M2, where WebKit's high runs put even the default at the limit; it is 180 MB since, still well under Obsidian. Noteki's own process is the steady figure to watch: 60 MB at first launch at M2. What a pane needs from the Notes' text is read when it is first shown, as the Backlinks and the Tags are.
+- **The memory budget**: the WebKit processes alone use 50 to 90 MB, varying from run to run. The limit was 150 MB until M2, where WebKit's high runs put even the default at the limit; it was 180 MB from then to ticket 25. It is 280 MB since: WebKit's GPU process takes about 100 MB more whenever a web view's text field has the keyboard in the active window, any text field, so typing in Noteki costs it. The measures before ticket 25 never had the keyboard in the editor. Noteki's own process is the steady figure to watch: 60 MB at first launch at M2. What a pane needs from the Notes' text is read when it is first shown, as the Backlinks and the Tags are.
