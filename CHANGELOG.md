@@ -65,3 +65,19 @@ In these runs WebKit was at its high (WebContent 60–69 MB, against 30 MB in th
 ### Memory budget raised to 180 MB
 
 At the user's request, 23 October 2026: the memory at rest limit goes from 150 to 180 MB. WebKit's processes alone vary from 50 to 90 MB from run to run, which put even the default at the old limit. The tables above keep the limit they were measured against.
+
+### Tabs (ticket 25)
+
+`scripts/measure` in the foreground, same Vault, 26 October 2026. `TABS=20` brings back 20 Tabs at launch and brings each in front once. Two window sizes: the default one (1100 × 750) and the whole screen (1512 × 949).
+
+| | Default size | `TABS=20` | Whole screen | `TABS=20` | `TABS=20` | Limit |
+|---|---|---|---|---|---|---|
+| Noteki's own process | 62 MB | 66 MB | 63 MB | 67 MB | 66 MB | |
+| WebKit's WebContent | 69 MB | 102 MB | 94 MB | 105 MB | 132 MB | |
+| WebKit's GPU and Networking | 120 MB | 119 MB | 121 MB | 121 MB | 124 MB | |
+| Memory at rest, all processes | 251 MB | 287 MB | 278 MB | 293 MB | 322 MB | 180 MB |
+| Cold start to a Note shown | 1.00 s | 1.04 s | 0.92 s | 1.06 s | 1.05 s | 1 s |
+
+Twenty Tabs add 4 MB to Noteki's own process (their Notes' text) and one web view for all of them. WebContent with 20 Tabs is 11 to 38 MB above the runs without, inside its spread from run to run (69 to 132 MB today). Bringing back 20 Tabs adds 0.04–0.14 s to the start.
+
+The budget is over today with or without Tabs: WebKit's GPU process is 112–116 MB in every run, against 13 MB at the first measure (M1), whatever the window's size. The Mac was recording its screen during these runs, which may be the cause; it is not Noteki's change. The cold start without Tabs is 0.92–1.00 s, against 0.72–0.90 s before.

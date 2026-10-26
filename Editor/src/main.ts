@@ -1,7 +1,7 @@
 import { defaultKeymap, history, historyKeymap, redo, selectAll, undo } from "@codemirror/commands";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { findNext, findPrevious, openSearchPanel, search, searchKeymap } from "@codemirror/search";
-import { Compartment, EditorState, Transaction } from "@codemirror/state";
+import { Compartment, EditorState, type StateEffect, Transaction } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import { type EditorCommand, type EditorMessage, send } from "./bridge";
@@ -198,14 +198,18 @@ const view = new EditorView({
   parent: document.getElementById("editor")!,
 });
 
-/** The Notes of the Tabs behind, by their noteID: their state and where they were scrolled. */
-const kept = new Map<string, { state: EditorState; scrollTop: number }>();
+/**
+ * The Notes of the Tabs behind, by their noteID: their state and where they were scrolled, kept
+ * as the line at the top of the editor: in pixels it would come back off by the lines' heights
+ * CodeMirror only estimates until it draws them.
+ */
+const kept = new Map<string, { state: EditorState; scroll: StateEffect<unknown> }>();
 
 /** Reports what is not reported yet and keeps the Note shown for when its Tab comes back. */
 function keepShown() {
   const pending = report();
   if (pending) send(pending);
-  if (noteID !== null) kept.set(noteID, { state: view.state, scrollTop: view.scrollDOM.scrollTop });
+  if (noteID !== null) kept.set(noteID, { state: view.state, scroll: view.scrollSnapshot() });
 }
 
 /** What every Note shown asks the app, once in the editor. */
@@ -259,8 +263,7 @@ window.noteki = {
         } else {
           view.setState(broughtBack(back.state, command.text));
           // Live preview or Source mode as the window has it now.
-          view.dispatch({ effects: preview.reconfigure(previewed()) });
-          view.requestMeasure({ read: () => null, write: () => (view.scrollDOM.scrollTop = back.scrollTop) });
+          view.dispatch({ effects: [preview.reconfigure(previewed()), back.scroll] });
         }
         view.focus();
         askAboutShown();

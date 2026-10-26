@@ -155,6 +155,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         super.init()
     }
 
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        // ⌃Tab and ⌃⇧Tab are the Go menu's, wherever the keyboard is: the editor and the
+        // sidebar's lists would take them to move the keyboard to another view.
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            guard event.keyCode == 48, modifiers == .control || modifiers == [.control, .shift] else { return event }
+            return NSApp.mainMenu?.performKeyEquivalent(with: event) == true ? nil : event
+        }
+    }
+
     func application(_ application: NSApplication, open urls: [URL]) {
         for url in urls { open(url) }
     }

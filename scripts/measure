@@ -112,7 +112,11 @@ if [ "${TAGS:-0}" = 1 ]; then
     for _ in $(seq 1 400); do grep -q 'Tags read' "$work/log" && break; sleep 0.1; done
 fi
 if [ "${TABS:-0}" -gt 0 ]; then
-    # Each Tab in front once: Go → Show Next Tab, through the menu.
+    # Each Tab in front once: Go → Show Next Tab, through the menu, once Noteki has its menus.
+    for _ in $(seq 1 50); do
+        osascript -e 'tell application "System Events" to tell process "Noteki" to get menu "Go" of menu bar 1' >/dev/null 2>&1 && break
+        sleep 0.2
+    done
     for _ in $(seq 0 "$TABS"); do
         osascript -e 'tell application "System Events" to tell process "Noteki" to click menu item "Show Next Tab" of menu "Go" of menu bar 1' >/dev/null
         sleep 0.4

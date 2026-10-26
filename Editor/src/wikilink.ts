@@ -100,7 +100,10 @@ export function followWikilinks(follow: (inner: string, newTab: boolean) => void
       if (event.button !== 0 || event.shiftKey || event.altKey || event.ctrlKey || view.composing) return false;
       // Only over the text itself: not beside it, where the nearest position would be a link.
       const pos = view.posAtCoords({ x: event.clientX, y: event.clientY }, false);
-      if (pos === null) return false;
+      const line = view.state.doc.lineAt(pos);
+      const start = view.coordsAtPos(line.from, 1);
+      const end = view.coordsAtPos(line.to, -1);
+      if (!start || !end || event.clientX < start.left || event.clientX > end.right) return false;
       const found = linkAt(view, pos);
       // An image drawn under its line has its source hidden: a click there places the cursor.
       if (!found || !follows(view.state, found.node)) return false;
