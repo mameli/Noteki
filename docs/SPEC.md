@@ -45,7 +45,15 @@ Memory is measured as at first launch: the right sidebar hidden, the left one on
 - **Left sidebar**, three panes: *Files* (the folder tree), *Tags* (the Tag tree with counts, click to list the Notes), *Search*.
 - **Centre**: the Note of the Tab in front, with the tab bar above it.
 - **Right sidebar**, collapsible: *Backlinks* of the Note (with the line around each one) and its **Outline**.
-- **Tabs** are Noteki's own, one web view per window ([ADR 0003](adr/0003-one-web-view-per-window.md)). Clicking a Note in the sidebar opens it in the Tab in front; ⌘-click opens it in a new Tab. The open Tabs of each window are restored at launch.
+- **Tabs** are Noteki's own, one web view per window ([ADR 0003](adr/0003-one-web-view-per-window.md)). Clicking a Note in the sidebar opens it in the Tab in front; ⌘-click opens it in a new Tab. The open Tabs of each window are restored at launch. Since ticket 25:
+  - A ⌘-click opens a new Tab, after the one in front, from Files, a Wikilink, a Backlink, a search result or the Tags pane. ⌘Enter in the Quick switcher does the same. A file opened from the Finder or Takku goes to the Tab that shows it, or to a new Tab, so the Tabs open stay as they were.
+  - Each Tab keeps its Note's cursor, scroll and undo while it is behind, and Source mode (⌘E). Leaving a Tab saves its Note. A Note behind follows a Followed rename and takes the file's changes, which show when its Tab comes back.
+  - ⌘⌥← and ⌘⌥→ go back and forward through what a Tab showed; a Note gone back to is read again.
+  - ⌘W closes the Tab in front, the one after it coming in front; with no Tab open it closes the window. ⌃Tab and ⌃⇧Tab go to the next and previous Tab, round.
+  - ⌘⇧N opens another window of the Vault, with its own web view and Tabs ([ADR 0010](adr/0010-each-window-its-own-model.md)). The same Note open in two windows is kept in step through the file, as with Takku. Choosing another Vault closes the other windows.
+  - The Tabs of each window are kept in the app's preferences, per Vault. At launch, or when that Vault is chosen again, they come back, without those whose file is gone, and the other windows open again with theirs. A Tab brought back shows its Note with the cursor at the start of its text. The Notes of the Tabs are open from launch, so they follow a Followed rename even before their Tab comes in front. An Attachment's Tab, and what a Tab showed before (back and forward), do not follow a rename: they show that the file is no longer in the Vault.
+  - Closing a Tab, a window or the app with a Note behind that only lives on screen (deleted by another app, or not saved) brings it in front and asks, as for the Note in front. A window closed while the user chooses to stay with such edits opens again as it was.
+  - A Loose file's window has one Tab and no tab bar.
 - Images and PDFs open in the centre in a native view (an image view, PDFKit), in a Tab like a Note.
 - Appearance follows the system light or dark mode. One theme. *Settings* chooses the text font, its size and the maximum line width.
 

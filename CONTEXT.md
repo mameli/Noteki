@@ -97,7 +97,7 @@ The other way to show a Note: all the Markdown visible as written, nothing hidde
 _Avoid_: raw mode, plain text, code view
 
 **Tab** (`Tab`):
-A Note open in a window. A window has many Tabs and shows one, and each Tab keeps its own cursor, scroll and undo.
+A Note or an Attachment open in a window. A window has many Tabs and shows one; each Tab keeps its own cursor, scroll and undo, and remembers what it showed before, for back and forward.
 _Avoid_: pane, document window
 
 **Search** (`SearchQuery`):

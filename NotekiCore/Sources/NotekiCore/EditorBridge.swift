@@ -14,6 +14,11 @@ public enum EditorCommand: Encodable, Sendable {
     /// editor replies "applied" only if it has nothing newer, otherwise it reports first and
     /// drops the reload, so no key typed meanwhile is lost.
     case reload(noteID: String, revision: Int, text: String)
+    /// A Tab back in front: the state its Note had in the editor when the Tab was left (cursor,
+    /// scroll, undo), with `text` as the app has it now; a new one if none was kept.
+    case restore(noteID: String, text: String)
+    /// The Tabs of these Notes closed, or now show another Note: their states are not kept.
+    case drop(noteIDs: [String])
     /// Report now any change not reported yet, before the app switches Note or quits.
     case flush
     /// Show nothing and take no typing: no Note is open, as after switching Vault.
@@ -52,10 +57,10 @@ public enum EditorCommand: Encodable, Sendable {
         case next, previous
     }
 
-    public static let types = ["load", "reload", "flush", "clear", "selectAll", "undo", "redo", "find", "unresolvedLinks", "linkCompletions", "goToLine", "sourceMode", "embeds", "frontmatter", "replaceFrontmatter", "tagCompletions"]
+    public static let types = ["load", "restore", "drop", "reload", "flush", "clear", "selectAll", "undo", "redo", "find", "unresolvedLinks", "linkCompletions", "goToLine", "sourceMode", "embeds", "frontmatter", "replaceFrontmatter", "tagCompletions"]
 
     private enum CodingKeys: String, CodingKey {
-        case type, noteID, revision, text, step, inners, requestID, completions, line, on, files, reading, replacement, tags
+        case type, noteID, revision, text, step, inners, requestID, completions, line, on, files, reading, replacement, tags, noteIDs
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -71,6 +76,13 @@ public enum EditorCommand: Encodable, Sendable {
             try container.encode(noteID, forKey: .noteID)
             try container.encode(revision, forKey: .revision)
             try container.encode(text, forKey: .text)
+        case .restore(let noteID, let text):
+            try container.encode("restore", forKey: .type)
+            try container.encode(noteID, forKey: .noteID)
+            try container.encode(text, forKey: .text)
+        case .drop(let noteIDs):
+            try container.encode("drop", forKey: .type)
+            try container.encode(noteIDs, forKey: .noteIDs)
         case .flush:
             try container.encode("flush", forKey: .type)
         case .clear:
@@ -134,8 +146,8 @@ public enum EditorMessage: Decodable, Equatable, Sendable {
     /// The whole text of the Note after the user typed. `revision` grows with every report: a
     /// report that arrives after a later one is stale.
     case changed(noteID: String, revision: Int, text: String)
-    /// The user clicked a Wikilink: what is between its brackets.
-    case followLink(inner: String)
+    /// The user clicked a Wikilink: what is between its brackets; with ⌘, for a new Tab.
+    case followLink(inner: String, newTab: Bool)
     /// The Note's links, what is between their brackets: which lead nowhere?
     case checkLinks(noteID: String, inners: [String])
     /// The user typed `[[`: which Notes can the link lead to? Answered by `linkCompletions`.
@@ -154,7 +166,7 @@ public enum EditorMessage: Decodable, Equatable, Sendable {
     public static let types = ["ready", "changed", "followLink", "checkLinks", "completeLink", "readFrontmatter", "addTag", "removeTag", "completeTag"]
 
     private enum CodingKeys: String, CodingKey {
-        case type, noteID, revision, text, inner, inners, requestID, tag
+        case type, noteID, revision, text, inner, inners, requestID, tag, newTab
     }
 
     public init(json: String) throws {
@@ -174,7 +186,10 @@ public enum EditorMessage: Decodable, Equatable, Sendable {
                 text: try container.decode(String.self, forKey: .text)
             )
         case "followLink":
-            self = .followLink(inner: try container.decode(String.self, forKey: .inner))
+            self = .followLink(
+                inner: try container.decode(String.self, forKey: .inner),
+                newTab: try container.decodeIfPresent(Bool.self, forKey: .newTab) ?? false
+            )
         case "checkLinks":
             self = .checkLinks(
                 noteID: try container.decode(String.self, forKey: .noteID),

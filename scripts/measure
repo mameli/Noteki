@@ -6,7 +6,9 @@
 # The right sidebar is hidden and the left one shows Files, as at first launch. SIDEBAR=1 shows
 # the right one, on its Outline; BACKLINKS=1 shows it on its Backlinks: the Notes' links are then
 # read after Files is listed, and the Backlinks of the Note shown are found. TAGS=1 shows the
-# Tags pane: the Notes' Tags are read. BACKGROUND=1 launches
+# Tags pane: the Notes' Tags are read. TABS=20 opens 20 Notes in Tabs before the one shown, as
+# kept from a last launch, and brings each in front once, so the editor keeps all their states:
+# the memory must not grow with them (ADR 0003). BACKGROUND=1 launches
 # without taking the keyboard from whoever is typing: WebKit's figures differ from a foreground
 # launch's, so compare like with like. Run it at the end of every milestone and note the results
 # in CHANGELOG.md.
@@ -51,6 +53,8 @@ previous="$(defaults read "$domain" vaultPath 2>/dev/null || true)"
 previous_sidebar="$(defaults read "$domain" rightSidebar 2>/dev/null || true)"
 previous_pane="$(defaults read "$domain" leftPane 2>/dev/null || true)"
 previous_right="$(defaults read "$domain" rightPane 2>/dev/null || true)"
+previous_windows="$(defaults export "$domain" - | python3 -I -c 'import plistlib, sys; print("yes" if "windows" in plistlib.loads(sys.stdin.buffer.read()) else "")')"
+[ -n "$previous_windows" ] && defaults export "$domain" "$work/preferences.plist"
 restore() {
     trap - EXIT INT TERM HUP
     osascript -e 'quit app "Noteki"' >/dev/null 2>&1 || true
@@ -59,6 +63,11 @@ restore() {
     if [ -n "$previous" ]; then defaults write "$domain" vaultPath "$previous"; else defaults delete "$domain" vaultPath >/dev/null 2>&1 || true; fi
     if [ -n "$previous_right" ]; then defaults write "$domain" rightPane "$previous_right"; else defaults delete "$domain" rightPane >/dev/null 2>&1 || true; fi
     if [ -n "$previous_pane" ]; then defaults write "$domain" leftPane "$previous_pane"; else defaults delete "$domain" leftPane >/dev/null 2>&1 || true; fi
+    if [ -n "$previous_windows" ]; then
+        python3 -I -c 'import plistlib, subprocess, sys; windows = plistlib.load(open(sys.argv[1], "rb"))["windows"]; subprocess.run(["defaults", "write", sys.argv[2], "windows", plistlib.dumps(windows, fmt=plistlib.FMT_XML).decode()], check=True)' "$work/preferences.plist" "$domain"
+    else
+        defaults delete "$domain" windows >/dev/null 2>&1 || true
+    fi
     if [ -n "$previous_sidebar" ]; then defaults write "$domain" rightSidebar -bool "$( [ "$previous_sidebar" = 1 ] && echo true || echo false )"; else defaults delete "$domain" rightSidebar >/dev/null 2>&1 || true; fi
     rm -rf "$work"
 }
@@ -69,6 +78,19 @@ defaults write "$domain" vaultPath "$vault"
 if [ "${SIDEBAR:-0}" = 1 ]; then defaults write "$domain" rightSidebar -bool true; else defaults write "$domain" rightSidebar -bool false; fi
 if [ "${BACKLINKS:-0}" = 1 ]; then defaults write "$domain" rightPane backlinks; else defaults write "$domain" rightPane outline; fi
 if [ "${TAGS:-0}" = 1 ]; then defaults write "$domain" leftPane tags; else defaults write "$domain" leftPane files; fi
+defaults delete "$domain" windows >/dev/null 2>&1 || true
+if [ "${TABS:-0}" -gt 0 ]; then
+    # One window whose Tabs show the first Notes of the Vault, as a last launch would leave them.
+    python3 -I - "$vault" "$TABS" "$domain" <<'PY'
+import json, plistlib, subprocess, sys, uuid
+vault, count, domain = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+ids = [str(uuid.uuid4()).upper() for _ in range(count)]
+tabs = {"all": [{"id": i, "history": [f"Folder {n % 50:02d}/Note {n:04d}.md"], "position": 0} for n, i in enumerate(ids, start=1)], "frontID": ids[-1]}
+data = json.dumps(tabs, separators=(",", ":")).encode()
+windows = {vault + "/": [data]}
+subprocess.run(["defaults", "write", domain, "windows", plistlib.dumps(windows, fmt=plistlib.FMT_XML).decode()], check=True)
+PY
+fi
 
 webkit_pids() { pgrep -f 'com.apple.WebKit\.(WebContent|Networking|GPU)' | sort; }
 webkit_pids >"$work/webkit-before"
@@ -88,6 +110,14 @@ if [ "${BACKLINKS:-0}" = 1 ]; then
 fi
 if [ "${TAGS:-0}" = 1 ]; then
     for _ in $(seq 1 400); do grep -q 'Tags read' "$work/log" && break; sleep 0.1; done
+fi
+if [ "${TABS:-0}" -gt 0 ]; then
+    # Each Tab in front once: Go → Show Next Tab, through the menu.
+    for _ in $(seq 0 "$TABS"); do
+        osascript -e 'tell application "System Events" to tell process "Noteki" to click menu item "Show Next Tab" of menu "Go" of menu bar 1' >/dev/null
+        sleep 0.4
+    done
+    echo "Brought $((TABS + 1)) Tabs in front, one after the other."
 fi
 sleep 5
 kill "$logger" 2>/dev/null || true

@@ -1,13 +1,14 @@
 import { defaultKeymap, history, historyKeymap, redo, selectAll, undo } from "@codemirror/commands";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { findNext, findPrevious, openSearchPanel, search, searchKeymap } from "@codemirror/search";
-import { Annotation, Compartment, EditorState, Transaction } from "@codemirror/state";
+import { Compartment, EditorState, Transaction } from "@codemirror/state";
 import { EditorView, keymap } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import { type EditorCommand, type EditorMessage, send } from "./bridge";
 import { linkCompletion, receiveLinkCompletions } from "./completion";
 import { embeddedFile, embedFiles, embedImages, setEmbeds } from "./embeds";
 import { bodyStart, frontmatterReading, frontmatterText, setFrontmatter } from "./frontmatter";
+import { broughtBack, changeTo, fromDisk } from "./states";
 import { type TagEditing, tagEditing } from "./tagchips";
 import { highlightTag } from "./highlight";
 import { noteLanguage } from "./language";
@@ -52,9 +53,6 @@ const noteTheme = EditorView.theme({
 /** The system's spelling, autocorrection and text replacements, as in any Mac text field. */
 const systemTextServices = EditorView.contentAttributes.of({ spellcheck: "true", autocorrect: "on" });
 
-/** Marks a change that came from disk: not the user's, so not reported back to the app. */
-const fromDisk = Annotation.define<boolean>();
-
 /** How often, at most, the text is reported while the user types. The app saves after it. */
 const reportInterval = 250;
 
@@ -62,6 +60,8 @@ const reportInterval = 250;
 let noteID: string | null = null;
 let unreported = false;
 let revision = 0;
+/** The last revision reported for each Note: a reload is for the text of that report. */
+const reported = new Map<string, number>();
 let reportTimer: ReturnType<typeof setTimeout> | undefined;
 
 function report(): EditorMessage | null {
@@ -70,6 +70,7 @@ function report(): EditorMessage | null {
   if (noteID === null || !unreported) return null;
   unreported = false;
   revision += 1;
+  reported.set(noteID, revision);
   return { type: "changed", noteID, revision, text: view.state.doc.toString() };
 }
 
@@ -165,7 +166,7 @@ function initialState(text: string, editable: boolean) {
       preview.of(previewed()),
       // An image drawn under its line hides its source: a click there places the cursor.
       followWikilinks(
-        (inner) => send({ type: "followLink", inner }),
+        (inner, newTab) => send({ type: "followLink", inner, newTab }),
         (state, node) => !(node.name === "Embed" && embeddedFile(state, node)?.kind === "image"),
       ),
       unresolvedLinks,
@@ -197,13 +198,29 @@ const view = new EditorView({
   parent: document.getElementById("editor")!,
 });
 
+/** The Notes of the Tabs behind, by their noteID: their state and where they were scrolled. */
+const kept = new Map<string, { state: EditorState; scrollTop: number }>();
+
+/** Reports what is not reported yet and keeps the Note shown for when its Tab comes back. */
+function keepShown() {
+  const pending = report();
+  if (pending) send(pending);
+  if (noteID !== null) kept.set(noteID, { state: view.state, scrollTop: view.scrollDOM.scrollTop });
+}
+
+/** What every Note shown asks the app, once in the editor. */
+function askAboutShown() {
+  checkLinks(true);
+  askedFrontmatter = null;
+  readFrontmatter();
+}
+
 window.noteki = {
   receive(command: EditorCommand) {
     switch (command.type) {
       case "load": {
         // The app flushes before switching Note: this only catches what slipped through.
-        const pending = report();
-        if (pending) send(pending);
+        keepShown();
         noteID = command.noteID;
         view.setState(initialState(command.text, true));
         view.scrollDOM.scrollTop = 0;
@@ -214,15 +231,53 @@ window.noteki = {
         // Ready for typing when the web view has the keyboard: the app gives it after the Quick
         // switcher or a Backlink, while Files keeps it after a click there.
         view.focus();
-        checkLinks(true);
-        askedFrontmatter = null;
-        readFrontmatter();
+        askAboutShown();
         return null;
       }
+      case "restore": {
+        // A Tab back in front: its Note as it was left, with what the file changed since. Still
+        // in the editor when only an Attachment was in front meanwhile.
+        if (command.noteID === noteID) {
+          const pending = report();
+          if (pending) send(pending);
+          const change = changeTo(view.state.doc.toString(), command.text);
+          view.dispatch({
+            ...(change ? { changes: change, annotations: [fromDisk.of(true), Transaction.addToHistory.of(false)] } : {}),
+            effects: preview.reconfigure(previewed()),
+          });
+          view.focus();
+          askAboutShown();
+          return null;
+        }
+        const back = kept.get(command.noteID);
+        keepShown();
+        kept.delete(command.noteID);
+        noteID = command.noteID;
+        if (!back) {
+          view.setState(initialState(command.text, true));
+          view.dispatch({ selection: { anchor: bodyStart(view.state) } });
+        } else {
+          view.setState(broughtBack(back.state, command.text));
+          // Live preview or Source mode as the window has it now.
+          view.dispatch({ effects: preview.reconfigure(previewed()) });
+          view.requestMeasure({ read: () => null, write: () => (view.scrollDOM.scrollTop = back.scrollTop) });
+        }
+        view.focus();
+        askAboutShown();
+        return null;
+      }
+      case "drop":
+        for (const id of command.noteIDs) {
+          kept.delete(id);
+          reported.delete(id);
+        }
+        return null;
       case "clear": {
         const pending = report();
         if (pending) send(pending);
         noteID = null;
+        kept.clear();
+        reported.clear();
         view.setState(initialState("", false));
         return null;
       }
@@ -279,7 +334,7 @@ window.noteki = {
         return null;
       case "reload": {
         if (command.noteID !== noteID) return null;
-        if (unreported || command.revision !== revision) {
+        if (unreported || command.revision !== (reported.get(command.noteID) ?? 0)) {
           // The user typed since the report the app last received: their text stays here, and
           // the app learns of it from this report (or the one already on its way).
           const pending = report();
@@ -287,20 +342,8 @@ window.noteki = {
           return null;
         }
         // Only the part that differs changes, so the cursor and the scroll map through it.
-        const doc = view.state.doc.toString();
-        const text = command.text;
-        let start = 0;
-        while (start < doc.length && start < text.length && doc[start] === text[start]) start++;
-        let end = 0;
-        while (
-          end < doc.length - start &&
-          end < text.length - start &&
-          doc[doc.length - 1 - end] === text[text.length - 1 - end]
-        ) end++;
-        view.dispatch({
-          changes: { from: start, to: doc.length - end, insert: text.slice(start, text.length - end) },
-          annotations: [fromDisk.of(true), Transaction.addToHistory.of(false)],
-        });
+        const change = changeTo(view.state.doc.toString(), command.text);
+        if (change) view.dispatch({ changes: change, annotations: [fromDisk.of(true), Transaction.addToHistory.of(false)] });
         return "applied";
       }
       case "flush": {

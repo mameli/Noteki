@@ -22,8 +22,8 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
     /// The user typed: the whole text, tagged with the Note it was loaded as and a revision
     /// that grows with every report.
     var onChange: (_ noteID: String, _ revision: Int, _ text: String) -> Void = { _, _, _ in }
-    /// The user clicked a Wikilink: what is between its brackets.
-    var onFollowLink: (_ inner: String) -> Void = { _ in }
+    /// The user clicked a Wikilink: what is between its brackets; with ⌘, for a new Tab.
+    var onFollowLink: (_ inner: String, _ newTab: Bool) -> Void = { _, _ in }
     /// The links of the Note loaded as `noteID`: which lead nowhere?
     var onCheckLinks: (_ noteID: String, _ inners: [String]) -> Void = { _, _ in }
     /// The Notes to offer when the user types `[[`.
@@ -89,6 +89,20 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
         guard isReady else { return }
         // Read by scripts/measure.
         run(.load(noteID: noteID, text: text, line: line)) { _ in logger.info("Note shown") }
+    }
+
+    /// A Tab back in front: its Note as the editor kept it (cursor, scroll, undo), with `text` as
+    /// the app has it now.
+    func restore(noteID: String, text: String) {
+        loaded = (noteID, text, nil)
+        guard isReady else { return }
+        run(.restore(noteID: noteID, text: text)) { _ in logger.info("Note shown") }
+    }
+
+    /// The editor states of Notes no Tab shows any more.
+    func drop(noteIDs: [String]) {
+        guard isReady else { return }
+        run(.drop(noteIDs: noteIDs)) { _ in }
     }
 
     /// An editing command from the menus, when a Note is in front.
@@ -199,8 +213,8 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
             // Late keys of the Note just left must not become what a reload shows.
             if loaded?.noteID == noteID { loaded = (noteID, text, nil) }
             onChange(noteID, revision, text)
-        case .followLink(let inner):
-            onFollowLink(inner)
+        case .followLink(let inner, let newTab):
+            onFollowLink(inner, newTab)
         case .checkLinks(let noteID, let inners):
             onCheckLinks(noteID, inners)
         case .completeLink(let requestID):

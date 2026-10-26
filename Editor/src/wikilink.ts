@@ -92,7 +92,7 @@ function linkAt(view: EditorView, pos: number): { from: number; to: number; inne
  * and only without a drag, so a selection can start on a link; not with Control (the context
  * menu) nor while an input method is composing.
  */
-export function followWikilinks(follow: (inner: string) => void, follows: (state: EditorState, node: SyntaxNode) => boolean = () => true) {
+export function followWikilinks(follow: (inner: string, newTab: boolean) => void, follows: (state: EditorState, node: SyntaxNode) => boolean = () => true) {
   let pressed: { inner: string; x: number; y: number } | null = null;
   return EditorView.domEventHandlers({
     mousedown(event, view) {
@@ -115,7 +115,8 @@ export function followWikilinks(follow: (inner: string) => void, follows: (state
       if (!target || event.detail > 1 || view.composing) return false;
       if (Math.abs(event.clientX - target.x) > 4 || Math.abs(event.clientY - target.y) > 4) return false;
       if (!view.state.selection.main.empty) return false;
-      follow(target.inner);
+      // ⌘-click: in a new Tab.
+      follow(target.inner, event.metaKey);
       return true;
     },
   });

@@ -19,6 +19,13 @@ export type EditorCommand =
   | { type: "reload"; noteID: string; revision: number; text: string }
   /** Report now any change not reported yet, before the app switches Note or quits. */
   | { type: "flush" }
+  /**
+   * A Tab back in front: the state its Note had in the editor when the Tab was left (cursor,
+   * scroll, undo), with `text` as the app has it now; a new one if none was kept.
+   */
+  | { type: "restore"; noteID: string; text: string }
+  /** The Tabs of these Notes closed, or showing another Note: their states are not kept. */
+  | { type: "drop"; noteIDs: string[] }
   /** Show nothing and take no typing: no Note is open, as after switching Vault. */
   | { type: "clear" }
   /** From the Edit menu: WebKit's own versions see only the lines on screen. */
@@ -70,8 +77,8 @@ export type EditorMessage =
   | { type: "ready" }
   /** The whole text after the user typed; `revision` grows with every report. */
   | { type: "changed"; noteID: string; revision: number; text: string }
-  /** The user clicked a Wikilink: what is between its brackets. */
-  | { type: "followLink"; inner: string }
+  /** The user clicked a Wikilink: what is between its brackets; with ⌘, for a new Tab. */
+  | { type: "followLink"; inner: string; newTab: boolean }
   /** The Note's links, what is between their brackets: which lead nowhere? */
   | { type: "checkLinks"; noteID: string; inners: string[] }
   /** The user typed `[[`: which Notes can the link lead to? Answered by `linkCompletions`. */

@@ -26,7 +26,7 @@ struct TagsPane: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         ForEach(model.notesOfSelectedTag, id: \.path) { note in
-                            Button { model.reveal(note.path) } label: {
+                            Button { model.reveal(note.path, inNewTab: NSEvent.modifierFlags.contains(.command)) } label: {
                                 HStack(spacing: 6) {
                                     Label(note.name, systemImage: "doc.text")
                                     if !note.folder.isEmpty {

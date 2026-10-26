@@ -44,6 +44,12 @@ struct QuickSwitcher: View {
                         close()
                         return .handled
                     }
+                    // ⌘Enter: in a new Tab.
+                    .onKeyPress(.return, phases: .down) { press in
+                        guard press.modifiers.contains(.command) else { return .ignored }
+                        choose(rows.indices.contains(selected) ? rows[selected] : nil, inNewTab: true)
+                        return .handled
+                    }
                     .onSubmit { choose(rows.indices.contains(selected) ? rows[selected] : nil) }
                 if !rows.isEmpty {
                     Divider()
@@ -54,7 +60,7 @@ struct QuickSwitcher: View {
                                     rowView(row, isSelected: position == selected)
                                         .id(position)
                                         .contentShape(.rect)
-                                        .onTapGesture { choose(row) }
+                                        .onTapGesture { choose(row, inNewTab: NSEvent.modifierFlags.contains(.command)) }
                                 }
                             }
                             .padding(6)
@@ -107,9 +113,9 @@ struct QuickSwitcher: View {
         return .handled
     }
 
-    private func choose(_ row: Row?) {
+    private func choose(_ row: Row?, inNewTab: Bool = false) {
         switch row {
-        case .note(let note): model.openFromSwitcher(note)
+        case .note(let note): model.openFromSwitcher(note, inNewTab: inNewTab)
         case .create(let name): model.createFromSwitcher(name)
         case nil: return
         }

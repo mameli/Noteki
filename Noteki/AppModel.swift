@@ -96,10 +96,17 @@ final class AppModel {
     private var isShowingBacklinks: Bool { isShowingSidebar && rightPane == .backlinks }
     /// A Loose file's window has no right sidebar, whatever the preferences say.
     private var isShowingOutline: Bool { isShowingSidebar && rightPane == .outline && !isLooseFile }
-    /// ⌘E: the user asked for Source mode in this window (Tabs keep their own, ticket 25).
-    var prefersSourceMode = false {
-        didSet { updateSourceMode() }
+    /// ⌘E: the user asked for Source mode in the Tab in front; each Tab keeps its own.
+    var prefersSourceMode: Bool {
+        get { tabs.front.map { sourceModeTabs.contains($0.id) } ?? false }
+        set {
+            guard let id = tabs.front?.id else { return }
+            if newValue { sourceModeTabs.insert(id) } else { sourceModeTabs.remove(id) }
+            updateSourceMode()
+        }
     }
+    /// The Tabs in Source mode, not remembered across launches.
+    private var sourceModeTabs: Set<Tab.ID> = []
     /// A Note above this size opens in Source mode: Live preview would follow it slowly.
     private static let largestPreviewed = 5_000_000
     /// The Note open is too large for Live preview: Source mode, whatever was asked.
@@ -153,7 +160,22 @@ final class AppModel {
     private var embedQuery: Task<Void, Never>?
     /// The links of the open Note, as the editor last reported them.
     private var openNoteLinks: [String] = []
-    /// The Note or Attachment selected, nil before the first choice.
+    /// The window's Tabs and the one in front (SPEC, Window): the app keeps them for the next launch.
+    private(set) var tabs = Tabs() {
+        didSet { if tabs != oldValue, !isReplacingTabs { onTabsChanged(tabs) } }
+    }
+    private var isReplacingTabs = false
+    @ObservationIgnored var onTabsChanged: (Tabs) -> Void = { _ in }
+    /// The user chose another Vault in this window.
+    @ObservationIgnored var onVaultChanged: () -> Void = {}
+    /// The Notes of the Tabs behind, open as they were left (saved), and what the editor keeps
+    /// their state under (ADR 0003). The file's changes reach them there.
+    private var behind: [Tab.ID: (open: OpenNote, noteID: String)] = [:]
+    /// The editor states to let go once the next Note is in the editor: those of Notes no Tab shows.
+    private var statesToDrop: [String] = []
+    /// While Files' selection follows the Tab in front: nothing to open for it.
+    private var isFollowingTab = false
+    /// The Note or Attachment the Tab in front shows, nil without a Tab.
     private(set) var shown: Shown? {
         didSet {
             editor.isInFront = isShowingNote
@@ -210,11 +232,18 @@ final class AppModel {
         }
     }
 
-    /// The path of the row selected in the Files pane: a Note, an Attachment or a folder.
+    /// The path of the row selected in the Files pane: a Note, an Attachment or a folder. It
+    /// follows the Tab in front; a click opens the file there, a ⌘-click in a new Tab.
     var selection: String? {
         didSet {
-            guard selection != oldValue, let selection else { return }
-            afterTransition { await self.show(selection) }
+            guard selection != oldValue, !isFollowingTab else { return }
+            let newTab = NSApp.currentEvent?.modifierFlags.contains(.command) == true
+            // A ⌘-click on the row selected deselects it in the List: it still opens a new Tab.
+            guard let selection else {
+                if newTab, let oldValue { open(oldValue, inNewTab: true) }
+                return
+            }
+            open(selection, inNewTab: newTab)
         }
     }
 
@@ -223,7 +252,7 @@ final class AppModel {
     let looseFile: URL?
     /// A Note, Attachment or folder to select once Files lists it: opened from the Finder or
     /// Takku before Files was listed, or just written by Takku.
-    private var pendingReveal: String?
+    private var pendingReveal: (path: String, inNewTab: Bool)?
 
     init() {
         looseFile = nil
@@ -240,13 +269,21 @@ final class AppModel {
         }
     }
 
+    /// Another window of the Vault (⌘⇧N): its own model and web view (ADR 0010).
+    init(vault root: URL) {
+        looseFile = nil
+        connectEditor()
+        connectScans()
+        activate(Vault(root: root))
+    }
+
     init(looseFile: URL) {
         self.looseFile = looseFile
         connectEditor()
         connectScans()
         activate(Vault(root: looseFile.deletingLastPathComponent()))
-        let note = Note(path: looseFile.lastPathComponent)
-        afterTransition { await self.show(note) }
+        tabs.show(looseFile.lastPathComponent)
+        afterTransition { await self.present() }
     }
 
     private var isLooseFile: Bool { looseFile != nil }
@@ -262,7 +299,7 @@ final class AppModel {
         editor.onChange = { [weak self] noteID, revision, text in
             self?.edited(noteID: noteID, revision: revision, text: text)
         }
-        editor.onFollowLink = { [weak self] inner in self?.followLink(inner) }
+        editor.onFollowLink = { [weak self] inner, newTab in self?.followLink(inner, newTab: newTab) }
         editor.linkCompletions = { [weak self] in
             // Before Files is listed, or in a Loose file, there is nothing to offer.
             guard let self, let index else { return .none }
@@ -317,28 +354,28 @@ final class AppModel {
 
     /// Opens the Note or Attachment a clicked Wikilink leads to, resolved from the open Note as
     /// Obsidian resolves it.
-    private func followLink(_ inner: String) {
+    private func followLink(_ inner: String, newTab: Bool) {
         // Before Files is listed, or in a Loose file, there is nothing to resolve against: not
         // an Unresolved link.
         guard let index else { return }
         let target = Wikilink(inner: inner).target
         if let item = index.resolve(target, from: openNote?.note) {
-            reveal(item.path)
+            reveal(item.path, inNewTab: newTab)
             return
         }
         // An Unresolved link: its Note is created where Obsidian would put it, then opened.
-        createNote(for: target, from: openNote?.note)
+        createNote(for: target, from: openNote?.note, inNewTab: newTab)
     }
 
     /// Creates the Note a Wikilink's `target` would lead to from `source`, and opens it.
-    private func createNote(for target: String, from source: Note?) {
+    private func createNote(for target: String, from source: Note?, inNewTab: Bool = false) {
         guard let vault else { return }
         do {
             let created = try vault.createNote(for: target, from: source)
-            reveal(created.path)
+            reveal(created.path, inNewTab: inNewTab)
         } catch Vault.CreateError.exists(let note) {
             // Created a moment ago, by a click before Files listed it or by another app.
-            reveal(note.path)
+            reveal(note.path, inNewTab: inNewTab)
         } catch {
             // An Attachment's name, a name Obsidian refuses, or outside the Vault.
             logger.info("Note not created: \(String(describing: error), privacy: .public)")
@@ -381,10 +418,11 @@ final class AppModel {
         return index.switcherNewNote(for: typed, from: placeInFront, in: vault)
     }
 
-    func openFromSwitcher(_ note: Note) {
+    /// Enter opens the Note in the Tab in front, ⌘Enter in a new Tab.
+    func openFromSwitcher(_ note: Note, inNewTab: Bool = false) {
         isShowingSwitcher = false
         responderBeforeSwitcher = nil
-        reveal(note.path)
+        reveal(note.path, inNewTab: inNewTab)
         focusEditorWhenShown(note)
     }
 
@@ -421,15 +459,130 @@ final class AppModel {
         editor.focus()
     }
 
-    /// A Note, Attachment or folder of the Vault opened from the Finder or Takku: selected in
-    /// Files, at once if listed, otherwise once Files lists it (Takku's note just written).
-    func reveal(_ path: String) {
-        guard tree.item(at: path) == nil else {
-            selection = path
+    /// Opens a Note or Attachment of the Vault in the Tab in front, or in a new one; a folder is
+    /// selected in Files. At once if listed, otherwise once Files lists it (Takku's note just
+    /// written).
+    func reveal(_ path: String, inNewTab: Bool = false) {
+        guard let item = tree.item(at: path) else {
+            pendingReveal = (path, inNewTab)
+            if !tree.isEmpty, let vault { refreshTree(of: vault) }
             return
         }
-        pendingReveal = path
-        if !tree.isEmpty, let vault { refreshTree(of: vault) }
+        if case .folder = item { return selection = path }
+        open(path, inNewTab: inNewTab)
+    }
+
+    /// A file opened from the Finder or Takku: in the Tab that shows it, or in a new Tab, so the
+    /// Tabs open stay as they were.
+    func revealFromOutside(_ path: String) {
+        if let tab = tabs.all.first(where: { $0.path == path }) { return select(tab.id) }
+        reveal(path, inNewTab: tabs.front != nil)
+    }
+
+    /// Shows `path` in the Tab in front, or in a new Tab after it.
+    private func open(_ path: String, inNewTab: Bool) {
+        afterTransition {
+            guard let item = self.tree.item(at: path) else { return }
+            if case .folder = item { return }
+            if !inNewTab, self.tabs.front?.path == path { return await self.present() }
+            guard await self.leaveFront(keeping: inNewTab) else { return self.followFrontInFiles() }
+            self.tabs.show(path, inNewTab: inNewTab)
+            await self.present()
+        }
+    }
+
+    /// Brings the Tab `id` in front, as it was left.
+    func select(_ id: Tab.ID) {
+        changeTab { $0.select(id) }
+    }
+
+    /// ⌃Tab and ⌃⇧Tab.
+    func selectNextTab() { changeTab { $0.selectNext() } }
+    func selectPreviousTab() { changeTab { $0.selectPrevious() } }
+
+    /// ⌘⌥← and ⌘⌥→: what the Tab in front showed before, or after.
+    func goBack() { navigate { $0.back() } }
+    func goForward() { navigate { $0.forward() } }
+
+    var canGoBack: Bool { tabs.front?.canGoBack == true }
+    var canGoForward: Bool { tabs.front?.canGoForward == true }
+
+    /// Another Tab in front: the Tab left keeps its Note, behind.
+    private func changeTab(_ change: @escaping (inout Tabs) -> Void) {
+        afterTransition {
+            var tabs = self.tabs
+            change(&tabs)
+            guard tabs.front?.id != self.tabs.front?.id else { return }
+            guard await self.leaveFront(keeping: true) else { return }
+            self.tabs = tabs
+            await self.present()
+        }
+    }
+
+    /// Another file in the Tab in front: the Note it showed is let go.
+    private func navigate(_ change: @escaping (inout Tabs) -> Void) {
+        afterTransition {
+            var tabs = self.tabs
+            change(&tabs)
+            guard tabs != self.tabs else { return }
+            guard await self.leaveFront(keeping: false) else { return }
+            self.tabs = tabs
+            await self.present()
+        }
+    }
+
+    /// ⌘W, or the ×: a Tab closed, its Note saved first.
+    func closeTab(_ id: Tab.ID) {
+        afterTransition {
+            // A Note behind that only lives on screen (deleted by another app, or not saved) comes
+            // in front first: closing its Tab asks the user, as for the Note in front.
+            if id != self.tabs.front?.id, let entry = self.behind[id], entry.open.isDeleted || entry.open.hasUnsavedEdits {
+                guard await self.leaveFront(keeping: true) else { return }
+                self.tabs.select(id)
+                await self.present()
+            }
+            if id == self.tabs.front?.id {
+                guard await self.leaveFront(keeping: false) else { return }
+                self.tabs.close(id)
+                await self.present()
+            } else {
+                if let entry = self.behind.removeValue(forKey: id) { self.editor.drop(noteIDs: [entry.noteID]) }
+                self.tabs.close(id)
+            }
+            self.sourceModeTabs.remove(id)
+        }
+    }
+
+    /// The Tabs a launch brings back: those whose file is still there. Their Notes are open from
+    /// now on, so that one renamed by Takku before its Tab comes in front is followed.
+    func restore(_ saved: Tabs) {
+        guard let vault else { return }
+        tabs = saved.keeping { FileManager.default.fileExists(atPath: vault.root.appending(path: $0).path(percentEncoded: false)) }
+        for tab in tabs.all where tab.path.lowercased().hasSuffix(".md") {
+            if let open = try? vault.open(Note(path: tab.path)) { behind[tab.id] = (open, UUID().uuidString) }
+        }
+    }
+
+    /// Before the Tab in front shows something else: its Note saved, or the user stays (false).
+    /// `keeping`: the Tab stays open with this Note, behind; otherwise the Note is let go.
+    private func leaveFront(keeping: Bool) async -> Bool {
+        guard let front = tabs.front, openNote != nil else { return true }
+        guard await leaveOpenNote() else { return false }
+        // Edits the user chose to discard are not kept: the Tab reads its file again.
+        if keeping, let open = openNote, !open.hasUnsavedEdits {
+            behind[front.id] = (open, openNoteID)
+        } else {
+            statesToDrop.append(openNoteID)
+        }
+        openNote = nil
+        return true
+    }
+
+    /// Files selects what the Tab in front shows.
+    private func followFrontInFiles() {
+        isFollowingTab = true
+        selection = tabs.front?.path
+        isFollowingTab = false
     }
 
     func chooseVault() {
@@ -454,18 +607,26 @@ final class AppModel {
         afterTransition { await self.switchVault(to: folder) }
     }
 
-    /// Saves what the user typed before the app quits. False when edits could not be saved and
-    /// the user chose to stay.
+    /// Saves what the user typed before the app quits or the window closes. A Note behind that
+    /// only lives on screen comes in front to ask. False when the user chose to stay.
     func prepareToQuit() async -> Bool {
         // In turn with switches and with a window closing: one question at a time.
         await withCheckedContinuation { continuation in
-            afterTransition { continuation.resume(returning: await self.leaveOpenNote()) }
+            afterTransition {
+                for (id, entry) in self.behind where entry.open.isDeleted || entry.open.hasUnsavedEdits {
+                    guard await self.leaveFront(keeping: true) else { return continuation.resume(returning: false) }
+                    self.tabs.select(id)
+                    await self.present()
+                }
+                continuation.resume(returning: await self.leaveOpenNote())
+            }
         }
     }
 
     private func switchVault(to folder: URL) async {
-        guard await leaveOpenNote() else { return }
+        guard await leaveFront(keeping: false) else { return }
         activate(Vault(root: folder))
+        onVaultChanged()
     }
 
     private func activate(_ vault: Vault) {
@@ -493,8 +654,17 @@ final class AppModel {
         isSearching = false
         previousNote = nil
         revisions = [:]
+        behind = [:]
+        statesToDrop = []
+        sourceModeTabs = []
         editor.clear()
-        selection = nil
+        // Without telling: the Tabs kept for this Vault are not overwritten before they come back.
+        if !isLooseFile {
+            isReplacingTabs = true
+            tabs = Tabs()
+            isReplacingTabs = false
+        }
+        followFrontInFiles()
         failure = nil
         recentNotes = []
         guard !isLooseFile else { return }
@@ -518,9 +688,12 @@ final class AppModel {
             readAfterListing(in: vault)
             // Read by scripts/measure.
             logger.info("Files listed: \(tree.noteCount) Notes in \((ContinuousClock.now - started).milliseconds) ms")
-            if let pendingReveal, tree.item(at: pendingReveal) != nil {
+            if let pendingReveal, tree.item(at: pendingReveal.path) != nil {
                 self.pendingReveal = nil
-                selection = pendingReveal
+                reveal(pendingReveal.path, inNewTab: pendingReveal.inNewTab)
+            } else if shown == nil, tabs.front != nil, !refresh {
+                // The Tabs brought back at launch: the one in front is shown once Files is listed.
+                afterTransition { await self.present() }
             }
         case .failure(let error):
             logger.error("Cannot list the Vault: \(error.localizedDescription, privacy: .public)")
@@ -638,13 +811,14 @@ final class AppModel {
 
     /// Opens `note` with the cursor on `line` (from 1), or at its start, and gives it the keyboard.
     func open(_ note: Note, atLine line: Int?) {
-        if shown == .note(note) {
+        let newTab = NSApp.currentEvent?.modifierFlags.contains(.command) == true
+        if shown == .note(note), !newTab {
             // Already in front: only the cursor moves.
             if let line { editor.goToLine(noteID: openNoteID, line: line) }
             return editor.focus()
         }
         lineToShow = line.map { (note, $0) }
-        reveal(note.path)
+        reveal(note.path, inNewTab: newTab)
         focusEditorWhenShown(note)
     }
 
@@ -676,10 +850,35 @@ final class AppModel {
             // Meeting notes: Files lists it without a relaunch.
             refreshTree(of: vault)
         }
-        // Case-insensitively: a rename that only changes letter case is reported under the new name.
-        if let open = openNote,
-           open.isDeleted || paths.contains(where: { $0.caseInsensitiveCompare(open.note.path) == .orderedSame }) {
-            afterTransition { await self.noticeChanges(at: paths) }
+        // In turn with a Tab switch: a Note moving behind meanwhile is found there.
+        afterTransition {
+            self.noticeChangesBehind(at: paths)
+            // Case-insensitively: a rename that only changes letter case is reported under the new name.
+            if let open = self.openNote,
+               open.isDeleted || paths.contains(where: { $0.caseInsensitiveCompare(open.note.path) == .orderedSame }) {
+                await self.noticeChanges(at: paths)
+            }
+        }
+    }
+
+    /// The Notes of the Tabs behind changed on disk: they follow a rename and take the file's
+    /// text, as they hold no edits (saved when their Tab was left). The editor gets it when the
+    /// Tab comes back.
+    private func noticeChangesBehind(at paths: Set<String>) {
+        for (tab, entry) in behind {
+            let path = entry.open.note.path
+            guard entry.open.isDeleted || paths.contains(where: { $0.caseInsensitiveCompare(path) == .orderedSame }) else { continue }
+            var open = entry.open
+            guard let change = try? open.noticeChanges(at: paths) else { continue }
+            if open.note != entry.open.note {
+                tabs.renamed(from: path, to: open.note.path)
+                followRename(of: entry.open.note, to: open.note)
+            }
+            if case .reload(let reload) = change, open.apply(reload), open.hasUnsavedEdits {
+                // Merged with keys that could not be saved: saved now.
+                try? open.save()
+            }
+            behind[tab] = (open, entry.noteID)
         }
     }
 
@@ -715,17 +914,14 @@ final class AppModel {
             }
             let before = openNote?.note
             openNote = open
-            if let before, open.note != before, shown == .note(before) {
-                // A Followed rename of the Note in front: the window shows its new name and Files
-                // selects it. Behind an Attachment, or once the user chose another row, nothing moves.
-                shown = .note(open.note)
-                if selection == before.path { selection = open.note.path }
-            }
             if let before, open.note != before {
-                // Still the Note opened last, under its new name.
-                recentNotes = recentNotes.map { $0 == before ? open.note : $0 }
-                rememberRecentNotes()
+                // A Followed rename of the Note in front: its Tab, and any other showing it, follow;
+                // the window shows its new name and Files selects it.
+                tabs.renamed(from: before.path, to: open.note.path)
+                if shown == .note(before) { shown = .note(open.note) }
+                followFrontInFiles()
             }
+            if let before, open.note != before { followRename(of: before, to: open.note) }
             switch change {
             case .unchanged:
                 // A Followed rename may have stopped a save at the old name: it goes to the new one.
@@ -818,58 +1014,94 @@ final class AppModel {
         }
     }
 
-    private func show(_ path: String) async {
-        switch tree.item(at: path) {
-        case .note(let note):
-            await show(note)
-        case .attachment(let attachment):
-            shown = .attachment(attachment)
-            failure = nil
-        case .folder, nil: break
-        }
-    }
-
-    private func show(_ note: Note) async {
-        guard let vault else { return }
-        // Taken now, so that a Note not opened never keeps it for later.
-        let line = lineToShow?.note == note ? lineToShow?.line : nil
-        lineToShow = nil
-        guard openNote?.note != note else {
-            shown = .note(note)
-            focusIfShown()
-            return
-        }
-        guard await leaveOpenNote() else {
-            // The user stays with edits that could not be saved: back to that Note.
-            if let open = openNote {
-                shown = .note(open.note)
-                selection = open.note.path
+    /// Shows what the Tab in front shows: its Note as it was left, read again when it was let
+    /// go, or its Attachment; nothing without a Tab.
+    private func present() async {
+        defer {
+            followFrontInFiles()
+            if !statesToDrop.isEmpty {
+                editor.drop(noteIDs: statesToDrop)
+                statesToDrop = []
             }
+        }
+        guard let vault, let front = tabs.front else {
+            shown = nil
+            openNote = nil
+            failure = nil
+            behind = [:]
+            statesToDrop = []
+            editor.clear()
             return
         }
-        shown = .note(note)
-        do {
-            let open = try vault.open(note)
-            openNote = open
-            openNoteID = UUID().uuidString
-            openNoteLinks = []
-            // Revisions matter only for the Note open and the one just left.
-            revisions = revisions.filter { $0.key == previousNoteID }
-            editor.load(noteID: openNoteID, text: open.text, line: line)
+        // Taken now, so that a Note not opened never keeps it for later.
+        let line = lineToShow.flatMap { $0.note.path == front.path ? $0.line : nil }
+        lineToShow = nil
+        let path = front.path
+        // A Loose file is not listed: its Tab shows its one Note.
+        let item = isLooseFile ? .note(Note(path: path)) : tree.item(at: path)
+        switch item {
+        case .note(let note):
+            if let open = openNote, open.note == note {
+                // Already in front: only the cursor moves.
+                shown = .note(note)
+                if let line { editor.goToLine(noteID: openNoteID, line: line) }
+                focusIfShown()
+                return
+            }
+            let kept = behind.removeValue(forKey: front.id)
+            shown = .note(note)
+            if let kept, kept.open.note == note {
+                openNote = kept.open
+                openNoteID = kept.noteID
+                openNoteLinks = []
+                editor.restore(noteID: kept.noteID, text: kept.open.text)
+                if let line { editor.goToLine(noteID: kept.noteID, line: line) }
+            } else {
+                if let kept { statesToDrop.append(kept.noteID) }
+                do {
+                    let open = try vault.open(note)
+                    openNote = open
+                    openNoteID = UUID().uuidString
+                    openNoteLinks = []
+                    editor.load(noteID: openNoteID, text: open.text, line: line)
+                } catch {
+                    openNote = nil
+                    logger.error("Cannot read a Note: \(error.localizedDescription, privacy: .public)")
+                    failure = "Cannot read \(note.name): \(error.localizedDescription)"
+                    return
+                }
+            }
+            // Revisions matter only for the Notes the editor may still report about.
+            let live = Set([openNoteID, previousNoteID] + behind.values.map(\.noteID))
+            revisions = revisions.filter { live.contains($0.key) }
             failure = nil
+            updateSourceMode()
             opened(note)
             focusIfShown()
-        } catch {
+        case .attachment(let attachment):
+            shown = .attachment(attachment)
             openNote = nil
-            editor.clear()
-            logger.error("Cannot read a Note: \(error.localizedDescription, privacy: .public)")
-            failure = "Cannot read \(note.name): \(error.localizedDescription)"
+            failure = nil
+        case .folder, nil:
+            shown = nil
+            openNote = nil
+            failure = "\((path as NSString).lastPathComponent) is no longer in the Vault."
         }
     }
 
     /// Remembers `note` as the latest opened, outside the Vault (ADR 0002).
     private func opened(_ note: Note) {
+        // Other windows of the Vault open Notes too: theirs count.
+        if !isLooseFile, let vault, let remembered = UserDefaults.standard.dictionary(forKey: Self.recentNotesKey)?[vault.root.path(percentEncoded: false)] as? [String] {
+            recentNotes = remembered.map(Note.init(path:))
+        }
         recentNotes = [note] + recentNotes.filter { $0 != note }.prefix(Self.recentNotesKept - 1)
+        rememberRecentNotes()
+    }
+
+    /// Still among the Notes opened lately, under its new name.
+    private func followRename(of before: Note, to after: Note) {
+        recentNotes = recentNotes.map { $0 == before ? after : $0 }
         rememberRecentNotes()
     }
 
@@ -890,19 +1122,28 @@ final class AppModel {
             openNote?.edit(text)
             pendingSave?.cancel()
             scheduleSave()
-        } else if var previous = previousNote, noteID == previousNoteID {
+        } else if let (tab, entry) = behind.first(where: { $0.value.noteID == noteID }) {
+            // Keys typed in the instant before the Tab went behind.
+            behind[tab] = (saveLastKeys(text, in: entry.open), noteID)
+        } else if let previous = previousNote, noteID == previousNoteID {
             // Never into the Note now open, never into a file reopened from scratch.
-            previous.edit(text)
-            do {
-                try previous.save()
-            } catch {
-                logger.error("Cannot save the last keys of a Note: \(error.localizedDescription, privacy: .public)")
-                saveFailure = "The last keys typed in \(previous.note.name) could not be saved: \(error.localizedDescription)"
-            }
-            previousNote = previous
+            previousNote = saveLastKeys(text, in: previous)
         } else {
             logger.error("Report for a Note no longer open, ignored")
         }
+    }
+
+    /// Keys the editor reported for a Note no longer in front, saved at once.
+    private func saveLastKeys(_ text: String, in note: OpenNote) -> OpenNote {
+        var open = note
+        open.edit(text)
+        do {
+            try open.save()
+        } catch {
+            logger.error("Cannot save the last keys of a Note: \(error.localizedDescription, privacy: .public)")
+            saveFailure = "The last keys typed in \(open.note.name) could not be saved: \(error.localizedDescription)"
+        }
+        return open
     }
 
     /// Before the editor gets another Note, the Vault changes or the app quits: saves, and asks

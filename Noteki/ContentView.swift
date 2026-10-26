@@ -7,7 +7,11 @@ struct ContentView: View {
     let registerShowMainWindow: (@escaping () -> Void) -> Void
     /// False while a Loose file opened at launch is on screen: no Vault is not a question then.
     let shouldAskForVault: () -> Bool
+    let windows: VaultWindows
+    /// For a window after the first: its id among the Vault's windows.
+    var windowID: UUID?
     @Environment(\.openWindow) private var openWindow
+    @Environment(\.dismiss) private var dismiss
 
     /// Shown again for ⌘⇧F: Search is in the sidebar.
     @State private var columns = NavigationSplitViewVisibility.automatic
@@ -26,7 +30,10 @@ struct ContentView: View {
                     Button("Choose Vault…") { model.chooseVault() }
                 }
             } else {
-                NoteDetail(model: model)
+                VStack(spacing: 0) {
+                    if !model.tabs.all.isEmpty { TabBar(model: model) }
+                    NoteDetail(model: model)
+                }
                     .inspector(isPresented: $model.isShowingSidebar) {
                         RightSidebar(model: model)
                             .inspectorColumnWidth(min: 220, ideal: 280, max: 420)
@@ -52,15 +59,31 @@ struct ContentView: View {
         .navigationTitle(model.shown?.name ?? model.vault?.root.lastPathComponent ?? "Noteki")
         .focusedSceneValue(\.noteEditor, model.isShowingNote ? model.editor : nil)
         .focusedSceneValue(\.noteWindow, model.isShowingNote ? model : nil)
+        .focusedSceneValue(\.vaultWindow, model)
+        // Another Vault: the other windows showed the one left; the first opens those kept for it.
+        .onChange(of: windows.vaultChanges) {
+            if windowID != nil { dismiss() } else { openRestoredWindows() }
+        }
+        .onDisappear { if let windowID { windows.closed(windowID) } }
         .onAppear {
+            guard windowID == nil else { return }
             // Files opened from the Finder bring this window back even after it was closed.
             registerShowMainWindow { openWindow(id: "main") }
+            windows.reopen = { openWindow(id: "vault", value: $0) }
+            // The other windows of the last launch, with their Tabs.
+            openRestoredWindows()
             guard model.vault == nil else { return }
             Task {
                 // A file opened at launch arrives just after this window appears.
                 try? await Task.sleep(for: .milliseconds(400))
                 if model.vault == nil, shouldAskForVault() { model.chooseVault() }
             }
+        }
+    }
+
+    private func openRestoredWindows() {
+        for tabs in windows.takeToRestore() {
+            if let id = windows.add(showing: tabs) { openWindow(id: "vault", value: id) }
         }
     }
 }

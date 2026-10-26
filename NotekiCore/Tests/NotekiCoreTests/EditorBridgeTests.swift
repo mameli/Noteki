@@ -119,6 +119,12 @@ struct EditorBridgeTests {
         #expect(try EditorCommand.tagCompletions(requestID: 4, tags: ["meeting", "client/axo"]).json() == #"{"requestID":4,"tags":["meeting","client\/axo"],"type":"tagCompletions"}"#)
     }
 
+    @Test("a Tab back in front brings back its Note's state with the text as it is now; a closed Tab's is dropped")
+    func tabs() throws {
+        #expect(try EditorCommand.restore(noteID: "n1", text: "# A").json() == ##"{"noteID":"n1","text":"# A","type":"restore"}"##)
+        #expect(try EditorCommand.drop(noteIDs: ["n1", "n2"]).json() == #"{"noteIDs":["n1","n2"],"type":"drop"}"#)
+    }
+
     @Test("clearing the editor needs nothing else")
     func clear() throws {
         #expect(try EditorCommand.clear.json() == #"{"type":"clear"}"#)
@@ -130,7 +136,8 @@ struct EditorBridgeTests {
 
         #expect(try EditorMessage(json: json) == .changed(noteID: "Meetings/Retro.md", revision: 7, text: "# Retro\nnew\n"))
         #expect(try EditorMessage(json: #"{"type":"ready"}"#) == .ready)
-        #expect(try EditorMessage(json: #"{"type":"followLink","inner":"Retro|the retro"}"#) == .followLink(inner: "Retro|the retro"))
+        #expect(try EditorMessage(json: #"{"type":"followLink","inner":"Retro|the retro","newTab":false}"#) == .followLink(inner: "Retro|the retro", newTab: false))
+        #expect(try EditorMessage(json: #"{"type":"followLink","inner":"Retro","newTab":true}"#) == .followLink(inner: "Retro", newTab: true))
         #expect(try EditorMessage(json: #"{"type":"checkLinks","noteID":"n1","inners":["A","B|b"]}"#) == .checkLinks(noteID: "n1", inners: ["A", "B|b"]))
     }
 }
