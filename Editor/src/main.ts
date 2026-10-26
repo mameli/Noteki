@@ -36,6 +36,13 @@ const sourceHighlight = HighlightStyle.define([
   // The Frontmatter: through a variable the Properties table sets, its values in the text's colour.
   { tag: tags.meta, color: "var(--frontmatter-text)" },
   { tag: tags.comment, color: "var(--syntax)" },
+  // Code in its language (codelanguages.ts), in Xcode's colours.
+  { tag: [tags.keyword, tags.modifier, tags.controlKeyword, tags.operatorKeyword], color: "var(--code-keyword)" },
+  { tag: [tags.string, tags.special(tags.string), tags.regexp, tags.character], color: "var(--code-string)" },
+  { tag: [tags.number, tags.bool, tags.null, tags.atom], color: "var(--code-number)" },
+  { tag: [tags.typeName, tags.className, tags.namespace, tags.standard(tags.variableName)], color: "var(--code-type)" },
+  { tag: [tags.function(tags.variableName), tags.function(tags.propertyName), tags.definition(tags.variableName)], color: "var(--code-function)" },
+  { tag: [tags.propertyName, tags.attributeName, tags.tagName], color: "var(--code-property)" },
 ]);
 
 // Set here rather than in editor.css: CodeMirror's base theme would win over a stylesheet.

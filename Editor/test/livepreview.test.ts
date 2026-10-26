@@ -1,6 +1,8 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
-import { shown } from "./helpers";
+import { syntaxTree } from "@codemirror/language";
+import { renderedCode } from "../src/livepreview";
+import { shown, stateOf } from "./helpers";
 
 test("bold, italic, inline code and strikethrough show without their marks", () => {
   assert.equal(shown("**bold**, *it*, _also_, `code` and ~~gone~~\n‸"), "bold, it, also, code and gone\n");
@@ -37,7 +39,29 @@ test("an element across lines shows only the marks on the cursor's line", () => 
 
 test("code, Embeds and images are left as they are", () => {
   const code = "```\n**x** [[y]]\n```\n`**not bold**`\n![[Pasted image.png]] ![alt](a.png)\n‸";
-  assert.equal(shown(code), "```\n**x** [[y]]\n```\n**not bold**\n![[Pasted image.png]] ![alt](a.png)\n");
+  assert.equal(shown(code), "\n**x** [[y]]\n\n**not bold**\n![[Pasted image.png]] ![alt](a.png)\n");
+});
+
+test("a code block hides its fences, its language kept, until the cursor is in it", () => {
+  const block = "```swift\nlet x = 1\n```";
+  assert.equal(shown(`${block}\n\n‸`), "swift\nlet x = 1\n\n\n");
+  assert.equal(shown(`\`\`\`swift\nlet x‸ = 1\n\`\`\`\n`), `${block}\n`);
+});
+
+test("a code block is drawn line by line, with its language", () => {
+  const state = stateOf("Text\n\n```swift\nlet x = 1\n```\n\n    indented\n‸");
+  assert.deepEqual(renderedCode(state), [
+    { lines: [6, 15, 25], info: { from: 9, to: 14 } },
+    { lines: [30], info: null },
+  ]);
+});
+
+test("code is coloured in its language, and a language not known gets the plain colouring", () => {
+  // The innermost node at the start of the code's first line: CodeText when nothing parsed it.
+  const nested = (text: string) => syntaxTree(stateOf(text)).resolveInner(text.indexOf("\n") + 1, 1);
+  assert.equal(nested("```ts\nconst x = 1\n```\n").name === "CodeText", false);
+  assert.equal(nested("```elixir\ndefmodule X do\n```\n").name === "CodeText", false);
+  assert.equal(nested("```\nplain text\n```\n").name, "CodeText");
 });
 
 test("moving the cursor never changes what is shown on the lines above it", () => {
@@ -87,7 +111,7 @@ test("a Comment across lines, blank lines and blocks included, shows from the cu
 });
 
 test("a Comment in code is code", () => {
-  assert.equal(shown("`%%x%%`\n```\n%%\n```\n‸"), "%%x%%\n```\n%%\n```\n");
+  assert.equal(shown("`%%x%%`\n```\n%%\n```\n‸"), "%%x%%\n\n%%\n\n");
 });
 
 test("an empty Alias shows the name; in a table the escaped pipe is the Alias's", () => {

@@ -20,6 +20,12 @@
   --frontmatter-text: var(--syntax);
   --error: #e93147;
   --accent-rgb: 0, 100, 209;
+  --code-keyword: #9b2393;
+  --code-string: #c41a16;
+  --code-number: #1c00cf;
+  --code-type: #0b4f79;
+  --code-function: #326d74;
+  --code-property: #3e8087;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -34,6 +40,12 @@
     --separator: #3a3a3c;
     --code-background: rgba(255, 255, 255, 0.08);
     --highlight: rgba(255, 208, 0, 0.3);
+    --code-keyword: #fc5fa3;
+    --code-string: #fc6a5d;
+    --code-number: #d0bf69;
+    --code-type: #5dd8ff;
+    --code-function: #67b7a4;
+    --code-property: #a167e6;
   }
 }
 

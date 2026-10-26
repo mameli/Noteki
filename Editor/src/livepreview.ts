@@ -19,7 +19,8 @@ export type { RenderedTable } from "./tables";
 // Wikilinks and Headings show without their marks, and the marks of an element appear while the
 // cursor is in it, only on the cursor's line; so do a task's bullet and brackets, drawn as a
 // checkbox (tasks.ts), and a callout's `>` and `[!type]`, drawn as a box (callouts.ts). Tables are
-// drawn as tables while the cursor is out of them (tables.ts); Comments are hidden from the
+// drawn as tables while the cursor is out of them (tables.ts), and code blocks in a box, their
+// fences hidden while the cursor is out of them; Comments are hidden from the
 // cursor's line up. What is shown above the cursor never changes as it moves, so lines above it
 // never change height.
 
@@ -31,8 +32,8 @@ const emphasis: Record<string, string> = {
   InlineCode: "CodeMark",
 };
 
-/** Elements whose text is shown as it is written: code, and what later tickets render. */
-const asWritten = new Set(["FencedCode", "CodeBlock", "HTMLBlock"]);
+/** Elements whose text is shown as it is written: what later tickets render. */
+const asWritten = new Set(["HTMLBlock"]);
 
 /**
  * What Live preview hides between `from` and `to`, in order: the marks of the elements the
@@ -64,6 +65,18 @@ export function renderedFrontmatter(state: EditorState): RenderedFrontmatter | n
   return preview(state, 0, state.doc.length).frontmatter?.layout ?? null;
 }
 
+/** A code block, fenced or indented, drawn in a box: the start of each of its lines. */
+export interface RenderedCode {
+  lines: number[];
+  /** The fence's language, `swift`, shown as a label. */
+  info: Span | null;
+}
+
+/** The code blocks between `from` and `to`, wherever the cursor is: only their fences show and hide. */
+export function renderedCode(state: EditorState, from = 0, to = state.doc.length): RenderedCode[] {
+  return preview(state, from, to).codeBlocks;
+}
+
 /** A task's checkbox, drawn at `at`, the end of its hidden bullet and brackets. */
 export interface RenderedTask {
   at: number;
@@ -81,6 +94,7 @@ export function renderedTasks(state: EditorState, from = 0, to = state.doc.lengt
 interface Preview {
   hidden: Span[];
   code: Span[];
+  codeBlocks: RenderedCode[];
   tables: RenderedTable[];
   tasks: RenderedTask[];
   callouts: RenderedCallout[];
@@ -107,6 +121,7 @@ function preview(state: EditorState, from: number, to: number, measuring = true)
     );
   const hidden: Span[] = [];
   const code: Span[] = [];
+  const codeBlocks: RenderedCode[] = [];
   const tables: RenderedTable[] = [];
   const tasks: RenderedTask[] = [];
   const doneTasks: Span[] = [];
@@ -131,6 +146,14 @@ function preview(state: EditorState, from: number, to: number, measuring = true)
     enter(ref) {
       const node = ref.node;
       if (asWritten.has(node.name)) return false;
+      if (node.name === "FencedCode" || node.name === "CodeBlock") {
+        // The box stays; the fences hide while the cursor is out of the block, their lines kept
+        // empty, so nothing moves up or down when it enters. Inside, nothing is Markdown.
+        const info = node.getChild("CodeInfo");
+        codeBlocks.push({ lines: Array.from(linesOf(state, node.from, node.to), (line) => line.from), info: info && { from: info.from, to: info.to } });
+        if (!entered(node)) for (const mark of children(node, "CodeMark")) hidden.push(mark);
+        return false;
+      }
       if (node.name === "Table") {
         for (const line of linesOf(state, node.from, node.to)) tableLines.push(line.from);
         // The cursor in a table shows it as written; inline elements in its cells follow their rules.
@@ -252,7 +275,7 @@ function preview(state: EditorState, from: number, to: number, measuring = true)
   }
   // Over the whole table, not only the part in view: a column keeps its width while scrolling.
   if (measuring) for (const table of tables) measure(table, preview(state, table.from, table.to, false).hidden);
-  return { hidden: merged, code, tables, tasks, callouts, frontmatter, doneTasks, tableLines };
+  return { hidden: merged, code, codeBlocks, tables, tasks, callouts, frontmatter, doneTasks, tableLines };
 }
 
 /**
@@ -293,6 +316,7 @@ function headerMark(state: EditorState, heading: SyntaxNode, mark: Span): Span {
 const hide = Decoration.replace({});
 const inlineCode = Decoration.mark({ class: "cm-inline-code" });
 const doneTask = Decoration.mark({ class: "cm-task-done" });
+const codeInfo = Decoration.mark({ class: "cm-code-info" });
 
 const tableLine = Decoration.line({ class: "cm-table-line" });
 const rowLine = {
@@ -307,9 +331,10 @@ function decorations(view: EditorView): DecorationSet {
   const drawn = new Set<number>();
   const shown = new Set<number>();
   const calloutLines = new Set<number>();
+  const codeLines = new Set<number>();
   let frontmatterDrawn = false;
   for (const { from, to } of view.visibleRanges) {
-    const { hidden, code, tables, tasks, callouts, frontmatter, doneTasks, tableLines } = preview(view.state, from, to);
+    const { hidden, code, codeBlocks, tables, tasks, callouts, frontmatter, doneTasks, tableLines } = preview(view.state, from, to);
     if (frontmatter && !frontmatterDrawn) {
       frontmatterDrawn = true;
       ranges.push(...drawFrontmatter(view.state, frontmatter.node, frontmatter.layout));
@@ -319,9 +344,19 @@ function decorations(view: EditorView): DecorationSet {
     for (const task of tasks) ranges.push(Decoration.widget({ widget: new CheckboxWidget(task.checked), side: 1 }).range(task.at));
     for (const span of doneTasks) ranges.push(doneTask.range(span.from, span.to));
     for (const callout of callouts) ranges.push(...drawCallout(view.state, callout, from, to, calloutLines));
+    for (const block of codeBlocks) {
+      if (block.info && !codeLines.has(block.lines[0])) ranges.push(codeInfo.range(block.info.from, block.info.to));
+      block.lines.forEach((line, index) => {
+        if (line < from || line > to || codeLines.has(line)) return;
+        codeLines.add(line);
+        const edges = `${index === 0 ? " cm-code-first" : ""}${index === block.lines.length - 1 ? " cm-code-last" : ""}`;
+        ranges.push(Decoration.line({ class: `cm-code-block${edges}` }).range(line));
+      });
+    }
     for (const table of tables) {
       if (drawn.has(table.from)) continue;
       drawn.add(table.from);
+      const lastRow = table.rows[table.rows.length - 1];
       for (const row of table.rows) {
         shown.add(row.lineStart);
         ranges.push(rowLine[row.kind].range(row.lineStart));
@@ -329,8 +364,13 @@ function decorations(view: EditorView): DecorationSet {
           const { width, align } = table.columns[column];
           // In em, not ch: a bold header's ch is wider than a body's, and the columns must line up.
           const style = `width: calc(${width} * 0.6em + 1.4em); text-align: ${align}`;
-          const empty = cell.text === "" ? " cm-table-empty" : "";
-          ranges.push(Decoration.mark({ class: `cm-table-cell${empty}`, attributes: { style } }).range(cell.from, cell.to));
+          let classes = "cm-table-cell";
+          if (row.kind === "header") classes += " cm-table-head";
+          if (row === lastRow) classes += " cm-table-bottom";
+          if (column === 0) classes += " cm-table-first";
+          if (column === table.columns.length - 1) classes += " cm-table-last";
+          if (cell.text === "") classes += " cm-table-empty";
+          ranges.push(Decoration.mark({ class: classes, attributes: { style } }).range(cell.from, cell.to));
         });
       }
     }
@@ -368,6 +408,10 @@ export const livePreview = [
   tagChipsTheme,
   EditorView.baseTheme({
     ".cm-inline-code": { backgroundColor: "var(--code-background)", borderRadius: "3px", padding: "0 2px" },
+    ".cm-code-block": { backgroundColor: "var(--code-background)", padding: "0 1em", fontFamily: "var(--mono)", fontSize: "0.92em" },
+    ".cm-code-first": { borderTopLeftRadius: "6px", borderTopRightRadius: "6px" },
+    ".cm-code-last": { borderBottomLeftRadius: "6px", borderBottomRightRadius: "6px" },
+    ".cm-code-info": { color: "var(--syntax)", fontFamily: "var(--system-font)", fontSize: "0.85em" },
     // A table's lines never wrap, shown as a table or written, so each keeps one line's height; a
     // wide one scrolls sideways instead.
     ".cm-table-line": { whiteSpace: "pre" },
@@ -376,14 +420,31 @@ export const livePreview = [
     ".cm-table-cell": {
       display: "inline-block",
       boxSizing: "border-box",
+      // One line's height, borders included: a row as tall shown as written.
+      height: "1.6em",
       padding: "0 0.5em",
       overflow: "hidden",
       textOverflow: "ellipsis",
       whiteSpace: "pre",
       verticalAlign: "top",
-      borderLeft: "1px solid var(--separator)",
+      borderRight: "1px solid var(--separator)",
+      borderBottom: "1px solid var(--separator)",
     },
-    ".cm-table-header": { fontWeight: "600", backgroundColor: "var(--code-background)" },
-    ".cm-table-rule": { backgroundImage: "linear-gradient(var(--separator), var(--separator))", backgroundSize: "100% 1px", backgroundPosition: "center", backgroundRepeat: "no-repeat" },
+    ".cm-table-first": { borderLeft: "1px solid var(--separator)" },
+    // A header's cells reach down over the delimiter row, whose text is all hidden, their text in
+    // the middle: one row twice as tall, while each line keeps one line's height (its negative
+    // margin), so nothing moves when the cursor enters the table.
+    ".cm-table-head": {
+      fontWeight: "600",
+      backgroundColor: "var(--code-background)",
+      borderTop: "1px solid var(--separator)",
+      height: "3.2em",
+      paddingTop: "0.8em",
+      marginBottom: "-1.6em",
+    },
+    ".cm-table-head.cm-table-first": { borderTopLeftRadius: "6px" },
+    ".cm-table-head.cm-table-last": { borderTopRightRadius: "6px" },
+    ".cm-table-bottom.cm-table-first": { borderBottomLeftRadius: "6px" },
+    ".cm-table-bottom.cm-table-last": { borderBottomRightRadius: "6px" },
   }),
 ];
