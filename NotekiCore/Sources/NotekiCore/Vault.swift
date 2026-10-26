@@ -74,7 +74,8 @@ public struct Vault: Sendable {
             // Another app wrote it in between.
             throw CreateError.exists(Note(path: existingFile(at: path) ?? path))
         }
-        return Note(path: path)
+        // In folders already there, as they are named on disk: Files lists it under that name.
+        return Note(path: existingFile(at: path) ?? path)
     }
 
     /// Where `createNote` puts the Note an Unresolved link names, without creating it.
@@ -107,17 +108,19 @@ public struct Vault: Sendable {
         return path
     }
 
-    /// The path of the file at `path` as it is named on disk, which may differ in letter case on
-    /// a case-insensitive volume; nil when there is none.
+    /// The path of the file at `path` as it is named on disk, folders included, which may differ
+    /// in letter case on a case-insensitive volume; nil when there is none.
     func existingFile(at path: String) -> String? {
-        let file = fileURL(path)
-        guard FileManager.default.fileExists(atPath: file.path(percentEncoded: false)) else { return nil }
-        let folder = file.deletingLastPathComponent()
-        let name = file.lastPathComponent
-        let onDisk = (try? FileManager.default.contentsOfDirectory(atPath: folder.path(percentEncoded: false)))?
-            .first { $0.caseInsensitiveCompare(name) == .orderedSame } ?? name
-        let parent = (path as NSString).deletingLastPathComponent
-        return parent.isEmpty ? onDisk : parent + "/" + onDisk
+        guard FileManager.default.fileExists(atPath: fileURL(path).path(percentEncoded: false)) else { return nil }
+        var folder = root
+        var onDisk: [String] = []
+        for component in path.split(separator: "/").map(String.init) {
+            let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path(percentEncoded: false))) ?? []
+            let name = names.first { $0 == component } ?? names.first { $0.caseInsensitiveCompare(component) == .orderedSame } ?? component
+            onDisk.append(name)
+            folder = folder.appending(path: name)
+        }
+        return onDisk.joined(separator: "/")
     }
 
     /// Where a file or folder opened from the Finder or another app (Takku) is.

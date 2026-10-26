@@ -301,6 +301,13 @@ private struct VaultCommands: View {
         }
         .keyboardShortcut("n")
         .disabled(main.vault == nil)
+        Button("Today's Note") {
+            if window == nil { showMainWindow() }
+            (window ?? main).openTodaysNote()
+        }
+        // Not ⌥⌘D, as the SPEC first said: macOS takes it to hide the Dock.
+        .keyboardShortcut("d", modifiers: [.command, .shift])
+        .disabled(main.vault == nil)
         Button("New Window") {
             if let id = windows.add() { openWindow(id: "vault", value: id) }
         }

@@ -3,8 +3,9 @@ import NotekiCore
 import Observation
 
 /// What the user chooses in Settings, kept in the app's preferences, outside the Vault (ADR
-/// 0002): the editor's font, size and line width, and the folders each Vault excludes. Every
-/// window's editor and model follow a change at once, told by a notification.
+/// 0002): the editor's font, size and line width, the folders each Vault excludes, and where
+/// the Daily note is. Every window's editor and model follow a change at once, told by a
+/// notification; the Daily note's place is read when ⌘⇧D is pressed.
 @MainActor
 @Observable
 final class AppSettings {
@@ -18,6 +19,17 @@ final class AppSettings {
     private static let sizeKey = "textSize"
     private static let lineWidthKey = "lineWidth"
     private static let excludedFoldersKey = "excludedFolders"
+    private static let dailyFolderKey = "dailyNoteFolder"
+    private static let dailyFormatKey = "dailyNoteFormat"
+
+    /// The Daily note's folder from the Vault's root and its date format: one for the app, as
+    /// Noteki is used with one Vault, where the Excluded folders are each Vault's own.
+    var dailyNote: DailyNote {
+        didSet {
+            UserDefaults.standard.set(dailyNote.folder, forKey: Self.dailyFolderKey)
+            UserDefaults.standard.set(dailyNote.format, forKey: Self.dailyFormatKey)
+        }
+    }
 
     var editor: EditorSettings {
         didSet {
@@ -37,6 +49,10 @@ final class AppSettings {
             font: defaults.string(forKey: Self.fontKey),
             size: defaults.object(forKey: Self.sizeKey) as? Double ?? standard.size,
             lineWidth: defaults.object(forKey: Self.lineWidthKey) as? Double ?? standard.lineWidth
+        )
+        dailyNote = DailyNote(
+            folder: defaults.string(forKey: Self.dailyFolderKey) ?? DailyNote.standard.folder,
+            format: defaults.string(forKey: Self.dailyFormatKey) ?? DailyNote.standard.format
         )
     }
 

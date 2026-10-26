@@ -476,6 +476,18 @@ final class AppModel {
         newNote(in: placeInFront.map(\.folder) ?? "")
     }
 
+    /// ⌘⇧D: today's Daily note in the Tab in front, created when missing, the editor taking the
+    /// keyboard to write in it.
+    func openTodaysNote() {
+        guard !isLooseFile else { return }
+        operate { vault in
+            let note = try vault.dailyNote(AppSettings.shared.dailyNote)
+            self.reveal(note.path)
+            self.focusEditorWhenShown(note)
+            return nil
+        }
+    }
+
     /// From Files' menu: a new Note in `folder`, named there.
     func newNote(in folder: String) {
         guard !isLooseFile else { return }
@@ -643,6 +655,12 @@ final class AppModel {
             alert.informativeText = "A name cannot be empty, start with a dot, be a folder Noteki does not list (node_modules), or contain / \\ : [ ] # ^ or |."
         case Vault.FileError.intoItself:
             return NSSound.beep()
+        case Vault.CreateError.outside:
+            alert.messageText = "Today's Note would be in a folder the Vault leaves out."
+            alert.informativeText = "Choose another folder for the Daily note in Settings."
+        case Vault.CreateError.invalidName:
+            alert.messageText = "Today's Note cannot have this name."
+            alert.informativeText = "Check the Daily note's date format in Settings: the name cannot be empty, leave its folder, or hold \\ : [ ] # ^ or |."
         default:
             alert.messageText = "The operation could not be done."
             alert.informativeText = error.localizedDescription

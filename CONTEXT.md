@@ -31,7 +31,7 @@ A Markdown or text file from outside the Vault, opened in a window of its own: w
 _Avoid_: standalone file, external note
 
 **Daily note** (`DailyNote`):
-The Note of a given day, named after its date in a folder the user chooses. Noteki opens it, creating it if missing.
+The Note of a given day, named after its date in a folder the user chooses; the date's format may make folders too. Noteki opens it, creating it if missing.
 _Avoid_: journal, diary
 
 ### Inside a Note

@@ -13,6 +13,8 @@ struct SettingsView: View {
                 .tabItem { Label("Editor", systemImage: "textformat") }
             ExcludedFoldersView(model: model)
                 .tabItem { Label("Excluded Folders", systemImage: "folder.badge.minus") }
+            DailyNoteSettingsView()
+                .tabItem { Label("Daily Note", systemImage: "calendar") }
         }
         .frame(width: 460)
     }
@@ -55,6 +57,36 @@ private struct EditorSettingsView: View {
                 .disabled(settings.editor == .standard)
         }
         .padding(20)
+    }
+}
+
+/// Where ⌘⇧D finds today's Daily note: a folder and a date format as Obsidian writes them.
+private struct DailyNoteSettingsView: View {
+    @Bindable private var settings = AppSettings.shared
+    @State private var folder = AppSettings.shared.dailyNote.folder
+    @State private var format = AppSettings.shared.dailyNote.format
+
+    var body: some View {
+        Form {
+            TextField("Folder:", text: $folder, prompt: Text("The Vault's root"))
+            TextField("Date format:", text: $format, prompt: Text(DailyNote.standard.format))
+            LabeledContent("Today:") {
+                Text(DailyNote(folder: folder, format: format).note(on: .now).path)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
+            Text("The format is Obsidian's, moment.js's: YYYY, MM, DD, dddd, MMMM, WW…; text in [brackets] stays as written, a / makes folders. Names of days and months are English.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(20)
+        .onChange(of: folder) { save() }
+        .onChange(of: format) { save() }
+    }
+
+    private func save() {
+        settings.dailyNote = DailyNote(folder: folder, format: format)
     }
 }
 
