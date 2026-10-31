@@ -248,15 +248,13 @@ function preview(state: EditorState, from: number, to: number, measuring = true)
         }
         case "Comment":
         case "CommentBlock": {
-          // Hidden line by line, each line kept: an unclosed Comment runs to the end of the Note.
-          // A paragraph's Comment in a quote or a list leaves their marks and indent on its lines.
+          // Shown faded, as text to read: only its `%%` hide, while the cursor is out of it.
           const marks = node.getChildren("CommentMark");
           const comment = { from: node.from, to: marks.length > 1 ? marks[marks.length - 1].to : node.to };
           const first = state.doc.lineAt(comment.from).number;
-          for (const line of linesOf(state, Math.max(comment.from, from), Math.min(comment.to, to))) {
-            const margin = node.name === "Comment" ? /^[ \t]*(?:>[ \t]?)*[ \t]*/.exec(line.text)![0].length : 0;
-            const part = { from: Math.max(line.from + margin, comment.from), to: Math.min(line.to, comment.to) };
-            if (part.from < part.to && !showsComment(comment, first, line.number)) hidden.push(part);
+          for (const mark of marks) {
+            if (mark.from < from || mark.to > to) continue;
+            if (!showsComment(comment, first, state.doc.lineAt(mark.from).number)) hidden.push({ from: mark.from, to: mark.to });
           }
           return false;
         }

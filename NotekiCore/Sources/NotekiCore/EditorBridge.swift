@@ -28,6 +28,11 @@ public enum EditorCommand: Encodable, Sendable {
     case selectAll, undo, redo
     /// The Edit menu's Find items, searching the whole Note.
     case find(FindStep)
+    /// The Format menu: Markdown around the selection or on its lines; a link with the
+    /// pasteboard's web address, if it holds one.
+    case format(Formatting, url: String? = nil)
+    /// The Format menu's Indent and Outdent.
+    case indent(outdent: Bool)
     /// Which of the Note's links lead nowhere: those `inners` are drawn as Unresolved links.
     case unresolvedLinks(noteID: String, inners: [String])
     /// The files the Note's Embeds and Markdown images show, by what the editor asked about: the
@@ -75,10 +80,17 @@ public enum EditorCommand: Encodable, Sendable {
         case next, previous
     }
 
-    public static let types = ["load", "restore", "drop", "reload", "flush", "clear", "selectAll", "undo", "redo", "find", "unresolvedLinks", "linkCompletions", "goToLine", "sourceMode", "embeds", "frontmatter", "replaceFrontmatter", "tagCompletions", "insert", "settings"]
+    /// What the Format menu writes, as the editor's `format.ts` names it.
+    public enum Formatting: String, Sendable, CaseIterable {
+        case bold, italic, strikethrough, code, comment, link
+        case heading1, heading2, heading3, heading4, heading5, heading6
+        case task, quote, bulletList, numberedList
+    }
+
+    public static let types = ["load", "restore", "drop", "reload", "flush", "clear", "selectAll", "undo", "redo", "find", "format", "indent", "unresolvedLinks", "linkCompletions", "goToLine", "sourceMode", "embeds", "frontmatter", "replaceFrontmatter", "tagCompletions", "insert", "settings"]
 
     private enum CodingKeys: String, CodingKey {
-        case type, noteID, revision, text, step, inners, requestID, completions, line, on, files, reading, replacement, tags, noteIDs, point, settings
+        case type, noteID, revision, text, step, inners, requestID, completions, line, on, files, reading, replacement, tags, noteIDs, point, settings, action, url, outdent
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -114,6 +126,13 @@ public enum EditorCommand: Encodable, Sendable {
         case .find(let step):
             try container.encode("find", forKey: .type)
             try container.encode(step.rawValue, forKey: .step)
+        case .format(let formatting, let url):
+            try container.encode("format", forKey: .type)
+            try container.encode(formatting.rawValue, forKey: .action)
+            try container.encodeIfPresent(url, forKey: .url)
+        case .indent(let outdent):
+            try container.encode("indent", forKey: .type)
+            try container.encode(outdent, forKey: .outdent)
         case .unresolvedLinks(let noteID, let inners):
             try container.encode("unresolvedLinks", forKey: .type)
             try container.encode(noteID, forKey: .noteID)
@@ -176,6 +195,8 @@ public enum EditorMessage: Decodable, Equatable, Sendable {
     case followLink(inner: String, newTab: Bool)
     /// The user clicked a link to a web address (http, https, mailto).
     case openURL(String)
+    /// A Format shortcut pressed in the editor, which the web view takes before the menu.
+    case format(EditorCommand.Formatting)
     /// The Note's links, what is between their brackets: which lead nowhere?
     case checkLinks(noteID: String, inners: [String])
     /// The user typed `[[`: which Notes can the link lead to? Answered by `linkCompletions`.
@@ -191,10 +212,10 @@ public enum EditorMessage: Decodable, Equatable, Sendable {
     /// The user is adding a Tag: which Tags does the Vault have? Answered by `tagCompletions`.
     case completeTag(requestID: Int)
 
-    public static let types = ["ready", "changed", "followLink", "openURL", "checkLinks", "completeLink", "readFrontmatter", "addTag", "removeTag", "completeTag"]
+    public static let types = ["ready", "changed", "followLink", "openURL", "format", "checkLinks", "completeLink", "readFrontmatter", "addTag", "removeTag", "completeTag"]
 
     private enum CodingKeys: String, CodingKey {
-        case type, noteID, revision, text, inner, inners, requestID, tag, newTab, url
+        case type, noteID, revision, text, inner, inners, requestID, tag, newTab, url, action
     }
 
     public init(json: String) throws {
@@ -218,6 +239,12 @@ public enum EditorMessage: Decodable, Equatable, Sendable {
                 inner: try container.decode(String.self, forKey: .inner),
                 newTab: try container.decodeIfPresent(Bool.self, forKey: .newTab) ?? false
             )
+        case "format":
+            let action = try container.decode(String.self, forKey: .action)
+            guard let formatting = EditorCommand.Formatting(rawValue: action) else {
+                throw DecodingError.dataCorruptedError(forKey: .action, in: container, debugDescription: "Unknown formatting \(action)")
+            }
+            self = .format(formatting)
         case "openURL":
             self = .openURL(try container.decode(String.self, forKey: .url))
         case "checkLinks":

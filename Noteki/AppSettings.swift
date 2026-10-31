@@ -21,6 +21,12 @@ final class AppSettings {
     private static let excludedFoldersKey = "excludedFolders"
     private static let dailyFolderKey = "dailyNoteFolder"
     private static let dailyFormatKey = "dailyNoteFormat"
+    private static let formatBarKey = "showsFormatBar"
+
+    /// The row of Format buttons over the Note; hidden at first, for those who use the shortcuts.
+    var showsFormatBar = UserDefaults.standard.bool(forKey: AppSettings.formatBarKey) {
+        didSet { UserDefaults.standard.set(showsFormatBar, forKey: Self.formatBarKey) }
+    }
 
     /// The Daily note's folder from the Vault's root and its date format: one for the app, as
     /// Noteki is used with one Vault, where the Excluded folders are each Vault's own.

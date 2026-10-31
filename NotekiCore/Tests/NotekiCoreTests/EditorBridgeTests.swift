@@ -20,6 +20,27 @@ struct EditorBridgeTests {
         #expect(types(in: source[messages.lowerBound...]) == Set(EditorMessage.types))
     }
 
+    @Test("the Format menu's actions are those the editor's format.ts knows")
+    func formattings() throws {
+        let format = URL(filePath: #filePath)
+            .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appending(path: "Editor/src/format.ts")
+        let source = try String(contentsOf: format, encoding: .utf8)
+        let union = try #require(source.firstMatch(of: /export type Formatting =([^;]+);/))
+        let names = Set(union.1.matches(of: /"(\w+)"/).map { String($0.1) })
+
+        #expect(names == Set(EditorCommand.Formatting.allCases.map(\.rawValue)))
+    }
+
+    @Test("a format command names the action, and the pasteboard's address for a link")
+    func format() throws {
+        let json = try JSONSerialization.jsonObject(
+            with: JSONEncoder().encode(EditorCommand.format(.link, url: "https://github.com"))
+        ) as? [String: String]
+
+        #expect(json == ["type": "format", "action": "link", "url": "https://github.com"])
+    }
+
     @Test("a load command carries the Note and its text")
     func load() throws {
         let json = try JSONSerialization.jsonObject(

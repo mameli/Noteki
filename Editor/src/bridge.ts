@@ -1,4 +1,5 @@
 import type { EmbeddedFile } from "./embeds";
+import type { Formatting } from "./format";
 import type { FrontmatterReading } from "./frontmatter";
 import type { EditorSettings } from "./settings";
 
@@ -35,6 +36,10 @@ export type EditorCommand =
   | { type: "redo" }
   /** The Edit menu's Find items, over the whole Note. */
   | { type: "find"; step: "open" | "next" | "previous" }
+  /** The Format menu: Markdown around the selection or on its lines; a link with the pasteboard's web address. */
+  | { type: "format"; action: Formatting; url?: string }
+  /** The Format menu's Indent and Outdent. */
+  | { type: "indent"; outdent: boolean }
   /** Which of the Note's links lead nowhere: those are drawn as Unresolved links. */
   | { type: "unresolvedLinks"; noteID: string; inners: string[] }
   /** The files the Note's Embeds and Markdown images show, by what the editor asked about. */
@@ -89,6 +94,8 @@ export type EditorMessage =
   | { type: "followLink"; inner: string; newTab: boolean }
   /** The user clicked a link to a web address (http, https, mailto): for the browser. */
   | { type: "openURL"; url: string }
+  /** A Format shortcut pressed in the editor: the app answers with `format`, as its menu would. */
+  | { type: "format"; action: Formatting }
   /** The Note's links, what is between their brackets: which lead nowhere? */
   | { type: "checkLinks"; noteID: string; inners: string[] }
   /** The user typed `[[`: which Notes can the link lead to? Answered by `linkCompletions`. */

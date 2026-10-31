@@ -63,7 +63,7 @@ export class CheckboxWidget extends WidgetType {
 }
 
 export const taskTheme = EditorView.baseTheme({
-  ".cm-task-checkbox": { margin: "0 0.15em 0 0", verticalAlign: "-0.1em", width: "0.95em", height: "0.95em", cursor: "default" },
+  ".cm-task-checkbox": { margin: "0 0.15em 0 0", verticalAlign: "middle", position: "relative", top: "-0.08em", width: "0.95em", height: "0.95em", cursor: "default" },
   // A done task is crossed out and faded, as in Obsidian.
   ".cm-task-done": { textDecoration: "line-through", color: "var(--quote)" },
 });

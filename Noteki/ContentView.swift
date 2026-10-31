@@ -32,6 +32,7 @@ struct ContentView: View {
             } else {
                 VStack(spacing: 0) {
                     if !model.tabs.all.isEmpty { TabBar(model: model) }
+                    if AppSettings.shared.showsFormatBar, model.isShowingNote { FormatBar(model: model) }
                     NoteDetail(model: model)
                 }
                     .inspector(isPresented: $model.isShowingSidebar) {

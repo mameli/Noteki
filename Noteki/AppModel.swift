@@ -2,6 +2,7 @@ import AppKit
 import NotekiCore
 import Observation
 import Synchronization
+import UniformTypeIdentifiers
 import os
 
 private let logger = Logger(subsystem: "app.noteki.noteki", category: "vault")
@@ -890,6 +891,18 @@ final class AppModel {
         panel.message = Self.chooseVaultMessage
         guard panel.runModal() == .OK, let url = panel.url else { return }
         open(url)
+    }
+
+    /// The Format bar's paperclip: images chosen in a panel, written next to the Note in
+    /// front and embedded at the cursor, as if dropped on it.
+    func attachFiles() {
+        guard takesImages else { return NSSound.beep() }
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.allowedContentTypes = [.image]
+        panel.prompt = "Attach"
+        guard panel.runModal() == .OK, !panel.urls.isEmpty else { return }
+        embed(.files(panel.urls), at: nil)
     }
 
     static let chooseVaultMessage = "Choose the Vault: the folder of your notes. It can be an Obsidian vault."

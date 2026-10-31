@@ -31,6 +31,9 @@ struct NotekiApp: App {
                 GoCommands()
             }
             ViewCommands()
+            CommandMenu("Format") {
+                FormatCommands()
+            }
             EditCommands(main: model, showMainWindow: { appDelegate.showMainWindow() })
             ZoomCommands()
         }
@@ -444,6 +447,46 @@ struct ZoomActions {
 
 extension FocusedValues {
     @Entry var zoom: ZoomActions?
+}
+
+/// Markdown written around the selection or on its lines, with Obsidian's shortcuts where it
+/// has them, Typora's and Bear's otherwise.
+private struct FormatCommands: View {
+    @FocusedValue(\.noteEditor) private var editor
+
+    var body: some View {
+        Group {
+            item("Bold", .bold, "b")
+            item("Italic", .italic, "i")
+            item("Strikethrough", .strikethrough, "x", [.command, .shift])
+            item("Inline Code", .code, "`", .control)
+            item("Comment", .comment, "/")
+            Divider()
+            item("Link", .link, "k")
+            Divider()
+            Button("Quote") { editor?.format(.quote) }
+            Button("Bulleted List") { editor?.format(.bulletList) }
+            Button("Numbered List") { editor?.format(.numberedList) }
+            item("Task", .task, .return)
+            Divider()
+            Menu("Heading") {
+                ForEach(1...6, id: \.self) { level in
+                    item("Heading \(level)", EditorCommand.Formatting(rawValue: "heading\(level)")!, KeyEquivalent(Character("\(level)")))
+                }
+            }
+            Divider()
+            Button("Indent") { editor?.indent(outdent: false) }
+                .keyboardShortcut("]")
+            Button("Outdent") { editor?.indent(outdent: true) }
+                .keyboardShortcut("[")
+        }
+        .disabled(editor == nil)
+    }
+
+    private func item(_ title: String, _ formatting: EditorCommand.Formatting, _ key: KeyEquivalent, _ modifiers: EventModifiers = .command) -> some View {
+        Button(title) { editor?.format(formatting) }
+            .keyboardShortcut(key, modifiers: modifiers)
+    }
 }
 
 /// Source mode, for the Note in front of the window.

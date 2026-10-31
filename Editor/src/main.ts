@@ -1,8 +1,9 @@
-import { defaultKeymap, history, historyKeymap, redo, selectAll, undo } from "@codemirror/commands";
+import { defaultKeymap, history, historyKeymap, indentLess, indentMore, redo, selectAll, undo } from "@codemirror/commands";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
+import { formatKeys, formatting } from "./format";
 import { createFindBar, findBarTheme } from "./findbar";
 import { findNext, findPrevious, openSearchPanel, search, searchKeymap } from "@codemirror/search";
-import { Compartment, EditorState, type StateEffect, Transaction } from "@codemirror/state";
+import { Compartment, EditorState, Prec, type StateEffect, Transaction } from "@codemirror/state";
 import { drawSelection, EditorView, keymap } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import { type EditorCommand, type EditorMessage, send } from "./bridge";
@@ -194,6 +195,8 @@ function initialState(text: string, editable: boolean) {
       EditorState.allowMultipleSelections.of(true),
       drawSelection(),
       systemTextServices,
+      // Before CodeMirror's own ⌘↩ and ⌘/.
+      Prec.high(keymap.of(formatKeys.map(({ key, action }) => ({ key, run: () => (send({ type: "format", action }), true) })))),
       keymap.of([...searchKeymap, ...defaultKeymap, ...historyKeymap]),
       EditorView.editable.of(editable),
       reportChanges,
@@ -359,6 +362,14 @@ window.noteki = {
         return null;
       case "linkCompletions":
         receiveLinkCompletions(command.requestID, command.completions);
+        return null;
+      case "format":
+        view.dispatch(formatting(view.state, command.action, command.url));
+        view.focus();
+        return null;
+      case "indent":
+        (command.outdent ? indentLess : indentMore)(view);
+        view.focus();
         return null;
       case "find":
         if (command.step === "open") openSearchPanel(view);

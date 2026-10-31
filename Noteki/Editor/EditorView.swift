@@ -151,6 +151,23 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
         if step == .open { webView.window?.makeFirstResponder(webView) }
     }
 
+    /// The Format menu. ⌘K makes a link to the web address on the pasteboard, if it holds one.
+    func format(_ formatting: EditorCommand.Formatting) {
+        guard isReady, isInFront else { return }
+        var url: String?
+        if formatting == .link, let copied = NSPasteboard.general.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines),
+           let address = URL(string: copied), ["http", "https", "mailto"].contains(address.scheme?.lowercased() ?? ""), !copied.contains(" ") {
+            url = copied
+        }
+        run(.format(formatting, url: url)) { _ in }
+    }
+
+    /// The Format menu's Indent and Outdent.
+    func indent(outdent: Bool) {
+        guard isReady, isInFront else { return }
+        run(.indent(outdent: outdent)) { _ in }
+    }
+
     /// The Note shown changed on disk: its new text, with the cursor kept where it was. True
     /// when the editor shows it; false when the user typed first and the editor kept their text.
     func reload(noteID: String, revision: Int, text: String) async -> Bool {
@@ -255,6 +272,8 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
             onChange(noteID, revision, text)
         case .followLink(let inner, let newTab):
             onFollowLink(inner, newTab)
+        case .format(let formatting):
+            format(formatting)
         case .openURL(let address):
             // Only what the editor promised: the web and mail, never a file or an app's scheme.
             if let url = URL(string: address), ["http", "https", "mailto"].contains(url.scheme?.lowercased() ?? "") {

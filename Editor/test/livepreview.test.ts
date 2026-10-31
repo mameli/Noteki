@@ -87,27 +87,21 @@ test("a highlight shows without its ==, which appear with the cursor in it", () 
   assert.equal(shown("a == b == c, ===x===\nTitle\n==\n‸"), "a == b == c, ===x===\nTitle\n==\n");
 });
 
-test("a Comment is hidden, its line kept, and shown with the cursor in it", () => {
-  assert.equal(shown("Before %%hidden%% after\n%% takku:start %%\nText\n%% takku:end %%\n‸"), "Before  after\n\nText\n\n");
-  assert.equal(shown("a %%hid‸den%% b"), "a %%hidden%% b");
+test("a Comment shows faded, its %% hidden, and as written with the cursor in it", () => {
+  assert.equal(shown("Before %%note%% after\n%% takku:start %%\nText\n%% takku:end %%\n‸"), "Before note after\n takku:start \nText\n takku:end \n");
+  assert.equal(shown("a %%no‸te%% b"), "a %%note%% b");
   // Not closed on its paragraph: no Comment.
   assert.equal(shown("50%% of it\n‸"), "50%% of it\n");
 });
 
-test("a Comment across lines, blank lines and blocks included, shows from the cursor's line down", () => {
+test("a Comment across lines, blank lines and blocks included, shows its %% from the cursor's line down", () => {
   const comment = "%%\n- item\n\n# Not a heading\n%%\nafter";
-  assert.equal(shown(comment + "‸"), "\n\n\n\n\nafter");
-  assert.equal(shown("%%\n- item\n\n# Not a ‸heading\n%%\nafter"), "\n\n\n# Not a heading\n%%\nafter");
+  assert.equal(shown(comment + "‸"), "\n- item\n\n# Not a heading\n\nafter");
+  assert.equal(shown("%%\n- item\n\n# Not a ‸heading\n%%\nafter"), "\n- item\n\n# Not a heading\n%%\nafter");
   assert.equal(shown("‸" + comment), comment);
-  // Inside a paragraph too, and from a line of its own right under one.
-  assert.equal(shown("text %%one\ntwo%% end\n‸"), "text \n end\n");
-  assert.equal(shown("Text\n%%\nA comment\n\nacross\n%%\nAfter‸"), "Text\n\n\n\n\n\nAfter");
-  // Right under a list too.
-  assert.equal(shown("- item\n%%\nhidden\n\nmore\n%%\nafter‸"), "- item\n\n\n\n\n\nafter");
-  // A paragraph's Comment across lines in a quote or a list keeps their marks.
-  assert.equal(shown("> a %%x\n> y%% b\n\n- a %%x\n  y%% b\n‸"), "> a \n>  b\n\n- a \n   b\n");
-  // That line may close a Comment the paragraph opened.
-  assert.equal(shown("text %%one\n%% end\n\nmore\n‸"), "text \n end\n\nmore\n");
+  // Inside a paragraph too, in a quote or a list keeping their marks.
+  assert.equal(shown("text %%one\ntwo%% end\n‸"), "text one\ntwo end\n");
+  assert.equal(shown("> a %%x\n> y%% b\n‸"), "> a x\n> y b\n");
 });
 
 test("a Comment in code is code", () => {

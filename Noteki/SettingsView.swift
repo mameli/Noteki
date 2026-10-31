@@ -53,6 +53,7 @@ private struct EditorSettingsView: View {
                         .frame(width: 60, alignment: .trailing)
                 }
             }
+            Toggle("Show the Format bar over the Note", isOn: $settings.showsFormatBar)
             Button("Restore Defaults") { settings.editor = .standard }
                 .disabled(settings.editor == .standard)
         }
