@@ -34,12 +34,13 @@ struct FormatBar: View {
             Button { model.attachFiles() } label: { Image(systemName: "paperclip") }
                 .help("Attach Images…")
         }
+        // Quiet: grey icons on the page's own background, no bar or line under it.
         .buttonStyle(.borderless)
-        .imageScale(.medium)
+        .foregroundStyle(.secondary)
+        .imageScale(.small)
         .padding(.horizontal, 10)
-        .padding(.vertical, 5)
-        .background(.bar)
-        .overlay(alignment: .bottom) { Divider() }
+        .padding(.vertical, 3)
+        .background(.background)
     }
 
     private func button(_ symbol: String, _ help: String, _ formatting: EditorCommand.Formatting) -> some View {

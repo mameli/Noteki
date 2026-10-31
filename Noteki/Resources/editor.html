@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- noteki-editor-sources: 6b9b7e1568dcb8d66ce4fd170dea7c6fd9abe66781572000fb55a8511de52a1e -->
+<!-- noteki-editor-sources: 878fc16fbe2295b8eac4403aa744bd050b005886cf041cd3fa288a3ff8e4ce5e -->
 <html>
 <head>
 <meta charset="utf-8">
@@ -73,6 +73,22 @@ body {
 
 .cm-content {
   caret-color: var(--text);
+}
+
+/* Thin scrollbars that keep out of the way, as overlay scrollers do. */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: transparent;
+  border-radius: 4px;
+}
+
+:hover::-webkit-scrollbar-thumb {
+  background: rgba(128, 128, 128, 0.4);
 }
 </style>
 </head>

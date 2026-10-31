@@ -1,7 +1,8 @@
 import NotekiCore
 import SwiftUI
 
-/// The right sidebar: the Outline and the Backlinks of the Note in front.
+/// The right sidebar: the Outline and the Backlinks of the Note in front, chosen with icons
+/// at the toolbar's trailing end.
 struct RightSidebar: View {
     @Bindable var model: AppModel
 
@@ -13,16 +14,6 @@ struct RightSidebar: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        .safeAreaInset(edge: .top, spacing: 0) {
-            Picker("Pane", selection: $model.rightPane) {
-                Label("Outline", systemImage: "list.bullet.indent").tag(AppModel.RightPane.outline)
-                Label("Backlinks", systemImage: "link").tag(AppModel.RightPane.backlinks)
-            }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-        }
     }
 }
 
@@ -42,9 +33,10 @@ private struct OutlinePane: View {
                 ForEach(model.outline, id: \.line) { heading in
                     Button { model.go(to: heading) } label: {
                         Text(heading.text)
-                            .fontWeight(heading.level == 1 ? .semibold : .regular)
+                            .font(.callout)
+                            .foregroundStyle(heading.level == 1 ? .primary : .secondary)
                             .lineLimit(2)
-                            .padding(.leading, 12 + CGFloat(heading.level - 1) * 14)
+                            .padding(.leading, 12 + CGFloat(heading.level - 1) * 12)
                             .padding(.trailing, 12)
                             .padding(.vertical, 3)
                             .frame(maxWidth: .infinity, alignment: .leading)

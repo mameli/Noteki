@@ -16,6 +16,11 @@ struct ContentView: View {
     /// Shown again for ⌘⇧F: Search is in the sidebar.
     @State private var columns = NavigationSplitViewVisibility.automatic
 
+    /// No right sidebar without a Vault.
+    private var inspectorShown: Binding<Bool> {
+        Binding(get: { model.vault != nil && model.isShowingSidebar }, set: { model.isShowingSidebar = $0 })
+    }
+
     var body: some View {
         NavigationSplitView(columnVisibility: $columns) {
             LeftSidebar(model: model)
@@ -35,17 +40,42 @@ struct ContentView: View {
                     if AppSettings.shared.showsFormatBar, model.isShowingNote { FormatBar(model: model) }
                     NoteDetail(model: model)
                 }
-                    .inspector(isPresented: $model.isShowingSidebar) {
-                        RightSidebar(model: model)
-                            .inspectorColumnWidth(min: 220, ideal: 280, max: 420)
-                    }
             }
+        }
+        // On the split view, not the detail: the right sidebar is a column of the window's full
+        // height, grey under the toolbar as Files is.
+        .inspector(isPresented: inspectorShown) {
+            RightSidebar(model: model)
+                .inspectorColumnWidth(min: 220, ideal: 280, max: 420)
         }
         .toolbar {
             if model.vault != nil {
-                ToolbarItem {
-                    Button("Right Sidebar", systemImage: "sidebar.trailing") { model.isShowingSidebar.toggle() }
+                // Nothing in the middle: without the title, it is what pushes the rest to the end.
+                if #available(macOS 26, *) {
+                    ToolbarItem(placement: .principal) { Color.clear.frame(width: 1, height: 1) }
+                        .sharedBackgroundVisibility(.hidden)
+                } else {
+                    ToolbarItem(placement: .principal) { Color.clear.frame(width: 1, height: 1) }
+                }
+                // At the trailing end, over the right sidebar they switch. One item, not one per
+                // control: added and removed separately, the system drew their capsule differently.
+                ToolbarItem(placement: .primaryAction) {
+                    HStack(spacing: 4) {
+                        if model.isShowingSidebar {
+                            PaneSwitcher(selection: $model.rightPane, panes: [
+                                .init(.outline, "Outline (⌥⌘1)", "list.bullet.indent"),
+                                .init(.backlinks, "Backlinks (⌥⌘2)", "link",
+                                      badge: model.backlinksAreFound ? model.backlinks.count : nil),
+                            ])
+                        }
+                        Button { model.isShowingSidebar.toggle() } label: {
+                            Image(systemName: "sidebar.trailing").frame(width: 28, height: 22).contentShape(.rect)
+                        }
+                        .buttonStyle(.plain)
                         .help("Show or hide the Outline and the Backlinks")
+                        .accessibilityLabel("Right Sidebar")
+                    }
+                    .padding(.horizontal, 4)
                 }
             }
         }
@@ -62,6 +92,8 @@ struct ContentView: View {
             if renaming != nil, columns == .detailOnly { columns = .all }
         }
         .navigationTitle(model.shown?.name ?? model.vault?.root.lastPathComponent ?? "Noteki")
+        // The Tab already names the Note: the title stays for the Window menu, not the toolbar.
+        .toolbar(removing: .title)
         .focusedSceneValue(\.noteEditor, model.isShowingNote ? model.editor : nil)
         .focusedSceneValue(\.noteWindow, model.isShowingNote ? model : nil)
         .focusedSceneValue(\.vaultWindow, model)
@@ -176,6 +208,9 @@ struct FilesPane: View {
         List(selection: $model.selection) {
             FileRows(items: model.tree, model: model)
         }
+        // Grey icons, the accent only on the selection; rows as compact as Mail's.
+        .listItemTint(.monochrome)
+        .environment(\.sidebarRowSize, .small)
         .focused($hasKeyboard)
         .contextMenu(forSelectionType: String.self) { paths in
             let item = paths.first.flatMap { model.tree.item(at: $0) }

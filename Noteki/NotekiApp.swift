@@ -349,6 +349,14 @@ private struct SidebarCommands: View {
             model.isShowingSidebar.toggle()
         }
         .keyboardShortcut("0", modifiers: [.command, .option])
+        Divider()
+        Button("Files") { model.leftPane = .files }.keyboardShortcut("1")
+        Button("Tags") { model.leftPane = .tags }.keyboardShortcut("2")
+        Button("Search") { model.leftPane = .search }.keyboardShortcut("3")
+        Button("Outline") { model.rightPane = .outline; model.isShowingSidebar = true }
+            .keyboardShortcut("1", modifiers: [.command, .option])
+        Button("Backlinks") { model.rightPane = .backlinks; model.isShowingSidebar = true }
+            .keyboardShortcut("2", modifiers: [.command, .option])
     }
 }
 
