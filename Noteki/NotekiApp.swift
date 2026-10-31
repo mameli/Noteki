@@ -23,7 +23,8 @@ struct NotekiApp: App {
             CommandGroup(replacing: .newItem) {
                 VaultCommands(main: model, windows: appDelegate.windows, showMainWindow: { appDelegate.showMainWindow() })
             }
-            CommandGroup(after: .sidebar) {
+            // ⌘0 and ⌥⌘0 for the two sidebars, as in Xcode; in place of the system's ⌃⌘S.
+            CommandGroup(replacing: .sidebar) {
                 SidebarCommands(main: model)
             }
             CommandMenu("Go") {
@@ -336,6 +337,11 @@ private struct SidebarCommands: View {
 
     var body: some View {
         let model = window ?? main
+        // The window's split view shows or hides Files, Search and Tags.
+        Button("Toggle Left Sidebar") {
+            NSApp.sendAction(#selector(NSSplitViewController.toggleSidebar(_:)), to: nil, from: nil)
+        }
+        .keyboardShortcut("0")
         Button(model.isShowingSidebar ? "Hide Right Sidebar" : "Show Right Sidebar") {
             model.isShowingSidebar.toggle()
         }
@@ -469,8 +475,8 @@ private struct ZoomCommands: Commands {
                 .keyboardShortcut("+")
             Button("Zoom Out") { if let zoom { zoom.zoomOut() } else { stepTextSize(by: -1) } }
                 .keyboardShortcut("-")
+            // No ⌘0: it shows the left sidebar.
             Button("Actual Size") { setTextSize(EditorSettings.standard.size) }
-                .keyboardShortcut("0")
                 .disabled(zoom != nil)
         }
     }

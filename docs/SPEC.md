@@ -42,7 +42,7 @@ Memory is measured as at first launch: the right sidebar hidden, the left one on
 
 ## Window
 
-- **Left sidebar**, three panes: *Files* (the folder tree), *Tags* (the Tag tree with counts, click to list the Notes), *Search*.
+- **Left sidebar** (⌘0), three panes: *Files* (the folder tree), *Tags* (the Tag tree with counts, click to list the Notes), *Search*.
 - **Centre**: the Note of the Tab in front, with the tab bar above it.
 - **Right sidebar**, collapsible: *Backlinks* of the Note (with the line around each one) and its **Outline**.
 - **Tabs** are Noteki's own, one web view per window ([ADR 0003](adr/0003-one-web-view-per-window.md)). Clicking a Note in the sidebar opens it in the Tab in front; ⌘-click opens it in a new Tab. The open Tabs of each window are restored at launch. Since ticket 25:

@@ -7,7 +7,7 @@
 **Status:** ready-for-agent
 
 - [x] ⌘+ / ⌘− step the size within the Settings bounds (10–32)
-- [x] ⌘0 restores the default size (15)
+- [x] Actual Size restores the default size (15), with no shortcut: ⌘0 is the left sidebar
 - [x] The zoomed size is saved to Settings, as if changed there
 
 ## Comments
