@@ -255,6 +255,11 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
             onChange(noteID, revision, text)
         case .followLink(let inner, let newTab):
             onFollowLink(inner, newTab)
+        case .openURL(let address):
+            // Only what the editor promised: the web and mail, never a file or an app's scheme.
+            if let url = URL(string: address), ["http", "https", "mailto"].contains(url.scheme?.lowercased() ?? "") {
+                NSWorkspace.shared.open(url)
+            }
         case .checkLinks(let noteID, let inners):
             onCheckLinks(noteID, inners)
         case .completeLink(let requestID):

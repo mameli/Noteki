@@ -184,6 +184,17 @@ struct FilesPane: View {
             Button("New Folder") { model.newFolder(in: folder) }
             if let item {
                 Divider()
+                if let url = model.fileURL(of: item.path) {
+                    Button("Reveal in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+                    Divider()
+                    Button("Copy Path") { model.copy(url.path(percentEncoded: false)) }
+                }
+                Button("Copy Relative Path") { model.copy(item.path) }
+                if item.children == nil {
+                    // As Obsidian writes it: a Note without its extension, an Attachment with.
+                    Button("Copy Wikilink") { model.copy("[[\(item.isNote ? item.editableName : item.name)]]") }
+                }
+                Divider()
                 Button("Rename") { model.startRename(item.path) }
                 Button("Move to Trash") { model.trash(item.path) }
             }
@@ -218,6 +229,12 @@ private struct FileRows: View {
                     AnyView(FileRows(items: children, model: model))
                 } label: {
                     FileRow(item: item, model: model)
+                        // The whole width of the row, not only its name.
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        // A click anywhere on a folder's row opens or closes it, not only on its
+                        // triangle; the row is selected as well.
+                        .contentShape(Rectangle())
+                        .simultaneousGesture(TapGesture().onEnded { isExpanded(item.path).wrappedValue.toggle() })
                 }
             } else {
                 FileRow(item: item, model: model)
@@ -295,6 +312,10 @@ extension VaultItem: @retroactive Identifiable {
         case .note(let note): note.name
         case .attachment(let attachment): (attachment.name as NSString).deletingPathExtension
         }
+    }
+
+    var isNote: Bool {
+        if case .note = self { true } else { false }
     }
 
     var symbolName: String {

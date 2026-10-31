@@ -4,7 +4,7 @@ import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate
 import type { SyntaxNode } from "@lezer/common";
 import { calloutOf, calloutTheme, drawCallout, quoteMarks, type RenderedCallout } from "./callouts";
 import { embeddedFile } from "./embeds";
-import { drawFrontmatter, frontmatterLayout, frontmatterReading, frontmatterTheme, type RenderedFrontmatter } from "./frontmatter";
+import { drawFrontmatter, foldedLists, frontmatterLayout, frontmatterReading, frontmatterTheme, type RenderedFrontmatter } from "./frontmatter";
 import { tagChipsTheme } from "./tagchips";
 import { CheckboxWidget, isTicked, taskTheme } from "./tasks";
 import { measure, type RenderedTable, rowHidden, tableLayout } from "./tables";
@@ -404,6 +404,7 @@ export const livePreview = [
   ),
   taskTheme,
   calloutTheme,
+  foldedLists,
   frontmatterTheme,
   tagChipsTheme,
   EditorView.baseTheme({

@@ -458,17 +458,30 @@ private struct ViewCommands: Commands {
     }
 }
 
+/// Zoom of the Attachment in front; without one, the text's size, kept in Settings as if
+/// changed there, so every window follows.
 private struct ZoomCommands: Commands {
     @FocusedValue(\.zoom) private var zoom
 
     var body: some Commands {
         CommandGroup(after: .toolbar) {
-            Button("Zoom In") { zoom?.zoomIn() }
+            Button("Zoom In") { if let zoom { zoom.zoomIn() } else { stepTextSize(by: 1) } }
                 .keyboardShortcut("+")
-                .disabled(zoom == nil)
-            Button("Zoom Out") { zoom?.zoomOut() }
+            Button("Zoom Out") { if let zoom { zoom.zoomOut() } else { stepTextSize(by: -1) } }
                 .keyboardShortcut("-")
-                .disabled(zoom == nil)
+            Button("Actual Size") { setTextSize(EditorSettings.standard.size) }
+                .keyboardShortcut("0")
+                .disabled(zoom != nil)
         }
+    }
+
+    private func stepTextSize(by step: Double) {
+        setTextSize(AppSettings.shared.editor.size + step)
+    }
+
+    @MainActor private func setTextSize(_ size: Double) {
+        let settings = AppSettings.shared
+        // Kept within the bounds by EditorSettings; past them nothing changes.
+        settings.editor = settings.editor.with(size: size)
     }
 }

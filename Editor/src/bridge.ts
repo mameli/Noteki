@@ -87,6 +87,8 @@ export type EditorMessage =
   | { type: "changed"; noteID: string; revision: number; text: string }
   /** The user clicked a Wikilink: what is between its brackets; with ⌘, for a new Tab. */
   | { type: "followLink"; inner: string; newTab: boolean }
+  /** The user clicked a link to a web address (http, https, mailto): for the browser. */
+  | { type: "openURL"; url: string }
   /** The Note's links, what is between their brackets: which lead nowhere? */
   | { type: "checkLinks"; noteID: string; inners: string[] }
   /** The user typed `[[`: which Notes can the link lead to? Answered by `linkCompletions`. */

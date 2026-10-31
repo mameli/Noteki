@@ -73,31 +73,49 @@ export function innerOf(node: SyntaxNodeRef, doc: Text): string | null {
   }
 }
 
+/** A web address: what a Markdown link or an Autolink may open in the browser. */
+function webAddress(address: string): string | null {
+  if (address.startsWith("<") && address.endsWith(">")) address = address.slice(1, -1);
+  return /^(https?:\/\/|mailto:)/i.test(address) ? address : null;
+}
+
 /**
- * The Wikilink or Embed at a document position, with what is between its brackets: what a click
- * follows. Not a Markdown image: its text is no link to follow.
+ * The link at a document position, and what a click follows: what is between a Wikilink's or an
+ * Embed's brackets, or the web address of a Markdown link or an Autolink. Not a Markdown image:
+ * its text is no link to follow.
  */
-function linkAt(view: EditorView, pos: number): { from: number; to: number; inner: string; node: SyntaxNode } | null {
+function linkAt(view: EditorView, pos: number): { from: number; to: number; inner?: string; url?: string; node: SyntaxNode } | null {
   for (let node: SyntaxNode | null = syntaxTree(view.state).resolveInner(pos, 1); node; node = node.parent) {
-    if (node.name !== "Wikilink" && node.name !== "Embed") continue;
-    const inner = innerOf(node, view.state.doc);
-    if (inner !== null) return { from: node.from, to: node.to, inner, node };
+    if (node.name === "Wikilink" || node.name === "Embed") {
+      const inner = innerOf(node, view.state.doc);
+      if (inner !== null) return { from: node.from, to: node.to, inner, node };
+    }
+    if (node.name === "Link" || node.name === "Autolink" || node.name === "URL") {
+      const url = node.name === "URL" ? node : node.getChild("URL");
+      if (!url) continue;
+      const address = webAddress(view.state.sliceDoc(url.from, url.to));
+      if (address) return { from: node.from, to: node.to, url: address, node };
+    }
   }
   return null;
 }
 
 /**
- * A click on a Wikilink or Embed follows it (`follows` may say not), unless the cursor was already in that link: then
- * the click places the cursor, to edit it, as in Obsidian's live preview. Followed on release
- * and only without a drag, so a selection can start on a link; not with Control (the context
- * menu) nor while an input method is composing.
+ * A ⌘-click on a link follows it (`follows` may say not); a plain click places the cursor, to
+ * edit the link. Followed on release and only without a drag; not with Control (the context menu)
+ * nor while an input method is composing. A Wikilink goes to `follow`, with ⌥ too for a new Tab;
+ * a web address to `open`.
  */
-export function followWikilinks(follow: (inner: string, newTab: boolean) => void, follows: (state: EditorState, node: SyntaxNode) => boolean = () => true) {
-  let pressed: { inner: string; x: number; y: number } | null = null;
+export function followWikilinks(
+  follow: (inner: string, newTab: boolean) => void,
+  follows: (state: EditorState, node: SyntaxNode) => boolean = () => true,
+  open: (url: string) => void = () => {},
+) {
+  let pressed: { inner?: string; url?: string; x: number; y: number } | null = null;
   return EditorView.domEventHandlers({
     mousedown(event, view) {
       pressed = null;
-      if (event.button !== 0 || event.shiftKey || event.altKey || event.ctrlKey || view.composing) return false;
+      if (event.button !== 0 || !event.metaKey || event.shiftKey || event.ctrlKey || view.composing) return false;
       // Only over the text itself: not beside it, where the nearest position would be a link.
       const pos = view.posAtCoords({ x: event.clientX, y: event.clientY }, false);
       const line = view.state.doc.lineAt(pos);
@@ -107,19 +125,18 @@ export function followWikilinks(follow: (inner: string, newTab: boolean) => void
       const found = linkAt(view, pos);
       // An image drawn under its line has its source hidden: a click there places the cursor.
       if (!found || !follows(view.state, found.node)) return false;
-      const head = view.state.selection.main.head;
-      if (head >= found.from && head <= found.to && view.hasFocus) return false;
-      pressed = { inner: found.inner, x: event.clientX, y: event.clientY };
-      return false;
+      pressed = { inner: found.inner, url: found.url, x: event.clientX, y: event.clientY };
+      // The cursor stays where it was.
+      return true;
     },
     click(event, view) {
       const target = pressed;
       pressed = null;
       if (!target || event.detail > 1 || view.composing) return false;
       if (Math.abs(event.clientX - target.x) > 4 || Math.abs(event.clientY - target.y) > 4) return false;
-      if (!view.state.selection.main.empty) return false;
-      // ⌘-click: in a new Tab.
-      follow(target.inner, event.metaKey);
+      if (target.url) open(target.url);
+      // ⌥⌘-click: in a new Tab.
+      else if (target.inner !== undefined) follow(target.inner, event.altKey);
       return true;
     },
   });

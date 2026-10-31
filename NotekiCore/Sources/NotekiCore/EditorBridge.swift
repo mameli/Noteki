@@ -174,6 +174,8 @@ public enum EditorMessage: Decodable, Equatable, Sendable {
     case changed(noteID: String, revision: Int, text: String)
     /// The user clicked a Wikilink: what is between its brackets; with ⌘, for a new Tab.
     case followLink(inner: String, newTab: Bool)
+    /// The user clicked a link to a web address (http, https, mailto).
+    case openURL(String)
     /// The Note's links, what is between their brackets: which lead nowhere?
     case checkLinks(noteID: String, inners: [String])
     /// The user typed `[[`: which Notes can the link lead to? Answered by `linkCompletions`.
@@ -189,10 +191,10 @@ public enum EditorMessage: Decodable, Equatable, Sendable {
     /// The user is adding a Tag: which Tags does the Vault have? Answered by `tagCompletions`.
     case completeTag(requestID: Int)
 
-    public static let types = ["ready", "changed", "followLink", "checkLinks", "completeLink", "readFrontmatter", "addTag", "removeTag", "completeTag"]
+    public static let types = ["ready", "changed", "followLink", "openURL", "checkLinks", "completeLink", "readFrontmatter", "addTag", "removeTag", "completeTag"]
 
     private enum CodingKeys: String, CodingKey {
-        case type, noteID, revision, text, inner, inners, requestID, tag, newTab
+        case type, noteID, revision, text, inner, inners, requestID, tag, newTab, url
     }
 
     public init(json: String) throws {
@@ -216,6 +218,8 @@ public enum EditorMessage: Decodable, Equatable, Sendable {
                 inner: try container.decode(String.self, forKey: .inner),
                 newTab: try container.decodeIfPresent(Bool.self, forKey: .newTab) ?? false
             )
+        case "openURL":
+            self = .openURL(try container.decode(String.self, forKey: .url))
         case "checkLinks":
             self = .checkLinks(
                 noteID: try container.decode(String.self, forKey: .noteID),

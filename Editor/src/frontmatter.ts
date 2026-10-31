@@ -1,6 +1,6 @@
 import { ensureSyntaxTree, syntaxTree } from "@codemirror/language";
 import { type EditorState, type Range, StateEffect, StateField } from "@codemirror/state";
-import { Decoration, EditorView, WidgetType } from "@codemirror/view";
+import { Decoration, type DecorationSet, EditorView, WidgetType } from "@codemirror/view";
 import { styleTags, tags } from "@lezer/highlight";
 import type { MarkdownConfig } from "@lezer/markdown";
 import type { SyntaxNode } from "@lezer/common";
@@ -248,9 +248,81 @@ export function drawFrontmatter(state: EditorState, node: SyntaxNode, layout: Re
   return ranges;
 }
 
+/**
+ * A list's items side by side, wrapping as the line allows, in place of their lines while the
+ * cursor is out of the Frontmatter (`participants:` and forty names below it). The one place the
+ * Properties change height on entering: a long list one per line is too tall to read.
+ */
+class ListWidget extends WidgetType {
+  constructor(
+    readonly items: string[],
+    readonly at: number,
+  ) {
+    super();
+  }
+
+  eq(other: ListWidget) {
+    return other.at === this.at && other.items.join("\n") === this.items.join("\n");
+  }
+
+  toDOM(view: EditorView) {
+    const list = document.createElement("span");
+    list.className = "cm-property-list";
+    for (const item of this.items) {
+      const chip = document.createElement("span");
+      chip.className = "cm-property-item";
+      chip.textContent = item;
+      list.append(chip);
+    }
+    // A click enters the YAML at the first item, written again one per line.
+    list.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+      view.dispatch({ selection: { anchor: this.at } });
+      view.focus();
+    });
+    return list;
+  }
+}
+
+function foldedListDecorations(state: EditorState): DecorationSet {
+  const node = frontmatterNode(state);
+  if (!node) return Decoration.none;
+  const entered = state.selection.ranges.some((range) => range.head >= node.from && range.head <= node.to);
+  const answer = state.field(frontmatterReading, false);
+  if (!frontmatterLayout(state, node, entered) || !answer?.reading || !("properties" in answer.reading)) return Decoration.none;
+  const ranges: Range<Decoration>[] = [];
+  for (const property of answer.reading.properties) {
+    // The Tags have chips of their own, with their ×.
+    if (property.key === "tags" || property.value.kind !== "list") continue;
+    const below = property.value.items.filter((item) => item.line > property.keySpan.line);
+    if (below.length === 0) continue;
+    const keyLine = state.doc.line(property.keySpan.line);
+    const lastLine = state.doc.line(below[below.length - 1].line);
+    const items = below.map((item) => {
+      const line = state.doc.line(item.line);
+      return state.sliceDoc(line.from + item.from, line.from + item.to);
+    });
+    const first = state.doc.line(below[0].line).from + below[0].from;
+    ranges.push(Decoration.replace({ widget: new ListWidget(items, first) }).range(keyLine.to, lastLine.to));
+  }
+  return Decoration.set(ranges, true);
+}
+
+/** Lists drawn side by side: a replacement across line breaks must come from a field. */
+export const foldedLists = StateField.define<DecorationSet>({
+  create: foldedListDecorations,
+  update(value, transaction) {
+    const answered = transaction.effects.some((effect) => effect.is(setFrontmatter));
+    return transaction.docChanged || transaction.selection || answered ? foldedListDecorations(transaction.state) : value;
+  },
+  provide: (field) => EditorView.decorations.from(field),
+});
+
 export const frontmatterTheme = EditorView.baseTheme({
   // Never wrapped, drawn or written: each line keeps one line's height (ADR 0008).
-  ".cm-frontmatter-line": { whiteSpace: "pre" },
+  // Smaller and tighter than the text, drawn or written alike, so nothing moves on entering: a
+  // list of one item per line takes less room.
+  ".cm-frontmatter-line": { whiteSpace: "pre", fontSize: "0.9em", lineHeight: "1.4" },
   ".cm-properties": { "--frontmatter-text": "var(--text)", backgroundColor: "var(--code-background)" },
   ".cm-properties-first": { borderTopLeftRadius: "6px", borderTopRightRadius: "6px" },
   ".cm-properties-last": { borderBottomLeftRadius: "6px", borderBottomRightRadius: "6px" },
@@ -267,10 +339,18 @@ export const frontmatterTheme = EditorView.baseTheme({
   ".cm-property-item": {
     maxWidth: "calc(100% - var(--key-width) - 1em)",
     backgroundColor: "var(--code-background)",
-    borderRadius: "10px",
-    padding: "0 0.5em",
-    marginRight: "0.3em",
+    borderRadius: "6px",
+    padding: "0 0.4em",
+    marginRight: "0.25em",
   },
+  ".cm-property-list": {
+    display: "inline-block",
+    verticalAlign: "top",
+    whiteSpace: "normal",
+    maxWidth: "calc(100% - var(--key-width) - 1em)",
+    cursor: "text",
+  },
+  ".cm-property-list .cm-property-item": { margin: "1px 0.25em 1px 0" },
   // CodeMirror's 6px before every line, and the keys' column.
   ".cm-line.cm-property-items": { paddingLeft: "calc(var(--key-width) + 6px)" },
   ".cm-frontmatter-unreadable": { textDecoration: "underline wavy var(--error)", textUnderlineOffset: "3px" },

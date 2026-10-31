@@ -547,6 +547,17 @@ final class AppModel {
         }
     }
 
+    /// Where a row of Files is on disk.
+    func fileURL(of path: String) -> URL? {
+        vault.map { $0.root.appending(path: path) }
+    }
+
+    /// Copy Path, Copy Relative Path and Copy Wikilink: the text on the pasteboard.
+    func copy(_ text: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+    }
+
     /// Move to Trash: never deleted for good. The Tabs that showed it close.
     func trash(_ path: String) {
         operate { vault in

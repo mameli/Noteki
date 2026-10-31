@@ -1,8 +1,9 @@
 import { defaultKeymap, history, historyKeymap, redo, selectAll, undo } from "@codemirror/commands";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
+import { createFindBar, findBarTheme } from "./findbar";
 import { findNext, findPrevious, openSearchPanel, search, searchKeymap } from "@codemirror/search";
 import { Compartment, EditorState, type StateEffect, Transaction } from "@codemirror/state";
-import { EditorView, keymap } from "@codemirror/view";
+import { drawSelection, EditorView, keymap } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 import { type EditorCommand, type EditorMessage, send } from "./bridge";
 import { linkCompletion, receiveLinkCompletions } from "./completion";
@@ -56,7 +57,6 @@ const noteTheme = EditorView.theme({
     fontSize: "13px",
   },
   ".cm-panels-top": { borderBottom: "1px solid var(--separator)" },
-  ".cm-search input, .cm-search button": { fontSize: "13px" },
 });
 
 /** The system's spelling, autocorrection and text replacements, as in any Mac text field. */
@@ -177,6 +177,7 @@ function initialState(text: string, editable: boolean) {
       followWikilinks(
         (inner, newTab) => send({ type: "followLink", inner, newTab }),
         (state, node) => !(node.name === "Embed" && embeddedFile(state, node)?.kind === "image"),
+        (url) => send({ type: "openURL", url }),
       ),
       unresolvedLinks,
       checkLinksAfterChanges,
@@ -187,7 +188,11 @@ function initialState(text: string, editable: boolean) {
       syntaxHighlighting(sourceHighlight),
       EditorView.lineWrapping,
       history(),
-      search({ top: true }),
+      search({ top: true, createPanel: createFindBar }),
+      findBarTheme,
+      // ⌘D adds the next occurrence of the selection: several cursors, drawn by CodeMirror.
+      EditorState.allowMultipleSelections.of(true),
+      drawSelection(),
       systemTextServices,
       keymap.of([...searchKeymap, ...defaultKeymap, ...historyKeymap]),
       EditorView.editable.of(editable),
