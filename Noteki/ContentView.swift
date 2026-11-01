@@ -16,6 +16,9 @@ struct ContentView: View {
     /// Shown again for ⌘⇧F: Search is in the sidebar.
     @State private var columns = NavigationSplitViewVisibility.automatic
 
+    /// The height of the window's toolbar, where the Tabs are drawn.
+    private let toolbarHeight: CGFloat = 52
+
     /// No right sidebar without a Vault.
     private var inspectorShown: Binding<Bool> {
         Binding(get: { model.vault != nil && model.isShowingSidebar }, set: { model.isShowingSidebar = $0 })
@@ -23,7 +26,7 @@ struct ContentView: View {
 
     var body: some View {
         NavigationSplitView(columnVisibility: $columns) {
-            LeftSidebar(model: model)
+            LeftSidebar(model: model, isShown: columns != .detailOnly)
                 .navigationSplitViewColumnWidth(min: 200, ideal: 260)
         } detail: {
             if model.vault == nil {
@@ -36,10 +39,18 @@ struct ContentView: View {
                 }
             } else {
                 VStack(spacing: 0) {
-                    if !model.tabs.all.isEmpty { TabBar(model: model) }
+                    // The Tabs in the toolbar's own band, not in a row under it.
+                    TabBar(model: model)
+                        .frame(height: toolbarHeight)
+                        // Clear of the window's buttons and the sidebar toggles while a sidebar is closed.
+                        .padding(.leading, columns == .detailOnly ? 140 : 0)
+                        .padding(.trailing, model.isShowingSidebar ? 0 : 56)
+                    Divider()
                     if AppSettings.shared.showsFormatBar, model.isShowingNote { FormatBar(model: model) }
                     NoteDetail(model: model)
                 }
+                .ignoresSafeArea(.container, edges: .top)
+                .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
             }
         }
         // On the split view, not the detail: the right sidebar is a column of the window's full

@@ -4,6 +4,8 @@ import SwiftUI
 /// The left sidebar: Files, Tags and Search, chosen with icons in its part of the toolbar.
 struct LeftSidebar: View {
     @Bindable var model: AppModel
+    /// False while collapsed: its icons would go to the toolbar's overflow menu.
+    var isShown = true
 
     var body: some View {
         ZStack {
@@ -20,12 +22,14 @@ struct LeftSidebar: View {
             }
         }
         .toolbar {
-            ToolbarItem {
-                PaneSwitcher(selection: $model.leftPane, panes: [
-                    .init(.files, "Files (⌘1)", "folder"),
-                    .init(.tags, "Tags (⌘2)", "number"),
-                    .init(.search, "Search (⌘3)", "magnifyingglass"),
-                ])
+            if isShown {
+                ToolbarItem {
+                    PaneSwitcher(selection: $model.leftPane, panes: [
+                        .init(.files, "Files (⌘1)", "folder"),
+                        .init(.tags, "Tags (⌘2)", "number"),
+                        .init(.search, "Search (⌘3)", "magnifyingglass"),
+                    ])
+                }
             }
         }
     }

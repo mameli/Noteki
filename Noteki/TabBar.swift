@@ -1,7 +1,7 @@
 import NotekiCore
 import SwiftUI
 
-/// Noteki's own tab bar, above the Note (ADR 0003): a click brings a Tab in front, its × closes it.
+/// Noteki's own tab bar, in the toolbar's band above the Note (ADR 0003): a click brings a Tab in front, its × closes it.
 struct TabBar: View {
     let model: AppModel
 
@@ -20,8 +20,8 @@ struct TabBar: View {
             }
         }
         .frame(height: 30)
-        .background(.bar)
-        .overlay(alignment: .bottom) { Divider() }
+        .padding(.horizontal, 8)
+        .frame(maxHeight: .infinity)
     }
 }
 
@@ -55,7 +55,7 @@ private struct TabButton: View {
         .font(.callout)
         .padding(.horizontal, 8)
         .frame(minWidth: 120, maxWidth: 220, maxHeight: .infinity)
-        .background(isInFront ? AnyShapeStyle(.background) : AnyShapeStyle(.clear))
+        .background(isInFront ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.clear), in: .rect(cornerRadius: 7))
         .contentShape(.rect)
         .onTapGesture(perform: select)
         .onHover { isHovered = $0 }
