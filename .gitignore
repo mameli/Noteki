@@ -1,6 +1,6 @@
 .DS_Store
 xcuserdata/
-build/
+build.noindex/
 DerivedData/
 node_modules/
 .build/

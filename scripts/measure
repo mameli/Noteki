@@ -31,8 +31,8 @@ notes=${NOTES:-5000}
 
 echo "Building the Release app…"
 xcodebuild -project "$root/Noteki.xcodeproj" -scheme Noteki -configuration Release \
-    -derivedDataPath "$root/build/Release" build >"$work/build.log" 2>&1 || { tail -20 "$work/build.log"; exit 1; }
-app="$root/build/Release/Build/Products/Release/Noteki.app"
+    -derivedDataPath "$root/build.noindex/Release" build >"$work/build.log" 2>&1 || { tail -20 "$work/build.log"; exit 1; }
+app="$root/build.noindex/Release/Build/Products/Release/Noteki.app"
 
 echo "Generating a Vault of $notes Notes…"
 python3 -I - "$vault" "$notes" <<'PY'

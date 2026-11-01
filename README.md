@@ -19,7 +19,7 @@ A light native Mac app to read and write the Markdown vault you keep with **Obsi
 Requires Xcode with Swift 6. The editor (CodeMirror 6, in `Editor/`) is committed already built in `Noteki/Resources/editor.html`, so the app builds without Node.
 
 ```sh
-xcodebuild -project Noteki.xcodeproj -scheme Noteki -configuration Release -derivedDataPath build/Release build
+xcodebuild -project Noteki.xcodeproj -scheme Noteki -configuration Release -derivedDataPath build.noindex/Release build
 ```
 
 To sign with your Developer ID, copy `Config/Local.xcconfig.example` to `Config/Local.xcconfig` and set your team. After changing the editor's sources, run `npm install && npm run build` in `Editor/`; `npm test` runs its tests.

@@ -6,7 +6,7 @@
 # Config/Base.xcconfig). The Release also carries a copy named Noteki.dmg, so
 # releases/latest/download/Noteki.dmg always gives the latest version. Adapted from Dimmela's script.
 #
-#   scripts/release.sh            build, sign, notarize into build/release/, then ask before publishing
+#   scripts/release.sh            build, sign, notarize into build.noindex/release/, then ask before publishing
 #   scripts/release.sh --dry-run  build, sign, notarize only
 #
 # Once per Mac: the certificate from Xcode → Settings → Accounts → Manage Certificates, and
@@ -17,9 +17,9 @@ cd "$(dirname "$0")/.."
 
 version=$(sed -n 's/^MARKETING_VERSION = //p' Config/Base.xcconfig)
 tag="v$version"
-app=build/release/DerivedData/Build/Products/Release/Noteki.app
-dmg="build/release/Noteki-$version.dmg"
-latest=build/release/Noteki.dmg
+app=build.noindex/release/DerivedData/Build/Products/Release/Noteki.app
+dmg="build.noindex/release/Noteki-$version.dmg"
+latest=build.noindex/release/Noteki.dmg
 identity="Developer ID Application"
 notary=${NOTEKI_NOTARY_PROFILE:-}
 # The credentials are the same Apple ID and team: a profile made for another app works too.
@@ -53,11 +53,11 @@ if [[ -z $notary ]]; then
     exit 1
 fi
 
-rm -rf build/release
+rm -rf build.noindex/release
 # No get-task-allow entitlement: it is only for debugging (and notarization refuses it).
 # A secure timestamp is required by notarization.
 xcodebuild -project Noteki.xcodeproj -scheme Noteki -configuration Release \
-    -derivedDataPath build/release/DerivedData \
+    -derivedDataPath build.noindex/release/DerivedData \
     CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="$identity" DEVELOPMENT_TEAM="$team" \
     CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO OTHER_CODE_SIGN_FLAGS=--timestamp \
     clean build | grep -E "error: |BUILD"
@@ -66,7 +66,7 @@ codesign --verify --strict --deep "$app"
 [[ $(codesign -dvv "$app" 2>&1) == *"Authority=$identity"* ]] || { echo "Not signed with the $identity certificate." >&2; exit 1; }
 
 # The DMG: the app and a link to Applications, to drag it there.
-staging=build/release/dmg
+staging=build.noindex/release/dmg
 mkdir -p "$staging"
 ditto "$app" "$staging/Noteki.app"
 ln -s /Applications "$staging/Applications"
@@ -75,10 +75,10 @@ codesign --sign "$identity" --timestamp "$dmg"
 
 # The DMG is notarized and its ticket stapled, so Gatekeeper accepts it offline too; the app
 # inside is covered by the same ticket.
-xcrun notarytool submit "$dmg" --keychain-profile "$notary" --wait --output-format json > build/release/notary.json || true
-if [[ $(plutil -extract status raw -o - build/release/notary.json 2>/dev/null) != Accepted ]]; then
-    cat build/release/notary.json >&2
-    id=$(plutil -extract id raw -o - build/release/notary.json 2>/dev/null)
+xcrun notarytool submit "$dmg" --keychain-profile "$notary" --wait --output-format json > build.noindex/release/notary.json || true
+if [[ $(plutil -extract status raw -o - build.noindex/release/notary.json 2>/dev/null) != Accepted ]]; then
+    cat build.noindex/release/notary.json >&2
+    id=$(plutil -extract id raw -o - build.noindex/release/notary.json 2>/dev/null)
     [[ -n $id ]] && xcrun notarytool log "$id" --keychain-profile "$notary" >&2
     echo "Notarization failed." >&2
     exit 1
