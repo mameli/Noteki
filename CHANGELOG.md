@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.1.0 — 1 November 2026
+
+The first release, as a notarized DMG on GitHub (`scripts/release.sh`).
+
+Since Milestone 1: the Tags, Search and Outline panes, Backlinks, Tabs and windows restored at launch, Wikilink completion, Properties, Callouts, tables and tasks drawn in place, the Format menu and bar, the find bar, text zoom, and a quieter window: icons for both sidebars and the Tabs in the toolbar (tickets 11–43).
 
 Milestone 1, read and write (tickets 01–10): open a Vault, Files with Excluded folders, images and PDFs, writing with autosave, External changes reloaded or merged, Conflicts, Followed renames and Deleted Notes, opening files and folders from the Finder and Takku, Loose files.
 
