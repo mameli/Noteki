@@ -14,7 +14,7 @@ import { broughtBack, changeTo, fromDisk } from "./states";
 import { type TagEditing, tagEditing } from "./tagchips";
 import { highlightTag } from "./highlight";
 import { insertion } from "./insert";
-import { appliedSettings, applySettings, textServices } from "./settings";
+import { applySettings } from "./settings";
 import { noteLanguage } from "./language";
 import { livePreview } from "./livepreview";
 import { followWikilinks, linkInners, markUnresolved, unresolvedLinks } from "./wikilink";
@@ -68,8 +68,8 @@ const noteTheme = EditorView.theme({
 });
 
 /** The system's spelling, autocorrection and text replacements, as in any Mac text field. */
-// As Settings say, read again with every update: new settings dispatch an empty one.
-const systemTextServices = EditorView.contentAttributes.of(() => textServices(appliedSettings()));
+// The Mac's spelling, on or off as WebKit's own settings say (the Edit menu and Settings).
+const systemTextServices = EditorView.contentAttributes.of({ spellcheck: "true", autocorrect: "on" });
 
 /** How often, at most, the text is reported while the user types. The app saves after it. */
 const reportInterval = 250;
@@ -356,7 +356,6 @@ window.noteki = {
         return null;
       case "settings":
         applySettings(command.settings);
-        view.dispatch({});
         // Lines change height with the font: CodeMirror measures them again, and once more when
         // the new font has loaded, if it was not yet.
         view.requestMeasure();

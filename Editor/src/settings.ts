@@ -1,8 +1,8 @@
 /**
  * How the text is drawn, chosen in the app's Settings: a font family and the code's (none for the
  * system's), the size in points, the longest a line is, if limited, in characters of half an em (a
- * letter's width in text on average; CSS's `ch` is a digit's, a third wider), and the Mac's
- * spelling check and correction.
+ * letter's width in text on average; CSS's `ch` is a digit's, a third wider). Spelling is
+ * WebKit's own, set by the app.
  */
 export interface EditorSettings {
   /** The theme's name in editor.css, `data-theme` on the page. */
@@ -12,8 +12,6 @@ export interface EditorSettings {
   size: number;
   lineLength: number;
   limitsLineLength: boolean;
-  checksSpelling: boolean;
-  correctsSpelling: boolean;
 }
 
 /** A family's name in quotes it cannot break out of, before the fallback. */
@@ -31,27 +29,11 @@ export function settingsVariables(settings: EditorSettings): Record<string, stri
   };
 }
 
-/** The attributes the text gets for the Mac's spelling: checked and corrected unless told. */
-export function textServices(settings: EditorSettings | null): Record<string, string> {
-  return {
-    spellcheck: String(settings?.checksSpelling ?? true),
-    autocorrect: (settings?.correctsSpelling ?? true) ? "on" : "off",
-  };
-}
-
-let applied: EditorSettings | null = null;
-
 /** Sent on the window when the theme may have changed. */
 export const coloursChanged = "noteki-colours";
 
-/** The settings the page has, if the app gave them. */
-export function appliedSettings(): EditorSettings | null {
-  return applied;
-}
-
 /** Sets them on the page: the app gives its settings before the page loads, and again when they change. */
 export function applySettings(settings: EditorSettings) {
-  applied = settings;
   document.documentElement.dataset.theme = settings.theme;
   for (const [name, value] of Object.entries(settingsVariables(settings))) {
     document.documentElement.style.setProperty(name, value);

@@ -10,6 +10,9 @@ extension Theme {
     /// Its accent outside the page: the Files icons, the selected pane, the Quick switcher's row.
     var accentColor: NSColor { Self.dynamic(accent) }
 
+    /// Its panels: both sidebars and the Quick switcher, solid, not the system's translucent ones.
+    var panelColor: NSColor { Self.dynamic(panel) }
+
     private static func dynamic(_ hex: (light: String, dark: String)) -> NSColor {
         let (light, dark) = (NSColor(hex: hex.light), NSColor(hex: hex.dark))
         return NSColor(name: nil) { $0.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? dark : light }
@@ -22,9 +25,23 @@ extension Color {
         Color(nsColor: AppSettings.shared.editor.theme.backgroundColor)
     }
 
+    /// The theme's panels, as Settings say now.
+    @MainActor static var themePanel: Color {
+        Color(nsColor: AppSettings.shared.editor.theme.panelColor)
+    }
+
     /// The theme's accent, as Settings say now.
     @MainActor static var themeAccent: Color {
         Color(nsColor: AppSettings.shared.editor.theme.accentColor)
+    }
+}
+
+extension View {
+    /// A sidebar in the theme's panel colour, up through the toolbar: its lists drawn on it, with
+    /// no background of their own.
+    func themePanel() -> some View {
+        scrollContentBackground(.hidden)
+            .background(Color.themePanel.ignoresSafeArea())
     }
 }
 

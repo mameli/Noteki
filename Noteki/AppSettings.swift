@@ -21,8 +21,6 @@ final class AppSettings {
     private static let monoFontKey = "codeFont"
     private static let lineLengthKey = "lineLength"
     private static let limitsLineLengthKey = "limitsLineLength"
-    private static let checksSpellingKey = "checksSpelling"
-    private static let correctsSpellingKey = "correctsSpelling"
     /// In points, until 0.1.0: read once, as a length.
     private static let lineWidthKey = "lineWidth"
     private static let excludedFoldersKey = "excludedFolders"
@@ -71,12 +69,6 @@ final class AppSettings {
             defaults.set(editor.font, forKey: Self.fontKey)
             defaults.set(editor.monoFont, forKey: Self.monoFontKey)
             defaults.set(editor.limitsLineLength, forKey: Self.limitsLineLengthKey)
-            defaults.set(editor.checksSpelling, forKey: Self.checksSpellingKey)
-            defaults.set(editor.correctsSpelling, forKey: Self.correctsSpellingKey)
-            // WebKit's own, read by every web view: the page's attributes alone may not stop the Mac
-            // correcting as typed.
-            defaults.set(editor.checksSpelling, forKey: "WebContinuousSpellCheckingEnabled")
-            defaults.set(editor.correctsSpelling, forKey: "WebAutomaticSpellingCorrectionEnabled")
             defaults.set(editor.size, forKey: Self.sizeKey)
             defaults.set(editor.lineLength, forKey: Self.lineLengthKey)
             defaults.removeObject(forKey: Self.lineWidthKey)
@@ -95,9 +87,7 @@ final class AppSettings {
             monoFont: defaults.string(forKey: Self.monoFontKey),
             size: size,
             lineLength: defaults.object(forKey: Self.lineLengthKey) as? Double ?? oldWidth ?? standard.lineLength,
-            limitsLineLength: defaults.object(forKey: Self.limitsLineLengthKey) as? Bool ?? standard.limitsLineLength,
-            checksSpelling: defaults.object(forKey: Self.checksSpellingKey) as? Bool ?? standard.checksSpelling,
-            correctsSpelling: defaults.object(forKey: Self.correctsSpellingKey) as? Bool ?? standard.correctsSpelling
+            limitsLineLength: defaults.object(forKey: Self.limitsLineLengthKey) as? Bool ?? standard.limitsLineLength
         )
         dailyNote = DailyNote(
             folder: defaults.string(forKey: Self.dailyFolderKey) ?? DailyNote.standard.folder,

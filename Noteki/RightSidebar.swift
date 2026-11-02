@@ -14,6 +14,7 @@ struct RightSidebar: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .themePanel()
     }
 }
 

@@ -2,25 +2,76 @@ import AppKit
 import NotekiCore
 import SwiftUI
 
-/// Noteki → Settings… (⌘,): the size of the sidebars and Tabs, the editor's text, and the folders the Vault leaves out.
+/// Noteki → Settings… (⌘,): one page, as System Settings groups it. How the app looks, the
+/// Note's text, writing, and the Vault: the folders it leaves out and where the Daily note is.
 struct SettingsView: View {
     /// The Vault of the first window: its Excluded folders are shown.
     let model: AppModel
 
     var body: some View {
-        TabView {
-            EditorSettingsView()
-                .tabItem { Label("Editor", systemImage: "textformat") }
-            ExcludedFoldersView(model: model)
-                .tabItem { Label("Excluded Folders", systemImage: "folder.badge.minus") }
-            DailyNoteSettingsView()
-                .tabItem { Label("Daily Note", systemImage: "calendar") }
+        Form {
+            Header()
+            AppearanceSection()
+            TextSection()
+            WritingSection()
+            VaultSection(model: model)
         }
-        .frame(width: 460)
+        .formStyle(.grouped)
+        .frame(minWidth: 460, idealWidth: 500, minHeight: 400, idealHeight: 540)
     }
 }
 
-private struct EditorSettingsView: View {
+/// The app's icon and name over the page, where System Settings shows what a pane is.
+private struct Header: View {
+    var body: some View {
+        Section {
+            HStack(spacing: 12) {
+                Image(nsImage: NSApp.applicationIconImage)
+                    .resizable()
+                    .frame(width: 48, height: 48)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Noteki").font(.title2.weight(.semibold))
+                    if let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String {
+                        Text("Version \(version)").foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .padding(.vertical, 4)
+        }
+    }
+}
+
+/// A binding to one of the editor's settings, written back as a whole.
+@MainActor
+private func editor<Value>(_ get: @escaping (EditorSettings) -> Value, set: @escaping (EditorSettings, Value) -> EditorSettings) -> Binding<Value> {
+    Binding(
+        get: { get(AppSettings.shared.editor) },
+        set: { AppSettings.shared.editor = set(AppSettings.shared.editor, $0) }
+    )
+}
+
+private struct AppearanceSection: View {
+    @Bindable private var settings = AppSettings.shared
+
+    var body: some View {
+        Section("Appearance") {
+            Picker("Theme", selection: editor(\.theme) { $0.with(theme: $1) }) {
+                ForEach(Theme.allCases, id: \.self) { Text($0.name).tag($0) }
+            }
+            Picker("Light or dark", selection: $settings.appearance) {
+                ForEach(Appearance.allCases) { Text($0.name).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            Picker("Interface size", selection: $settings.interfaceSize) {
+                ForEach(InterfaceSize.allCases) { Text($0.name).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .help("The sidebars, the Tabs and the panes; the Note's text has its own size.")
+        }
+    }
+}
+
+private struct TextSection: View {
     @Bindable private var settings = AppSettings.shared
     /// The families installed, read once.
     @State private var families = NSFontManager.shared.availableFontFamilies
@@ -30,144 +81,126 @@ private struct EditorSettingsView: View {
     } ?? []
 
     var body: some View {
-        Form {
-            Picker("Theme:", selection: Binding(
-                get: { settings.editor.theme },
-                set: { settings.editor = settings.editor.with(theme: $0) }
-            )) {
-                ForEach(Theme.allCases, id: \.self) { Text($0.name).tag($0) }
-            }
-            Picker("Appearance:", selection: $settings.appearance) {
-                ForEach(Appearance.allCases) { Text($0.name).tag($0) }
-            }
-            .pickerStyle(.segmented)
-            Picker("Interface size:", selection: $settings.interfaceSize) {
-                ForEach(InterfaceSize.allCases) { Text($0.name).tag($0) }
-            }
-            .pickerStyle(.segmented)
-            .help("The sidebars, the Tabs and the panes; the Note's text has its own size below.")
+        Section {
             // In the menu's own font: a thousand families each in its own would load them all.
-            Picker("Font:", selection: Binding(
-                get: { settings.editor.font ?? "" },
-                set: { settings.editor = settings.editor.with(font: .some($0)) }
-            )) {
-                Text("System Font").tag("")
+            Picker("Font", selection: editor { $0.font ?? "" } set: { $0.with(font: .some($1)) }) {
+                Text("System").tag("")
                 Divider()
                 ForEach(families, id: \.self) { Text($0).tag($0) }
             }
-            Picker("Code font:", selection: Binding(
-                get: { settings.editor.monoFont ?? "" },
-                set: { settings.editor = settings.editor.with(monoFont: .some($0)) }
-            )) {
+            Picker("Code font", selection: editor { $0.monoFont ?? "" } set: { $0.with(monoFont: .some($1)) }) {
                 Text("System Monospaced").tag("")
                 Divider()
                 ForEach(monoFamilies, id: \.self) { Text($0).tag($0) }
             }
-            Stepper(value: Binding(
-                get: { settings.editor.size },
-                set: { settings.editor = settings.editor.with(size: $0) }
-            ), in: EditorSettings.sizes) {
-                Text("Size: \(Int(settings.editor.size)) pt")
-            }
-            Toggle("Limit the line length", isOn: Binding(
-                get: { settings.editor.limitsLineLength },
-                set: { settings.editor = settings.editor.with(limitsLineLength: $0) }
-            ))
-            LabeledContent("Line length:") {
+            LabeledContent("Size") {
                 HStack {
-                    Slider(value: Binding(
-                        get: { settings.editor.lineLength },
-                        set: { settings.editor = settings.editor.with(lineLength: $0) }
-                    ), in: EditorSettings.lineLengths, step: 5)
-                    Text("\(Int(settings.editor.lineLength)) characters")
+                    Slider(value: editor(\.size) { $0.with(size: $1) }, in: EditorSettings.sizes, step: 1)
+                        .labelsHidden()
+                    Text("\(Int(settings.editor.size)) pt")
                         .monospacedDigit()
-                        .frame(width: 100, alignment: .trailing)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 96, alignment: .trailing)
                 }
             }
-            .disabled(!settings.editor.limitsLineLength)
-            Toggle("Check spelling while typing", isOn: Binding(
-                get: { settings.editor.checksSpelling },
-                set: { settings.editor = settings.editor.with(checksSpelling: $0) }
-            ))
-            Toggle("Correct spelling automatically", isOn: Binding(
-                get: { settings.editor.correctsSpelling },
-                set: { settings.editor = settings.editor.with(correctsSpelling: $0) }
-            ))
-            Toggle("Show the Format bar over the Note", isOn: $settings.showsFormatBar)
-            Button("Restore Defaults") { settings.editor = .standard }
-                .disabled(settings.editor == .standard)
+            Toggle("Limit the line length", isOn: editor(\.limitsLineLength) { $0.with(limitsLineLength: $1) })
+            if settings.editor.limitsLineLength {
+                LabeledContent("Line length") {
+                    HStack {
+                        Slider(value: editor(\.lineLength) { $0.with(lineLength: $1) }, in: EditorSettings.lineLengths, step: 5)
+                            .labelsHidden()
+                        Text("\(Int(settings.editor.lineLength)) characters")
+                            .monospacedDigit()
+                            .foregroundStyle(.secondary)
+                            .frame(width: 96, alignment: .trailing)
+                    }
+                }
+            }
+        } header: {
+            HStack {
+                Text("Text")
+                Spacer()
+                // The Note's text as it was at first: theme, fonts, size, lines and spelling.
+                Button("Restore Defaults") { settings.editor = .standard }
+                    .buttonStyle(.link)
+                    .font(.callout)
+                    .disabled(settings.editor == .standard)
+            }
         }
-        .padding(20)
     }
 }
 
-/// Where ⌘⇧D finds today's Daily note: a folder and a date format as Obsidian writes them.
-private struct DailyNoteSettingsView: View {
+private struct WritingSection: View {
     @Bindable private var settings = AppSettings.shared
-    @State private var folder = AppSettings.shared.dailyNote.folder
-    @State private var format = AppSettings.shared.dailyNote.format
 
     var body: some View {
-        Form {
-            TextField("Folder:", text: $folder, prompt: Text("The Vault's root"))
-            TextField("Date format:", text: $format, prompt: Text(DailyNote.standard.format))
-            LabeledContent("Today:") {
-                Text(DailyNote(folder: folder, format: format).note(on: .now).path)
-                    .foregroundStyle(.secondary)
-                    .textSelection(.enabled)
-            }
-            Text("The format is Obsidian's, moment.js's: YYYY, MM, DD, dddd, MMMM, WW…; text in [brackets] stays as written, a / makes folders. Names of days and months are English.")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+        Section("Writing") {
+            SpellingToggles(checks: "Check spelling while typing", corrects: "Correct spelling automatically")
+            Toggle("Show the Format bar over the Note", isOn: $settings.showsFormatBar)
         }
-        .padding(20)
-        .onChange(of: folder) { save() }
-        .onChange(of: format) { save() }
-    }
-
-    private func save() {
-        settings.dailyNote = DailyNote(folder: folder, format: format)
     }
 }
 
-/// The folders of the Vault the user leaves out, as the hidden ones are: not in Files, not
-/// indexed, not searched.
-private struct ExcludedFoldersView: View {
+/// The folders of the Vault the user leaves out, as the hidden ones are (not in Files, not
+/// indexed, not searched), and where ⌘⇧D finds today's Daily note.
+private struct VaultSection: View {
     let model: AppModel
     @State private var folders: [String] = []
-    @State private var selection: String?
+    @State private var dailyFolder = AppSettings.shared.dailyNote.folder
+    @State private var dailyFormat = AppSettings.shared.dailyNote.format
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        Section {
             if let vault = model.vault {
-                Text("Folders of “\(vault.root.lastPathComponent)” left out of Files, links, Tags and Search, as hidden folders are.")
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                List(folders, id: \.self, selection: $selection) { folder in
-                    Label(folder, systemImage: "folder")
-                }
-                .frame(height: 160)
-                HStack(spacing: 0) {
-                    Button("Add Folder", systemImage: "plus") { add(in: vault) }
-                    Button("Remove Folder", systemImage: "minus") {
-                        if let selection { save(folders.filter { $0 != selection }, of: vault) }
+                ForEach(folders, id: \.self) { folder in
+                    HStack {
+                        Label(folder, systemImage: "folder")
+                        Spacer()
+                        Button("Include “\(folder)” Again", systemImage: "minus.circle.fill") {
+                            save(folders.filter { $0 != folder }, of: vault)
+                        }
+                        .labelStyle(.iconOnly)
+                        .buttonStyle(.borderless)
+                        .foregroundStyle(.secondary)
                     }
-                    .disabled(selection == nil)
                 }
-                .labelStyle(.iconOnly)
-                .buttonStyle(.borderless)
+                Button("Exclude a Folder…") { add(in: vault) }
             } else {
                 Text("Open a Vault to choose the folders it leaves out.")
                     .foregroundStyle(.secondary)
             }
+        } header: {
+            Text("Excluded folders")
+        } footer: {
+            Text("Left out of Files, links, Tags and Search, as hidden folders are.")
+                .foregroundStyle(.secondary)
         }
-        .padding(20)
         // Another Vault chosen while Settings is open: its own folders.
         .onChange(of: model.vault?.root, initial: true) { _, root in
             folders = root.map { AppSettings.shared.excludedFolders(of: $0) } ?? []
-            selection = nil
         }
+
+        Section {
+            TextField("Folder", text: $dailyFolder, prompt: Text("The Vault's root"))
+            TextField("Date format", text: $dailyFormat, prompt: Text(DailyNote.standard.format))
+            LabeledContent("Today") {
+                Text(DailyNote(folder: dailyFolder, format: dailyFormat).note(on: .now).path)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+            }
+        } header: {
+            Text("Daily note (⌘⇧D)")
+        } footer: {
+            Text("Obsidian's format, moment.js's: YYYY, MM, DD, dddd, MMMM, WW…; text in [brackets] stays as written, a / makes folders. Names of days and months are English.")
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .onChange(of: dailyFolder) { saveDailyNote() }
+        .onChange(of: dailyFormat) { saveDailyNote() }
+    }
+
+    private func saveDailyNote() {
+        AppSettings.shared.dailyNote = DailyNote(folder: dailyFolder, format: dailyFormat)
     }
 
     /// A folder chosen inside the Vault; one outside it, or the Vault itself, is refused.
@@ -194,7 +227,6 @@ private struct ExcludedFoldersView: View {
 
     private func save(_ new: [String], of vault: Vault) {
         folders = new
-        selection = nil
         AppSettings.shared.setExcludedFolders(new, of: vault.root)
     }
 }

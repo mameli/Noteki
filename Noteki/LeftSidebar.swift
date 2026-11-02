@@ -21,6 +21,7 @@ struct LeftSidebar: View {
             case .search: SearchPane(model: model)
             }
         }
+        .themePanel()
         .toolbar {
             if isShown {
                 ToolbarItem {
@@ -52,13 +53,13 @@ struct PaneSwitcher<Pane: Hashable>: View {
     let panes: [Item]
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 6) {
             ForEach(panes, id: \.pane) { item in
                 Button { selection = item.pane } label: {
                     Image(systemName: item.symbol)
                         .symbolVariant(selection == item.pane ? .fill : .none)
                         .foregroundStyle(selection == item.pane ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
-                        .frame(width: 28, height: 22)
+                        .frame(width: 34, height: 28)
                         .overlay(alignment: .topTrailing) {
                             if let badge = item.badge, badge > 0 {
                                 Text("\(badge)")
@@ -75,6 +76,7 @@ struct PaneSwitcher<Pane: Hashable>: View {
                 .accessibilityAddTraits(selection == item.pane ? .isSelected : [])
             }
         }
-        .imageScale(.medium)
+        .imageScale(.large)
+        .padding(.horizontal, 2)
     }
 }

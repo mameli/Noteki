@@ -36,6 +36,7 @@ struct NotekiApp: App {
             }
             EditCommands(main: model, showMainWindow: { appDelegate.showMainWindow() })
             ZoomCommands()
+            HelpCommands()
         }
         WindowGroup("Noteki", id: "vault", for: UUID.self) { $id in
             if let id, let model = appDelegate.windows.models[id] {
@@ -47,6 +48,14 @@ struct NotekiApp: App {
         Settings {
             SettingsView(model: model)
         }
+        // Nearly square at first; taller to see more without scrolling.
+        .defaultSize(width: 500, height: 540)
+        .windowResizability(.contentMinSize)
+        Window("Keyboard Shortcuts", id: ShortcutsView.windowID) {
+            ShortcutsView()
+        }
+        .windowResizability(.contentSize)
+        .restorationBehavior(.disabled)
     }
 }
 
@@ -421,34 +430,55 @@ private struct EditCommands: Commands {
     }
 }
 
-/// The editor's spelling settings. WebKit keeps them in the app's preferences, which is where
-/// the checkmarks read them; the toggles go to the editor even when the sidebar has the focus.
+/// The editor's spelling settings, the same as in Settings.
 private struct SpellingMenu: View {
     let editor: EditorWebView
+
+    var body: some View {
+        Menu("Spelling and Grammar") {
+            SpellingToggles(editor: editor, checks: "Check Spelling While Typing", corrects: "Correct Spelling Automatically")
+        }
+    }
+}
+
+/// WebKit's own spelling settings, one for the whole app: it keeps them in the app's preferences,
+/// which is where the checkmarks read them, and a toggle sent to any editor's web view changes
+/// them for all, at once. The Edit menu and Settings both show them.
+struct SpellingToggles: View {
+    /// The editor to toggle; any window's when nil (Settings).
+    var editor: EditorWebView?
+    let checks: String
+    let corrects: String
     @AppStorage("WebContinuousSpellCheckingEnabled") private var checksSpelling = true
     @AppStorage("WebAutomaticSpellingCorrectionEnabled") private var correctsSpelling = true
 
     var body: some View {
-        Menu("Spelling and Grammar") {
-            Toggle("Check Spelling While Typing", isOn: Binding(
-                get: { checksSpelling },
-                set: { isOn in
-                    toggle(#selector(NSTextView.toggleContinuousSpellChecking(_:)))
-                    checksSpelling = isOn
-                }
-            ))
-            Toggle("Correct Spelling Automatically", isOn: Binding(
-                get: { correctsSpelling },
-                set: { isOn in
-                    toggle(#selector(NSTextView.toggleAutomaticSpellingCorrection(_:)))
-                    correctsSpelling = isOn
-                }
-            ))
-        }
+        Toggle(checks, isOn: Binding(
+            get: { checksSpelling },
+            set: { isOn in
+                toggle(#selector(NSTextView.toggleContinuousSpellChecking(_:)))
+                checksSpelling = isOn
+            }
+        ))
+        Toggle(corrects, isOn: Binding(
+            get: { correctsSpelling },
+            set: { isOn in
+                toggle(#selector(NSTextView.toggleAutomaticSpellingCorrection(_:)))
+                correctsSpelling = isOn
+            }
+        ))
     }
 
     private func toggle(_ action: Selector) {
-        NSApp.sendAction(action, to: editor, from: nil)
+        guard let webView = editor ?? NSApp.windows.lazy.compactMap({ $0.contentView?.firstEditorWebView }).first else { return }
+        NSApp.sendAction(action, to: webView, from: nil)
+    }
+}
+
+private extension NSView {
+    var firstEditorWebView: EditorWebView? {
+        if let webView = self as? EditorWebView { return webView }
+        return subviews.lazy.compactMap(\.firstEditorWebView).first
     }
 }
 

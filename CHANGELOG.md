@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- The sidebars and the Quick switcher in the theme's panel colour, solid, not translucent.
+- *Settings* on one page, grouped as System Settings does: Appearance, Text, Writing, Excluded folders and the Daily note; nearly square at first.
+- *Help*: Keyboard Shortcuts (⇧⌘/), and Noteki's page, release notes and issues on GitHub.
+- Spelling: Settings and *Edit → Spelling and Grammar* are the same two switches, WebKit's own.
 - *Settings → Theme*: GitHub, AnuPpuccin or One Dark Pro, each light and dark; *Settings → Appearance*: as the Mac is, or always light or dark.
 - *Settings*: a font for code, no limit to the line length, and spelling check and correction each switched on or off.
 - *Settings → Line length* in characters, not points: a line keeps its number of characters when the text size or zoom changes. A width chosen before is kept as wide.

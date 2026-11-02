@@ -72,7 +72,7 @@ struct QuickSwitcher: View {
                 }
             }
             .frame(width: 560)
-            .background(.regularMaterial, in: .rect(cornerRadius: 10))
+            .background(Color.themePanel, in: .rect(cornerRadius: 10))
             .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.separator))
             .shadow(radius: 20, y: 8)
             .padding(.top, 60)

@@ -24,6 +24,16 @@ public enum Theme: String, CaseIterable, Sendable, Encodable {
         }
     }
 
+    /// Its panels' colour as hex, light and dark, a step off the background: the sidebars, as the
+    /// page's `--panel`.
+    public var panel: (light: String, dark: String) {
+        switch self {
+        case .github: ("#F6F8FA", "#151B23")
+        case .anuppuccin: ("#E6DBD1", "#181825")
+        case .oneDarkPro: ("#F0F0F1", "#21252B")
+        }
+    }
+
     /// Its background as hex, light and dark: behind the Tabs as behind the text.
     public var background: (light: String, dark: String) {
         switch self {
@@ -35,9 +45,9 @@ public enum Theme: String, CaseIterable, Sendable, Encodable {
 }
 
 /// How the editor draws a Note's text, chosen in Settings (SPEC, Window): the theme, the font and the code's,
-/// the size in points (a CSS pixel of the editor is a point), the longest a line is, in
-/// characters, if at all, and whether the Mac checks the spelling and corrects it. Kept outside
-/// the Vault, in the app's preferences.
+/// the size in points (a CSS pixel of the editor is a point) and the longest a line is, in
+/// characters, if at all. Kept outside the Vault, in the app's preferences. Spelling is WebKit's
+/// own setting, not one of these.
 public struct EditorSettings: Equatable, Sendable, Encodable {
     /// The app's, which the page draws with.
     public let theme: Theme
@@ -51,9 +61,6 @@ public struct EditorSettings: Equatable, Sendable, Encodable {
     public let lineLength: Double
     /// False: lines as wide as the window, `lineLength` kept for when it is on again.
     public let limitsLineLength: Bool
-    /// Spelling underlined as the Mac checks it, and corrected as typed: each on its own.
-    public let checksSpelling: Bool
-    public let correctsSpelling: Bool
 
     public static let sizes: ClosedRange<Double> = 10...32
     public static let lineLengths: ClosedRange<Double> = 40...200
@@ -62,8 +69,7 @@ public struct EditorSettings: Equatable, Sendable, Encodable {
 
     /// Sizes are whole points and lengths whole characters, within their bounds; a blank font is the system's.
     public init(
-        theme: Theme = .github, font: String?, monoFont: String? = nil, size: Double, lineLength: Double, limitsLineLength: Bool = true,
-        checksSpelling: Bool = true, correctsSpelling: Bool = true
+        theme: Theme = .github, font: String?, monoFont: String? = nil, size: Double, lineLength: Double, limitsLineLength: Bool = true
     ) {
         self.theme = theme
         self.font = Self.family(font)
@@ -71,8 +77,6 @@ public struct EditorSettings: Equatable, Sendable, Encodable {
         self.size = min(max(size.rounded(), Self.sizes.lowerBound), Self.sizes.upperBound)
         self.lineLength = min(max(lineLength.rounded(), Self.lineLengths.lowerBound), Self.lineLengths.upperBound)
         self.limitsLineLength = limitsLineLength
-        self.checksSpelling = checksSpelling
-        self.correctsSpelling = correctsSpelling
     }
 
     private static func family(_ name: String?) -> String? {
@@ -88,12 +92,11 @@ public struct EditorSettings: Equatable, Sendable, Encodable {
     /// The same, with what is given changed.
     public func with(
         theme: Theme? = nil, font: String?? = nil, monoFont: String?? = nil, size: Double? = nil, lineLength: Double? = nil,
-        limitsLineLength: Bool? = nil, checksSpelling: Bool? = nil, correctsSpelling: Bool? = nil
+        limitsLineLength: Bool? = nil
     ) -> EditorSettings {
         EditorSettings(
             theme: theme ?? self.theme, font: font ?? self.font, monoFont: monoFont ?? self.monoFont, size: size ?? self.size,
-            lineLength: lineLength ?? self.lineLength, limitsLineLength: limitsLineLength ?? self.limitsLineLength,
-            checksSpelling: checksSpelling ?? self.checksSpelling, correctsSpelling: correctsSpelling ?? self.correctsSpelling
+            lineLength: lineLength ?? self.lineLength, limitsLineLength: limitsLineLength ?? self.limitsLineLength
         )
     }
 

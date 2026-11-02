@@ -82,7 +82,7 @@ struct ContentView: View {
                             ])
                         }
                         Button { model.isShowingSidebar.toggle() } label: {
-                            Image(systemName: "sidebar.trailing").frame(width: 28, height: 22).contentShape(.rect)
+                            Image(systemName: "sidebar.trailing").imageScale(.large).frame(width: 34, height: 28).contentShape(.rect)
                         }
                         .buttonStyle(.plain)
                         .help("Show or hide the Outline and the Backlinks")
