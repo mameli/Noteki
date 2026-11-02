@@ -3,14 +3,14 @@ import Foundation
 /// The colours Noteki draws with, each light and dark (SPEC, Window): the editor's page has them
 /// in editor.css, under the same name.
 public enum Theme: String, CaseIterable, Sendable, Encodable {
-    case github
-    case anuppuccin
+    case ayu
+    case everforest
     case oneDarkPro = "one-dark-pro"
 
     public var name: String {
         switch self {
-        case .github: "GitHub"
-        case .anuppuccin: "AnuPpuccin"
+        case .ayu: "Ayu"
+        case .everforest: "Everforest"
         case .oneDarkPro: "One Dark Pro"
         }
     }
@@ -18,8 +18,8 @@ public enum Theme: String, CaseIterable, Sendable, Encodable {
     /// Its accent as hex, light and dark: links in the text, icons and the selected pane outside it.
     public var accent: (light: String, dark: String) {
         switch self {
-        case .github: ("#0969DA", "#4493F8")
-        case .anuppuccin: ("#D6817D", "#F5E0DC")
+        case .ayu: ("#FFAA33", "#E6B450")
+        case .everforest: ("#8DA101", "#A7C080")
         case .oneDarkPro: ("#4078F2", "#61AFEF")
         }
     }
@@ -28,8 +28,8 @@ public enum Theme: String, CaseIterable, Sendable, Encodable {
     /// page's `--panel`.
     public var panel: (light: String, dark: String) {
         switch self {
-        case .github: ("#F6F8FA", "#151B23")
-        case .anuppuccin: ("#E6DBD1", "#181825")
+        case .ayu: ("#F0F1F2", "#0F131A")
+        case .everforest: ("#F4F0D9", "#232A2E")
         case .oneDarkPro: ("#F0F0F1", "#21252B")
         }
     }
@@ -37,8 +37,8 @@ public enum Theme: String, CaseIterable, Sendable, Encodable {
     /// Its background as hex, light and dark: behind the Tabs as behind the text.
     public var background: (light: String, dark: String) {
         switch self {
-        case .github: ("#FFFFFF", "#0D1117")
-        case .anuppuccin: ("#EEE6DD", "#1E1E2E")
+        case .ayu: ("#F8F9FA", "#0B0E14")
+        case .everforest: ("#FDF6E3", "#2D353B")
         case .oneDarkPro: ("#FAFAFA", "#282C34")
         }
     }
@@ -69,7 +69,7 @@ public struct EditorSettings: Equatable, Sendable, Encodable {
 
     /// Sizes are whole points and lengths whole characters, within their bounds; a blank font is the system's.
     public init(
-        theme: Theme = .github, font: String?, monoFont: String? = nil, size: Double, lineLength: Double, limitsLineLength: Bool = true
+        theme: Theme = .ayu, font: String?, monoFont: String? = nil, size: Double, lineLength: Double, limitsLineLength: Bool = true
     ) {
         self.theme = theme
         self.font = Self.family(font)

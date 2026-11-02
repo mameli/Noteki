@@ -2,15 +2,15 @@
 
 ## 0.2.0 — 2 November 2026
 
-Themes and a simpler window: GitHub, AnuPpuccin and One Dark Pro, sidebars in their colours, Settings on one page, and text that never runs off the side.
+Themes and a simpler window: Ayu, Everforest and One Dark Pro, sidebars in their colours, Settings on one page, and text that never runs off the side.
 
-- The light themes' text a little softer: GitHub's and One Light's near-black is a dark grey.
+- One Light's text a little softer: its near-black is a dark grey.
 - *Open in Ghostty* (or the user's terminal) in the menu of a folder in Files, and *File → Open Vault in …*.
 - The sidebars and the Quick switcher in the theme's panel colour, solid, not translucent.
 - *Settings* on one page, grouped as System Settings does: Appearance, Text, Writing, Excluded folders and the Daily note; nearly square at first.
 - *Help*: Keyboard Shortcuts (⇧⌘/), and Noteki's page, release notes and issues on GitHub.
 - Spelling: Settings and *Edit → Spelling and Grammar* are the same two switches, WebKit's own.
-- *Settings → Theme*: GitHub, AnuPpuccin or One Dark Pro, each light and dark; *Settings → Appearance*: as the Mac is, or always light or dark.
+- *Settings → Theme*: Ayu, Everforest or One Dark Pro, each light and dark; *Settings → Appearance*: as the Mac is, or always light or dark.
 - *Settings*: a font for code, no limit to the line length, and spelling check and correction each switched on or off.
 - *Settings → Line length* in characters, not points: a line keeps its number of characters when the text size or zoom changes. A width chosen before is kept as wide.
 - The text never scrolls sideways: a wide table has its columns shrunk to fit, and a table's source or the Properties' YAML longer than the text wraps while the cursor is in it.

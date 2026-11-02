@@ -2,7 +2,7 @@ import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import { type EditorSettings, settingsVariables } from "../src/settings";
 
-const standard: EditorSettings = { theme: "github", size: 15, lineLength: 100, limitsLineLength: true };
+const standard: EditorSettings = { theme: "ayu", size: 15, lineLength: 100, limitsLineLength: true };
 
 test("the font, its size and the line length become the text's CSS variables, the length in half ems", () => {
   assert.deepEqual(settingsVariables({ ...standard, font: "Iowan Old Style", monoFont: "JetBrains Mono", size: 17, lineLength: 80 }), {

@@ -1,14 +1,14 @@
 <!doctype html>
-<!-- noteki-editor-sources: 976b3b4da44c9eac26233f9a9e29317569e9432dd4a5be9d04d97ad8432556bd -->
+<!-- noteki-editor-sources: 595bab168a678346d56b87759e0362b877d5d17f204cf01739032c956470cf62 -->
 <html>
 <head>
 <meta charset="utf-8">
 <style>/*
- * Noteki's themes, each light and dark: GitHub (the default), AnuPpuccin (Latte and Mocha) and One
- * Dark Pro (One Light and One Dark), in their own published colours; the light ones' text a
- * little softer than their near-black (GitHub #3d444d, One Light #4b4e58, contrast 9.9 and 8).
- * The app sets `data-theme` (settings.ts); light or dark follows the app's appearance. Without
- * it, before the settings arrive, GitHub.
+ * Noteki's themes, each light and dark, in their own published colours: Ayu (the default),
+ * Everforest (medium) and One Dark Pro (One Light and One Dark, its light text a little softer
+ * than its near-black: #4b4e58, contrast 8). Links take each theme's blue, the accent (icons,
+ * tags, checkboxes) its signature colour. The app sets `data-theme` (settings.ts); light or dark
+ * follows the app's appearance. Without it, before the settings arrive, Ayu.
  */
 :root {
   color-scheme: light dark;
@@ -25,136 +25,131 @@
   --frontmatter-text: var(--syntax);
 }
 
-/* GitHub */
+/* Ayu */
 :root,
-:root[data-theme="github"] {
-  --text: #3d444d;
-  --background: #ffffff;
-  --caret: #3d444d;
-  --selection: rgba(9, 105, 218, 0.2);
-  --syntax: #818b98;
-  --link: #0969da;
-  --on-link: #ffffff;
-  --accent-rgb: 9, 105, 218;
-  --quote: #59636e;
-  --panel: #f6f8fa;
-  --separator: #d1d9e0;
-  --code-background: rgba(129, 139, 152, 0.12);
-  --highlight: rgba(212, 167, 44, 0.3);
-  --error: #d1242f;
-  --code-keyword: #cf222e;
-  --code-string: #0a3069;
-  --code-number: #0550ae;
-  --code-type: #953800;
-  --code-function: #6639ba;
-  --code-property: #116329;
-  --callout-blue: 9, 105, 218;
-  --callout-cyan: 27, 124, 131;
-  --callout-green: 26, 127, 55;
-  --callout-orange: 188, 76, 0;
-  --callout-red: 209, 36, 47;
-  --callout-purple: 130, 80, 223;
-  --callout-grey: 89, 99, 110;
+:root[data-theme="ayu"] {
+  --text: #5c6166;
+  --background: #f8f9fa;
+  --caret: #ffaa33;
+  --selection: #d3e1f5;
+  --syntax: #8a9199;
+  --link: #399ee6;
+  --on-link: #f8f9fa;
+  --accent-rgb: 255, 170, 51;
+  --quote: #787b80;
+  --panel: #f0f1f2;
+  --separator: #e1e4e8;
+  --code-background: rgba(92, 97, 102, 0.07);
+  --highlight: rgba(255, 170, 51, 0.25);
+  --error: #e65050;
+  --code-keyword: #fa8d3e;
+  --code-string: #86b300;
+  --code-number: #a37acc;
+  --code-type: #399ee6;
+  --code-function: #f2ae49;
+  --code-property: #55b4d4;
+  --callout-blue: 57, 158, 230;
+  --callout-cyan: 76, 191, 153;
+  --callout-green: 134, 179, 0;
+  --callout-orange: 250, 141, 62;
+  --callout-red: 240, 113, 113;
+  --callout-purple: 163, 122, 204;
+  --callout-grey: 138, 145, 153;
 }
 
 @media (prefers-color-scheme: dark) {
   :root,
-  :root[data-theme="github"] {
-    --text: #f0f6fc;
-    --background: #0d1117;
-    --caret: #f0f6fc;
-    --selection: rgba(56, 139, 253, 0.3);
-    --syntax: #656c76;
-    --link: #4493f8;
-    --on-link: #0d1117;
-    --accent-rgb: 68, 147, 248;
-    --quote: #9198a1;
-    --panel: #151b23;
-    --separator: #3d444d;
-    --code-background: rgba(101, 108, 118, 0.2);
-    --highlight: rgba(187, 128, 9, 0.35);
-    --error: #f85149;
-    --code-keyword: #ff7b72;
-    --code-string: #a5d6ff;
-    --code-number: #79c0ff;
-    --code-type: #ffa657;
-    --code-function: #d2a8ff;
-    --code-property: #7ee787;
-    --callout-blue: 68, 147, 248;
-    --callout-cyan: 57, 197, 207;
-    --callout-green: 63, 185, 80;
-    --callout-orange: 219, 109, 40;
-    --callout-red: 248, 81, 73;
-    --callout-purple: 171, 125, 248;
-    --callout-grey: 145, 152, 161;
+  :root[data-theme="ayu"] {
+    --text: #bfbdb6;
+    --background: #0b0e14;
+    --caret: #e6b450;
+    --selection: #1b3a5b;
+    --syntax: #5a6378;
+    --link: #59c2ff;
+    --on-link: #0b0e14;
+    --accent-rgb: 230, 180, 80;
+    --quote: #8a9199;
+    --panel: #0f131a;
+    --separator: #1e232b;
+    --code-background: rgba(191, 189, 182, 0.06);
+    --highlight: rgba(230, 180, 80, 0.22);
+    --error: #d95757;
+    --code-keyword: #ff8f40;
+    --code-string: #aad94c;
+    --code-number: #d2a6ff;
+    --code-type: #59c2ff;
+    --code-function: #ffb454;
+    --code-property: #39bae6;
+    --callout-blue: 89, 194, 255;
+    --callout-cyan: 149, 230, 203;
+    --callout-green: 170, 217, 76;
+    --callout-orange: 255, 143, 64;
+    --callout-red: 240, 113, 120;
+    --callout-purple: 210, 166, 255;
+    --callout-grey: 138, 145, 153;
   }
 }
 
-/*
- * AnuPpuccin, as its pictures show it: its Rosé Pine Dawn flavour light (warm paper; its default
- * light flavour, Latte, is grey-blue) and Catppuccin Mocha dark, the accent rosewater for links,
- * selection and tags, code on crust, highlights yellow, and Obsidian's code and callout colours
- * in the palette's hues.
- */
-:root[data-theme="anuppuccin"] {
-  --text: #575279;
-  --background: #eee6dd;
-  --caret: #575279;
-  --selection: rgba(214, 129, 125, 0.25);
-  --syntax: #797593;
-  --link: #d6817d;
-  --on-link: #eee6dd;
-  --accent-rgb: 214, 129, 125;
-  --quote: #807c99;
-  --panel: #e6dbd1;
-  --separator: #d1c9c2;
-  --code-background: #ddd0c6;
-  --highlight: rgba(234, 157, 52, 0.2);
-  --error: #b4637a;
-  --code-keyword: #907aa9;
-  --code-string: #56949f;
-  --code-number: #907aa9;
-  --code-type: #d6817d;
-  --code-function: #ea9d34;
-  --code-property: #286983;
-  --callout-blue: 40, 105, 131;
-  --callout-cyan: 40, 105, 131;
-  --callout-green: 86, 148, 159;
-  --callout-orange: 214, 129, 125;
-  --callout-red: 180, 99, 122;
-  --callout-purple: 144, 122, 169;
-  --callout-grey: 152, 147, 165;
+/* Everforest */
+:root[data-theme="everforest"] {
+  --text: #5c6a72;
+  --background: #fdf6e3;
+  --caret: #5c6a72;
+  --selection: #efe9d5;
+  --syntax: #939f91;
+  --link: #3a94c5;
+  --on-link: #fdf6e3;
+  --accent-rgb: 141, 161, 1;
+  --quote: #829181;
+  --panel: #f4f0d9;
+  --separator: #e6e2cc;
+  --code-background: #f4f0d9;
+  --highlight: rgba(223, 160, 0, 0.2);
+  --error: #f85552;
+  --code-keyword: #f85552;
+  --code-string: #35a77c;
+  --code-number: #df69ba;
+  --code-type: #dfa000;
+  --code-function: #8da101;
+  --code-property: #3a94c5;
+  --callout-blue: 58, 148, 197;
+  --callout-cyan: 53, 167, 124;
+  --callout-green: 141, 161, 1;
+  --callout-orange: 245, 125, 38;
+  --callout-red: 248, 85, 82;
+  --callout-purple: 223, 105, 186;
+  --callout-grey: 147, 159, 145;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root[data-theme="anuppuccin"] {
-    --text: #c6d0f5;
-    --background: #1e1e2e;
-    --caret: #c6d0f5;
-    --selection: rgba(245, 224, 220, 0.25);
-    --syntax: #a1a8c9;
-    --link: #f5e0dc;
-    --on-link: #1e1e2e;
-    --accent-rgb: 245, 224, 220;
-    --quote: #8e95b3;
-    --panel: #181825;
-    --separator: #313244;
-    --code-background: #11111b;
-    --highlight: rgba(249, 226, 175, 0.2);
-    --error: #f38ba8;
-    --code-keyword: #f5c2e7;
-    --code-string: #a6e3a1;
-    --code-number: #b4befe;
-    --code-type: #fab387;
-    --code-function: #f9e2af;
-    --code-property: #89dceb;
-    --callout-blue: 135, 176, 249;
-    --callout-cyan: 137, 220, 235;
-    --callout-green: 166, 227, 161;
-    --callout-orange: 250, 179, 135;
-    --callout-red: 243, 139, 168;
-    --callout-purple: 180, 190, 254;
-    --callout-grey: 123, 129, 157;
+  :root[data-theme="everforest"] {
+    --text: #d3c6aa;
+    --background: #2d353b;
+    --caret: #d3c6aa;
+    --selection: #414b51;
+    --syntax: #859289;
+    --link: #7fbbb3;
+    --on-link: #2d353b;
+    --accent-rgb: 167, 192, 128;
+    --quote: #9da9a0;
+    --panel: #232a2e;
+    --separator: #3d484d;
+    --code-background: #343f44;
+    --highlight: rgba(219, 188, 127, 0.2);
+    --error: #e67e80;
+    --code-keyword: #e67e80;
+    --code-string: #83c092;
+    --code-number: #d699b6;
+    --code-type: #dbbc7f;
+    --code-function: #a7c080;
+    --code-property: #7fbbb3;
+    --callout-blue: 127, 187, 179;
+    --callout-cyan: 131, 192, 146;
+    --callout-green: 167, 192, 128;
+    --callout-orange: 230, 152, 117;
+    --callout-red: 230, 126, 128;
+    --callout-purple: 214, 153, 182;
+    --callout-grey: 133, 146, 137;
   }
 }
 
