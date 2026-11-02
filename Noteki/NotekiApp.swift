@@ -339,6 +339,12 @@ private struct VaultCommands: View {
         .disabled(!(window ?? main).canShowSwitcher)
         Button("Open Vault…") { main.chooseVault() }
             .keyboardShortcut("o", modifiers: [.command, .shift])
+        // The Vault's folder; a folder of it from its menu in Files.
+        Button("Open Vault in \(TerminalApp.name)") {
+            if let root = (window ?? main).vault?.root { TerminalApp.open(root) }
+        }
+        // No shortcut: ⌥⌘T is the View menu's Hide Toolbar.
+        .disabled((window ?? main).vault == nil)
         Divider()
         // Before the window's own Close: with no Tab open, ⌘W closes the window.
         Button("Close Tab") {

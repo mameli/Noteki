@@ -235,6 +235,9 @@ struct FilesPane: View {
             let folder = item.map { $0.children != nil ? $0.path : folderOf($0.path) } ?? ""
             Button("New Note") { model.newNote(in: folder) }
             Button("New Folder") { model.newFolder(in: folder) }
+            if let url = model.fileURL(of: folder) {
+                Button("Open in \(TerminalApp.name)") { TerminalApp.open(url) }
+            }
             if let item {
                 Divider()
                 if let url = model.fileURL(of: item.path) {

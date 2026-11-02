@@ -1,8 +1,9 @@
 /*
  * Noteki's themes, each light and dark: GitHub (the default), AnuPpuccin (Latte and Mocha) and One
- * Dark Pro (One Light and One Dark), in their own published colours. The app sets `data-theme`
- * (settings.ts); light or dark follows the app's appearance. Without it, before the settings
- * arrive, GitHub.
+ * Dark Pro (One Light and One Dark), in their own published colours; the light ones' text a
+ * little softer than their near-black (GitHub #3d444d, One Light #4b4e58, contrast 9.9 and 8).
+ * The app sets `data-theme` (settings.ts); light or dark follows the app's appearance. Without
+ * it, before the settings arrive, GitHub.
  */
 :root {
   color-scheme: light dark;
@@ -22,9 +23,9 @@
 /* GitHub */
 :root,
 :root[data-theme="github"] {
-  --text: #1f2328;
+  --text: #3d444d;
   --background: #ffffff;
-  --caret: #1f2328;
+  --caret: #3d444d;
   --selection: rgba(9, 105, 218, 0.2);
   --syntax: #818b98;
   --link: #0969da;
@@ -154,7 +155,7 @@
 
 /* One Dark Pro */
 :root[data-theme="one-dark-pro"] {
-  --text: #383a42;
+  --text: #4b4e58;
   --background: #fafafa;
   --caret: #526fff;
   --selection: #e5e5e6;
