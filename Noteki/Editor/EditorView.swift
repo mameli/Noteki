@@ -79,7 +79,7 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
         webView.onImages = { [weak self] images, point in self?.onImages(images, point) }
         // Through a weak proxy: the controller keeps its handlers alive.
         configuration.userContentController.add(WeakMessageHandler(self), name: "noteki")
-        webView.underPageBackgroundColor = .textBackgroundColor
+        webView.underPageBackgroundColor = AppSettings.shared.editor.theme.backgroundColor
         webView.navigationDelegate = self
         loadPage()
     }
@@ -101,6 +101,7 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
 
     /// Settings changed: the Note shown is drawn again with them at once.
     @objc private func settingsChanged() {
+        webView.underPageBackgroundColor = AppSettings.shared.editor.theme.backgroundColor
         // The editor's only user script.
         let scripts = webView.configuration.userContentController
         scripts.removeAllUserScripts()

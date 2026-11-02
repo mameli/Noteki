@@ -14,7 +14,7 @@ import { broughtBack, changeTo, fromDisk } from "./states";
 import { type TagEditing, tagEditing } from "./tagchips";
 import { highlightTag } from "./highlight";
 import { insertion } from "./insert";
-import { applySettings } from "./settings";
+import { appliedSettings, applySettings, textServices } from "./settings";
 import { noteLanguage } from "./language";
 import { livePreview } from "./livepreview";
 import { followWikilinks, linkInners, markUnresolved, unresolvedLinks } from "./wikilink";
@@ -50,7 +50,14 @@ const sourceHighlight = HighlightStyle.define([
 // Set here rather than in editor.css: CodeMirror's base theme would win over a stylesheet.
 const noteTheme = EditorView.theme({
   ".cm-scroller": { fontFamily: "var(--text-font)", fontSize: "var(--text-size)", lineHeight: "1.6" },
-  ".cm-content": { maxWidth: "var(--line-width)", margin: "0 auto", padding: "2rem 1.5rem 40vh" },
+  // As narrow as the window, whatever it holds: a flex item is otherwise as wide as its widest
+  // line that cannot wrap (a table's row), and all the text wraps at that width, cut off at the
+  // window's edge.
+  // The theme's selection, focused or not: CodeMirror's own is grey and blue.
+  "& .cm-selectionLayer .cm-selectionBackground, &.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-content ::selection": {
+    backgroundColor: "var(--selection)",
+  },
+  ".cm-content": { maxWidth: "var(--line-width)", minWidth: "0", margin: "0 auto", padding: "2rem 1.5rem 40vh" },
   ".cm-panels": {
     backgroundColor: "var(--panel)",
     color: "var(--text)",
@@ -61,7 +68,8 @@ const noteTheme = EditorView.theme({
 });
 
 /** The system's spelling, autocorrection and text replacements, as in any Mac text field. */
-const systemTextServices = EditorView.contentAttributes.of({ spellcheck: "true", autocorrect: "on" });
+// As Settings say, read again with every update: new settings dispatch an empty one.
+const systemTextServices = EditorView.contentAttributes.of(() => textServices(appliedSettings()));
 
 /** How often, at most, the text is reported while the user types. The app saves after it. */
 const reportInterval = 250;
@@ -348,6 +356,7 @@ window.noteki = {
         return null;
       case "settings":
         applySettings(command.settings);
+        view.dispatch({});
         // Lines change height with the font: CodeMirror measures them again, and once more when
         // the new font has loaded, if it was not yet.
         view.requestMeasure();

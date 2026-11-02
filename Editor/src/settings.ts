@@ -1,23 +1,61 @@
-/** How the text is drawn, chosen in the app's Settings: a font family (none for the system's), its size and the widest a line is, in points. */
+/**
+ * How the text is drawn, chosen in the app's Settings: a font family and the code's (none for the
+ * system's), the size in points, the longest a line is, if limited, in characters of half an em (a
+ * letter's width in text on average; CSS's `ch` is a digit's, a third wider), and the Mac's
+ * spelling check and correction.
+ */
 export interface EditorSettings {
+  /** The theme's name in editor.css, `data-theme` on the page. */
+  theme: string;
   font?: string;
+  monoFont?: string;
   size: number;
-  lineWidth: number;
+  lineLength: number;
+  limitsLineLength: boolean;
+  checksSpelling: boolean;
+  correctsSpelling: boolean;
+}
+
+/** A family's name in quotes it cannot break out of, before the fallback. */
+function family(name: string | undefined, fallback: string): string {
+  return name ? `"${name.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}", ${fallback}` : fallback;
 }
 
 /** The CSS variables the editor's text is drawn with. */
 export function settingsVariables(settings: EditorSettings): Record<string, string> {
-  const font = settings.font ? `"${settings.font.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}", var(--system-font)` : "var(--system-font)";
   return {
-    "--text-font": font,
+    "--text-font": family(settings.font, "var(--system-font)"),
+    "--mono": family(settings.monoFont, "var(--system-mono)"),
     "--text-size": `${settings.size}px`,
-    "--line-width": `${settings.lineWidth}px`,
+    "--line-width": settings.limitsLineLength ? `calc(${settings.lineLength} * 0.5 * var(--text-size))` : "none",
   };
+}
+
+/** The attributes the text gets for the Mac's spelling: checked and corrected unless told. */
+export function textServices(settings: EditorSettings | null): Record<string, string> {
+  return {
+    spellcheck: String(settings?.checksSpelling ?? true),
+    autocorrect: (settings?.correctsSpelling ?? true) ? "on" : "off",
+  };
+}
+
+let applied: EditorSettings | null = null;
+
+/** Sent on the window when the theme may have changed. */
+export const coloursChanged = "noteki-colours";
+
+/** The settings the page has, if the app gave them. */
+export function appliedSettings(): EditorSettings | null {
+  return applied;
 }
 
 /** Sets them on the page: the app gives its settings before the page loads, and again when they change. */
 export function applySettings(settings: EditorSettings) {
+  applied = settings;
+  document.documentElement.dataset.theme = settings.theme;
   for (const [name, value] of Object.entries(settingsVariables(settings))) {
     document.documentElement.style.setProperty(name, value);
   }
+  // What draws with the colours read once (an SVG) draws again.
+  window.dispatchEvent(new Event(coloursChanged));
 }

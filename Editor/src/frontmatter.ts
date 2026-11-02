@@ -40,8 +40,9 @@ export const frontmatter: MarkdownConfig = {
 
 // The Properties table (SPEC, Frontmatter). The app reads the YAML (NotekiCore's Frontmatter) and
 // says where each key and value is; the editor draws the table in place, line by line, as it
-// draws tables (ADR 0008): every line stays one line, never wrapped, so the text moves sideways
-// and never up or down when the cursor enters the YAML or leaves it.
+// draws tables (ADR 0008): every line stays a line, so the text moves sideways and not up or
+// down when the cursor enters the YAML or leaves it, unless a line is longer than the text: it
+// wraps then, as nothing scrolls sideways.
 
 /** A part of one line: `line` from 1, the columns in the line. */
 export interface LineSpan {
@@ -217,7 +218,7 @@ const unreadableLine = Decoration.line({ class: "cm-frontmatter-unreadable", att
 const label = Decoration.widget({ widget: new LabelWidget(), side: 1 });
 
 /**
- * The Frontmatter's lines, never wrapped whether drawn or written, and the table's marks. The
+ * The Frontmatter's lines, drawn or written, and the table's marks. The
  * keys' width goes on every line: the items under a key start where the values do.
  */
 export function drawFrontmatter(state: EditorState, node: SyntaxNode, layout: RenderedFrontmatter | null): Range<Decoration>[] {
@@ -319,19 +320,20 @@ export const foldedLists = StateField.define<DecorationSet>({
 });
 
 export const frontmatterTheme = EditorView.baseTheme({
-  // Never wrapped, drawn or written: each line keeps one line's height (ADR 0008).
   // Smaller and tighter than the text, drawn or written alike, so nothing moves on entering: a
-  // list of one item per line takes less room.
-  ".cm-frontmatter-line": { whiteSpace: "pre", fontSize: "0.9em", lineHeight: "1.4" },
+  // list of one item per line takes less room. A line longer than the text wraps, written or a
+  // row of chips: nothing scrolls sideways.
+  ".cm-frontmatter-line": { fontSize: "0.9em", lineHeight: "1.4" },
   ".cm-properties": { "--frontmatter-text": "var(--text)", backgroundColor: "var(--code-background)" },
   ".cm-properties-first": { borderTopLeftRadius: "6px", borderTopRightRadius: "6px" },
   ".cm-properties-last": { borderBottomLeftRadius: "6px", borderBottomRightRadius: "6px" },
   ".cm-properties-label": { color: "var(--syntax)", fontSize: "0.85em", fontWeight: "600" },
-  // Cells: a value too long for the line is cut, as it cannot wrap.
+  // Cells: a value too long for the line is cut, on one line.
   ".cm-property-key, .cm-property-value, .cm-property-item": {
     display: "inline-block",
     overflow: "hidden",
     textOverflow: "ellipsis",
+    whiteSpace: "pre",
     verticalAlign: "top",
   },
   ".cm-property-key": { width: "var(--key-width)", "--frontmatter-text": "var(--quote)" },

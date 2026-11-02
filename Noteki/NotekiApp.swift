@@ -171,6 +171,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         super.init()
     }
 
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        // Before the first window shows: it would flash in the Mac's appearance.
+        AppSettings.shared.applyAppearance()
+    }
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         // ⌃Tab and ⌃⇧Tab are the Go menu's, wherever the keyboard is: the editor and the
         // sidebar's lists would take them to move the keyboard to another view.

@@ -11,6 +11,6 @@ Noteki draws a table in place instead, with the same decorations as the rest of 
 
 ## Consequences
 
-- Table lines never wrap, shown or written: a wide row scrolls sideways. A cell is cut at 40 characters, with an ellipsis.
+- Table lines never wrap while shown. A cell is cut at 40 characters, with an ellipsis. A table wider than the text has its columns shrunk to fit, each in proportion to its width, their text cut too (2 November 2026: at first a wide row scrolled sideways; the text must never scroll sideways).
 - Column widths are approximate in a proportional font (characters times 0.6 em).
-- Entering a table shows its source: the pipes come back and the text moves sideways under the cursor, never up or down.
+- Entering a table shows its source: the pipes come back and the text moves sideways under the cursor, not up or down. A row of source longer than the text wraps, and only then the table grows taller while the cursor is in it: the cost of nothing scrolling sideways. The Frontmatter's YAML is the same.

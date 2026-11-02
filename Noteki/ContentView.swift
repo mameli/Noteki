@@ -49,6 +49,8 @@ struct ContentView: View {
                     if AppSettings.shared.showsFormatBar, model.isShowingNote { FormatBar(model: model) }
                     NoteDetail(model: model)
                 }
+                // The Note's paper up through the toolbar's band, behind the Tabs.
+                .background(Color.editorBackground)
                 .ignoresSafeArea(.container, edges: .top)
                 .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
             }
@@ -97,6 +99,8 @@ struct ContentView: View {
         }
         // The sidebars, the Tabs, the panes and the Quick switcher.
         .interfaceSize(AppSettings.shared.interfaceSize)
+        // The selected pane's icon and the Quick switcher's row in the theme's accent, not the Mac's.
+        .tint(Color.themeAccent)
         .onChange(of: model.wantsSearchField) { _, wants in
             if wants, columns == .detailOnly { columns = .all }
         }
@@ -169,7 +173,7 @@ struct NoteDetail: View {
                     ))
                 } else if case .attachment(let attachment)? = model.shown, let vault = model.vault {
                     AttachmentView(attachment: attachment, url: vault.url(of: attachment))
-                        .background(.background)
+                        .background(Color.editorBackground)
                 } else if model.shown == nil {
                     placeholder(ContentUnavailableView("No Note Selected", systemImage: "doc.text"))
                 }
@@ -206,7 +210,7 @@ struct NoteDetail: View {
     private func placeholder(_ content: some View) -> some View {
         content
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(.background)
+            .background(Color.editorBackground)
     }
 }
 
@@ -222,8 +226,7 @@ struct FilesPane: View {
         List(selection: $model.selection) {
             FileRows(items: model.tree, model: model)
         }
-        // Grey icons, the accent only on the selection; rows as compact as Mail's at Small.
-        .listItemTint(.monochrome)
+        // Rows as compact as Mail's at Small.
         .environment(\.sidebarRowSize, interfaceSize.rowSize)
         .focused($hasKeyboard)
         .contextMenu(forSelectionType: String.self) { paths in
@@ -330,6 +333,9 @@ private struct FileRow: View {
                 Label(item.name, systemImage: item.symbolName)
             }
         }
+        // The icon in the theme's accent, window active or not: on the List, the sidebar took
+        // the Mac's accent while the window was active.
+        .listItemTint(ListItemTint.fixed(Color.themeAccent))
         .draggable(item.path)
         // Onto a file: into its folder.
         .dropDestination(for: String.self) { paths, _ in

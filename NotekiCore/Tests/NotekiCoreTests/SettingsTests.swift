@@ -33,20 +33,33 @@ struct SettingsTests {
         #expect(throws: Vault.FileError.invalidName) { try vault.rename(empty, to: "Private") }
     }
 
-    @Test("the editor's settings: the system font at 15 points and 46 rem wide unless chosen, within bounds")
+    @Test("the editor's settings: the system font at 15 points and lines of 100 characters unless chosen, within bounds")
     func editorSettings() throws {
-        #expect(EditorSettings.standard == EditorSettings(font: nil, size: 15, lineWidth: 736))
-        #expect(EditorSettings(font: "  ", size: 3, lineWidth: 99_999) == EditorSettings(font: nil, size: 10, lineWidth: 1600))
-        #expect(EditorSettings(font: "Iowan Old Style", size: 18.4, lineWidth: 400).size == 18)
-        #expect(EditorSettings.standard.with(font: "Menlo").with(size: 40) == EditorSettings(font: "Menlo", size: 32, lineWidth: 736))
-        #expect(EditorSettings(font: "Menlo", size: 15, lineWidth: 736).with(font: .some(nil)) == .standard)
+        #expect(EditorSettings.standard == EditorSettings(font: nil, size: 15, lineLength: 100))
+        #expect(EditorSettings(font: "  ", size: 3, lineLength: 99_999) == EditorSettings(font: nil, size: 10, lineLength: 200))
+        #expect(EditorSettings(font: "Iowan Old Style", size: 18.4, lineLength: 10).size == 18)
+        #expect(EditorSettings(font: nil, size: 15, lineLength: 72.4).lineLength == 72)
+        #expect(EditorSettings.standard.with(font: "Menlo").with(size: 40) == EditorSettings(font: "Menlo", size: 32, lineLength: 100))
+        #expect(EditorSettings(font: "Menlo", size: 15, lineLength: 100).with(font: .some(nil)) == .standard)
+        #expect(EditorSettings.standard.with(monoFont: " ").monoFont == nil)
+        #expect(EditorSettings.standard.with(limitsLineLength: false).lineLength == 100)
+        #expect(EditorSettings.standard.theme == .github)
+        #expect(EditorSettings.standard.with(theme: .oneDarkPro).theme.rawValue == "one-dark-pro")
+    }
+
+    @Test("a width in points kept until 0.1.0 is read as the length that draws it as wide at its size")
+    func lineWidthBecomesLength() {
+        #expect(EditorSettings.lineLength(width: 736, size: 15).rounded() == 98)
+        #expect(EditorSettings.lineLength(width: 800, size: 20) == 80)
     }
 
     @Test("the editor gets its settings as JSON, the system font as none")
     func editorSettingsJSON() throws {
-        let command = EditorCommand.settings(EditorSettings(font: "Iowan Old Style", size: 17, lineWidth: 800))
+        let command = EditorCommand.settings(EditorSettings(
+            theme: .anuppuccin, font: "Iowan Old Style", monoFont: "JetBrains Mono", size: 17, lineLength: 80, limitsLineLength: false, correctsSpelling: false
+        ))
 
-        #expect(try command.json() == #"{"settings":{"font":"Iowan Old Style","lineWidth":800,"size":17},"type":"settings"}"#)
-        #expect(try EditorSettings.standard.json() == #"{"lineWidth":736,"size":15}"#)
+        #expect(try command.json() == #"{"settings":{"checksSpelling":true,"correctsSpelling":false,"font":"Iowan Old Style","limitsLineLength":false,"lineLength":80,"monoFont":"JetBrains Mono","size":17,"theme":"anuppuccin"},"type":"settings"}"#)
+        #expect(try EditorSettings.standard.json() == #"{"checksSpelling":true,"correctsSpelling":true,"limitsLineLength":true,"lineLength":100,"size":15,"theme":"github"}"#)
     }
 }

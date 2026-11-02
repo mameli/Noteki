@@ -361,13 +361,18 @@ function decorations(view: EditorView): DecorationSet {
       if (drawn.has(table.from)) continue;
       drawn.add(table.from);
       const lastRow = table.rows[table.rows.length - 1];
+      // Never wider than the text: past it, each column gets its share of the line, cut with an
+      // ellipsis. Its share is its natural width over the table's, so all fit or all shrink.
+      const natural = table.columns.map((column) => column.width * 0.6 + 1.4);
+      const total = natural.reduce((sum, width) => sum + width, 0);
       for (const row of table.rows) {
         shown.add(row.lineStart);
         ranges.push(rowLine[row.kind].range(row.lineStart));
         row.cells.forEach((cell, column) => {
-          const { width, align } = table.columns[column];
+          const { align } = table.columns[column];
           // In em, not ch: a bold header's ch is wider than a body's, and the columns must line up.
-          const style = `width: calc(${width} * 0.6em + 1.4em); text-align: ${align}`;
+          const share = (natural[column] / total) * 100;
+          const style = `width: min(${natural[column]}em, ${share.toFixed(3)}%); text-align: ${align}`;
           let classes = "cm-table-cell";
           if (row.kind === "header") classes += " cm-table-head";
           if (row === lastRow) classes += " cm-table-bottom";
@@ -417,9 +422,10 @@ export const livePreview = [
     ".cm-code-first": { borderTopLeftRadius: "6px", borderTopRightRadius: "6px" },
     ".cm-code-last": { borderBottomLeftRadius: "6px", borderBottomRightRadius: "6px" },
     ".cm-code-info": { color: "var(--syntax)", fontFamily: "var(--system-font)", fontSize: "0.85em" },
-    // A table's lines never wrap, shown as a table or written, so each keeps one line's height; a
-    // wide one scrolls sideways instead.
-    ".cm-table-line": { whiteSpace: "pre" },
+    // A table's rows drawn never wrap, so each keeps one line's height: its columns shrink to fit
+    // the text's width instead. Written, while the cursor is in it, a row longer than the text
+    // wraps: nothing scrolls sideways.
+    ".cm-table-row": { whiteSpace: "pre" },
     // The pipe an empty cell is drawn in: there, not seen, whatever colour the syntax gives it.
     ".cm-table-empty, .cm-table-empty *": { color: "transparent !important" },
     ".cm-table-cell": {

@@ -15,14 +15,34 @@ final class AppSettings {
     /// The Vault's root path is the object.
     static let excludedFoldersChanged = Notification.Name("NotekiExcludedFoldersChanged")
 
+    private static let themeKey = "theme"
     private static let fontKey = "textFont"
     private static let sizeKey = "textSize"
+    private static let monoFontKey = "codeFont"
+    private static let lineLengthKey = "lineLength"
+    private static let limitsLineLengthKey = "limitsLineLength"
+    private static let checksSpellingKey = "checksSpelling"
+    private static let correctsSpellingKey = "correctsSpelling"
+    /// In points, until 0.1.0: read once, as a length.
     private static let lineWidthKey = "lineWidth"
     private static let excludedFoldersKey = "excludedFolders"
     private static let dailyFolderKey = "dailyNoteFolder"
     private static let dailyFormatKey = "dailyNoteFormat"
     private static let formatBarKey = "showsFormatBar"
     private static let interfaceSizeKey = "interfaceSize"
+    private static let appearanceKey = "appearance"
+
+    /// Light, dark or the Mac's: set on the app, which the editor's page and the colours follow.
+    var appearance = Appearance(rawValue: UserDefaults.standard.string(forKey: AppSettings.appearanceKey) ?? "") ?? .system {
+        didSet {
+            UserDefaults.standard.set(appearance.rawValue, forKey: Self.appearanceKey)
+            applyAppearance()
+        }
+    }
+
+    func applyAppearance() {
+        NSApplication.shared.appearance = appearance.nsAppearance
+    }
 
     /// How large the sidebars, the Tabs and the panes are drawn; the Note's text has its own size.
     var interfaceSize = InterfaceSize(rawValue: UserDefaults.standard.string(forKey: AppSettings.interfaceSizeKey) ?? "") ?? .medium {
@@ -47,9 +67,19 @@ final class AppSettings {
         didSet {
             guard editor != oldValue else { return }
             let defaults = UserDefaults.standard
+            defaults.set(editor.theme.rawValue, forKey: Self.themeKey)
             defaults.set(editor.font, forKey: Self.fontKey)
+            defaults.set(editor.monoFont, forKey: Self.monoFontKey)
+            defaults.set(editor.limitsLineLength, forKey: Self.limitsLineLengthKey)
+            defaults.set(editor.checksSpelling, forKey: Self.checksSpellingKey)
+            defaults.set(editor.correctsSpelling, forKey: Self.correctsSpellingKey)
+            // WebKit's own, read by every web view: the page's attributes alone may not stop the Mac
+            // correcting as typed.
+            defaults.set(editor.checksSpelling, forKey: "WebContinuousSpellCheckingEnabled")
+            defaults.set(editor.correctsSpelling, forKey: "WebAutomaticSpellingCorrectionEnabled")
             defaults.set(editor.size, forKey: Self.sizeKey)
-            defaults.set(editor.lineWidth, forKey: Self.lineWidthKey)
+            defaults.set(editor.lineLength, forKey: Self.lineLengthKey)
+            defaults.removeObject(forKey: Self.lineWidthKey)
             NotificationCenter.default.post(name: Self.editorChanged, object: nil)
         }
     }
@@ -57,10 +87,17 @@ final class AppSettings {
     private init() {
         let defaults = UserDefaults.standard
         let standard = EditorSettings.standard
+        let size = defaults.object(forKey: Self.sizeKey) as? Double ?? standard.size
+        let oldWidth = (defaults.object(forKey: Self.lineWidthKey) as? Double).map { EditorSettings.lineLength(width: $0, size: size) }
         editor = EditorSettings(
+            theme: Theme(rawValue: defaults.string(forKey: Self.themeKey) ?? "") ?? standard.theme,
             font: defaults.string(forKey: Self.fontKey),
-            size: defaults.object(forKey: Self.sizeKey) as? Double ?? standard.size,
-            lineWidth: defaults.object(forKey: Self.lineWidthKey) as? Double ?? standard.lineWidth
+            monoFont: defaults.string(forKey: Self.monoFontKey),
+            size: size,
+            lineLength: defaults.object(forKey: Self.lineLengthKey) as? Double ?? oldWidth ?? standard.lineLength,
+            limitsLineLength: defaults.object(forKey: Self.limitsLineLengthKey) as? Bool ?? standard.limitsLineLength,
+            checksSpelling: defaults.object(forKey: Self.checksSpellingKey) as? Bool ?? standard.checksSpelling,
+            correctsSpelling: defaults.object(forKey: Self.correctsSpellingKey) as? Bool ?? standard.correctsSpelling
         )
         dailyNote = DailyNote(
             folder: defaults.string(forKey: Self.dailyFolderKey) ?? DailyNote.standard.folder,

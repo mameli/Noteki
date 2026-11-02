@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- *Settings → Theme*: GitHub, AnuPpuccin or One Dark Pro, each light and dark; *Settings → Appearance*: as the Mac is, or always light or dark.
+- *Settings*: a font for code, no limit to the line length, and spelling check and correction each switched on or off.
+- *Settings → Line length* in characters, not points: a line keeps its number of characters when the text size or zoom changes. A width chosen before is kept as wide.
+- The text never scrolls sideways: a wide table has its columns shrunk to fit, and a table's source or the Properties' YAML longer than the text wraps while the cursor is in it.
 - *Settings → Interface size*: Small, Medium or Large for the sidebars, the Tabs, the panes and the Quick switcher; Medium at first, a little larger than before.
 - Images on the web (`![](https://…)`) are drawn, as Obsidian does.
 - A middle click closes a Tab.

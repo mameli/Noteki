@@ -25,21 +25,21 @@ const kinds: Record<string, CalloutKind> = {
   quote: "quote", cite: "quote",
 };
 
-/** Each type's colour, as Obsidian's. */
+/** Each type's colour, as Obsidian's hue, in the theme's shade (editor.css). */
 const colours = {
-  note: "8, 109, 221",
-  abstract: "0, 191, 188",
-  info: "8, 109, 221",
-  todo: "8, 109, 221",
-  tip: "0, 191, 188",
-  success: "8, 185, 78",
-  question: "236, 117, 0",
-  warning: "236, 117, 0",
-  failure: "233, 49, 71",
-  danger: "233, 49, 71",
-  bug: "233, 49, 71",
-  example: "120, 82, 238",
-  quote: "158, 158, 158",
+  note: "var(--callout-blue)",
+  abstract: "var(--callout-cyan)",
+  info: "var(--callout-blue)",
+  todo: "var(--callout-blue)",
+  tip: "var(--callout-cyan)",
+  success: "var(--callout-green)",
+  question: "var(--callout-orange)",
+  warning: "var(--callout-orange)",
+  failure: "var(--callout-red)",
+  danger: "var(--callout-red)",
+  bug: "var(--callout-red)",
+  example: "var(--callout-purple)",
+  quote: "var(--callout-grey)",
 };
 
 export type CalloutKind = keyof typeof colours;

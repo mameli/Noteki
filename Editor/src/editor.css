@@ -1,51 +1,217 @@
+/*
+ * Noteki's themes, each light and dark: GitHub (the default), AnuPpuccin (Latte and Mocha) and One
+ * Dark Pro (One Light and One Dark), in their own published colours. The app sets `data-theme`
+ * (settings.ts); light or dark follows the app's appearance. Without it, before the settings
+ * arrive, GitHub.
+ */
 :root {
   color-scheme: light dark;
-  --text: #1d1d1f;
-  --background: #ffffff;
-  --syntax: #a1a1a6;
-  --link: #0064d1;
-  --quote: #6e6e73;
-  --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  /* Checkboxes and the like in the theme's accent, not the system's blue. */
+  accent-color: rgb(var(--accent-rgb));
+  --system-mono: ui-monospace, "SF Mono", Menlo, monospace;
+  --mono: var(--system-mono);
   --system-font: -apple-system, BlinkMacSystemFont, sans-serif;
-  --on-link: #ffffff;
-  --line-width: 736px;
+  --line-width: calc(100 * 0.5 * var(--text-size));
   /* Settings: the app sets them before the page loads. */
   --text-font: var(--system-font);
   --text-size: 15px;
-  --panel: #f5f5f7;
-  --separator: #d2d2d7;
-  --code-background: rgba(0, 0, 0, 0.05);
-  --highlight: rgba(255, 208, 0, 0.4);
   --quote-text: var(--quote);
   --frontmatter-text: var(--syntax);
-  --error: #e93147;
-  --accent-rgb: 0, 100, 209;
-  --code-keyword: #9b2393;
-  --code-string: #c41a16;
-  --code-number: #1c00cf;
-  --code-type: #0b4f79;
-  --code-function: #326d74;
-  --code-property: #3e8087;
+}
+
+/* GitHub */
+:root,
+:root[data-theme="github"] {
+  --text: #1f2328;
+  --background: #ffffff;
+  --caret: #1f2328;
+  --selection: rgba(9, 105, 218, 0.2);
+  --syntax: #818b98;
+  --link: #0969da;
+  --on-link: #ffffff;
+  --accent-rgb: 9, 105, 218;
+  --quote: #59636e;
+  --panel: #f6f8fa;
+  --separator: #d1d9e0;
+  --code-background: rgba(129, 139, 152, 0.12);
+  --highlight: rgba(212, 167, 44, 0.3);
+  --error: #d1242f;
+  --code-keyword: #cf222e;
+  --code-string: #0a3069;
+  --code-number: #0550ae;
+  --code-type: #953800;
+  --code-function: #6639ba;
+  --code-property: #116329;
+  --callout-blue: 9, 105, 218;
+  --callout-cyan: 27, 124, 131;
+  --callout-green: 26, 127, 55;
+  --callout-orange: 188, 76, 0;
+  --callout-red: 209, 36, 47;
+  --callout-purple: 130, 80, 223;
+  --callout-grey: 89, 99, 110;
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
-    --text: #e8e8ed;
-    --background: #1e1e1e;
-    --syntax: #6e6e73;
-    --link: #5aa9ff;
-    --accent-rgb: 90, 169, 255;
-    --quote: #a1a1a6;
-    --panel: #2a2a2c;
-    --separator: #3a3a3c;
-    --code-background: rgba(255, 255, 255, 0.08);
-    --highlight: rgba(255, 208, 0, 0.3);
-    --code-keyword: #fc5fa3;
-    --code-string: #fc6a5d;
-    --code-number: #d0bf69;
-    --code-type: #5dd8ff;
-    --code-function: #67b7a4;
-    --code-property: #a167e6;
+  :root,
+  :root[data-theme="github"] {
+    --text: #f0f6fc;
+    --background: #0d1117;
+    --caret: #f0f6fc;
+    --selection: rgba(56, 139, 253, 0.3);
+    --syntax: #656c76;
+    --link: #4493f8;
+    --on-link: #0d1117;
+    --accent-rgb: 68, 147, 248;
+    --quote: #9198a1;
+    --panel: #151b23;
+    --separator: #3d444d;
+    --code-background: rgba(101, 108, 118, 0.2);
+    --highlight: rgba(187, 128, 9, 0.35);
+    --error: #f85149;
+    --code-keyword: #ff7b72;
+    --code-string: #a5d6ff;
+    --code-number: #79c0ff;
+    --code-type: #ffa657;
+    --code-function: #d2a8ff;
+    --code-property: #7ee787;
+    --callout-blue: 68, 147, 248;
+    --callout-cyan: 57, 197, 207;
+    --callout-green: 63, 185, 80;
+    --callout-orange: 219, 109, 40;
+    --callout-red: 248, 81, 73;
+    --callout-purple: 171, 125, 248;
+    --callout-grey: 145, 152, 161;
+  }
+}
+
+/*
+ * AnuPpuccin, as its pictures show it: its Rosé Pine Dawn flavour light (warm paper; its default
+ * light flavour, Latte, is grey-blue) and Catppuccin Mocha dark, the accent rosewater for links,
+ * selection and tags, code on crust, highlights yellow, and Obsidian's code and callout colours
+ * in the palette's hues.
+ */
+:root[data-theme="anuppuccin"] {
+  --text: #575279;
+  --background: #eee6dd;
+  --caret: #575279;
+  --selection: rgba(214, 129, 125, 0.25);
+  --syntax: #797593;
+  --link: #d6817d;
+  --on-link: #eee6dd;
+  --accent-rgb: 214, 129, 125;
+  --quote: #807c99;
+  --panel: #e6dbd1;
+  --separator: #d1c9c2;
+  --code-background: #ddd0c6;
+  --highlight: rgba(234, 157, 52, 0.2);
+  --error: #b4637a;
+  --code-keyword: #907aa9;
+  --code-string: #56949f;
+  --code-number: #907aa9;
+  --code-type: #d6817d;
+  --code-function: #ea9d34;
+  --code-property: #286983;
+  --callout-blue: 40, 105, 131;
+  --callout-cyan: 40, 105, 131;
+  --callout-green: 86, 148, 159;
+  --callout-orange: 214, 129, 125;
+  --callout-red: 180, 99, 122;
+  --callout-purple: 144, 122, 169;
+  --callout-grey: 152, 147, 165;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="anuppuccin"] {
+    --text: #c6d0f5;
+    --background: #1e1e2e;
+    --caret: #c6d0f5;
+    --selection: rgba(245, 224, 220, 0.25);
+    --syntax: #a1a8c9;
+    --link: #f5e0dc;
+    --on-link: #1e1e2e;
+    --accent-rgb: 245, 224, 220;
+    --quote: #8e95b3;
+    --panel: #181825;
+    --separator: #313244;
+    --code-background: #11111b;
+    --highlight: rgba(249, 226, 175, 0.2);
+    --error: #f38ba8;
+    --code-keyword: #f5c2e7;
+    --code-string: #a6e3a1;
+    --code-number: #b4befe;
+    --code-type: #fab387;
+    --code-function: #f9e2af;
+    --code-property: #89dceb;
+    --callout-blue: 135, 176, 249;
+    --callout-cyan: 137, 220, 235;
+    --callout-green: 166, 227, 161;
+    --callout-orange: 250, 179, 135;
+    --callout-red: 243, 139, 168;
+    --callout-purple: 180, 190, 254;
+    --callout-grey: 123, 129, 157;
+  }
+}
+
+/* One Dark Pro */
+:root[data-theme="one-dark-pro"] {
+  --text: #383a42;
+  --background: #fafafa;
+  --caret: #526fff;
+  --selection: #e5e5e6;
+  --syntax: #a0a1a7;
+  --link: #4078f2;
+  --on-link: #fafafa;
+  --accent-rgb: 64, 120, 242;
+  --quote: #696c77;
+  --panel: #f0f0f1;
+  --separator: #dbdbdc;
+  --code-background: rgba(56, 58, 66, 0.06);
+  --highlight: rgba(193, 132, 1, 0.22);
+  --error: #e45649;
+  --code-keyword: #a626a4;
+  --code-string: #50a14f;
+  --code-number: #986801;
+  --code-type: #c18401;
+  --code-function: #4078f2;
+  --code-property: #e45649;
+  --callout-blue: 64, 120, 242;
+  --callout-cyan: 1, 132, 188;
+  --callout-green: 80, 161, 79;
+  --callout-orange: 152, 104, 1;
+  --callout-red: 228, 86, 73;
+  --callout-purple: 166, 38, 164;
+  --callout-grey: 105, 108, 119;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="one-dark-pro"] {
+    --text: #abb2bf;
+    --background: #282c34;
+    --caret: #528bff;
+    --selection: #3e4451;
+    --syntax: #5c6370;
+    --link: #61afef;
+    --on-link: #282c34;
+    --accent-rgb: 97, 175, 239;
+    --quote: #7f848e;
+    --panel: #21252b;
+    --separator: #3e4452;
+    --code-background: rgba(171, 178, 191, 0.08);
+    --highlight: rgba(229, 192, 123, 0.25);
+    --error: #e06c75;
+    --code-keyword: #c678dd;
+    --code-string: #98c379;
+    --code-number: #d19a66;
+    --code-type: #e5c07b;
+    --code-function: #61afef;
+    --code-property: #e06c75;
+    --callout-blue: 97, 175, 239;
+    --callout-cyan: 86, 182, 194;
+    --callout-green: 152, 195, 121;
+    --callout-orange: 209, 154, 102;
+    --callout-red: 224, 108, 117;
+    --callout-purple: 198, 120, 221;
+    --callout-grey: 127, 132, 142;
   }
 }
 
@@ -67,7 +233,7 @@ body {
 }
 
 .cm-content {
-  caret-color: var(--text);
+  caret-color: var(--caret);
 }
 
 /* Thin scrollbars that keep out of the way, as overlay scrollers do. */

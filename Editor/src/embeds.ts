@@ -2,6 +2,7 @@ import { syntaxTree } from "@codemirror/language";
 import { type EditorState, type Range, StateEffect, StateField } from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView, WidgetType } from "@codemirror/view";
 import type { SyntaxNodeRef } from "@lezer/common";
+import { coloursChanged } from "./settings";
 import { innerOf } from "./wikilink";
 
 // Embeds of images and PDFs (SPEC, Embeds and Attachments). The app says which file each Embed
@@ -146,7 +147,7 @@ class ImageWidget extends WidgetType {
 /**
  * An SVG drawn as an image, never in the page: no script of it runs and its styles stay inside.
  * An image does not inherit the text's colour, so `currentColor` and `Canvas` are given the
- * editor's, and drawn again when the Mac switches between light and dark.
+ * editor's, and drawn again when the Mac switches between light and dark, or the theme changes.
  */
 const dark = "(prefers-color-scheme: dark)";
 
@@ -172,6 +173,7 @@ class SvgWidget extends WidgetType {
     draw();
     const scheme = matchMedia(dark);
     scheme.addEventListener("change", draw);
+    window.addEventListener(coloursChanged, draw);
     this.redraws.set(box, { scheme, draw });
     return box;
   }
@@ -199,6 +201,7 @@ class SvgWidget extends WidgetType {
   destroy(dom: HTMLElement) {
     const redraw = this.redraws.get(dom);
     redraw?.scheme.removeEventListener("change", redraw.draw);
+    if (redraw) window.removeEventListener(coloursChanged, redraw.draw);
   }
 
   ignoreEvent() {

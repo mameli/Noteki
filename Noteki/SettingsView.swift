@@ -24,9 +24,23 @@ private struct EditorSettingsView: View {
     @Bindable private var settings = AppSettings.shared
     /// The families installed, read once.
     @State private var families = NSFontManager.shared.availableFontFamilies
+    /// Those whose letters are all as wide, for code, read once.
+    @State private var monoFamilies = NSFontManager.shared.availableFontNames(with: .fixedPitchFontMask).map { names in
+        Array(Set(names.compactMap { NSFont(name: $0, size: 12)?.familyName })).sorted()
+    } ?? []
 
     var body: some View {
         Form {
+            Picker("Theme:", selection: Binding(
+                get: { settings.editor.theme },
+                set: { settings.editor = settings.editor.with(theme: $0) }
+            )) {
+                ForEach(Theme.allCases, id: \.self) { Text($0.name).tag($0) }
+            }
+            Picker("Appearance:", selection: $settings.appearance) {
+                ForEach(Appearance.allCases) { Text($0.name).tag($0) }
+            }
+            .pickerStyle(.segmented)
             Picker("Interface size:", selection: $settings.interfaceSize) {
                 ForEach(InterfaceSize.allCases) { Text($0.name).tag($0) }
             }
@@ -41,23 +55,44 @@ private struct EditorSettingsView: View {
                 Divider()
                 ForEach(families, id: \.self) { Text($0).tag($0) }
             }
+            Picker("Code font:", selection: Binding(
+                get: { settings.editor.monoFont ?? "" },
+                set: { settings.editor = settings.editor.with(monoFont: .some($0)) }
+            )) {
+                Text("System Monospaced").tag("")
+                Divider()
+                ForEach(monoFamilies, id: \.self) { Text($0).tag($0) }
+            }
             Stepper(value: Binding(
                 get: { settings.editor.size },
                 set: { settings.editor = settings.editor.with(size: $0) }
             ), in: EditorSettings.sizes) {
                 Text("Size: \(Int(settings.editor.size)) pt")
             }
-            LabeledContent("Line width:") {
+            Toggle("Limit the line length", isOn: Binding(
+                get: { settings.editor.limitsLineLength },
+                set: { settings.editor = settings.editor.with(limitsLineLength: $0) }
+            ))
+            LabeledContent("Line length:") {
                 HStack {
                     Slider(value: Binding(
-                        get: { settings.editor.lineWidth },
-                        set: { settings.editor = settings.editor.with(lineWidth: $0) }
-                    ), in: EditorSettings.lineWidths)
-                    Text("\(Int(settings.editor.lineWidth)) pt")
+                        get: { settings.editor.lineLength },
+                        set: { settings.editor = settings.editor.with(lineLength: $0) }
+                    ), in: EditorSettings.lineLengths, step: 5)
+                    Text("\(Int(settings.editor.lineLength)) characters")
                         .monospacedDigit()
-                        .frame(width: 60, alignment: .trailing)
+                        .frame(width: 100, alignment: .trailing)
                 }
             }
+            .disabled(!settings.editor.limitsLineLength)
+            Toggle("Check spelling while typing", isOn: Binding(
+                get: { settings.editor.checksSpelling },
+                set: { settings.editor = settings.editor.with(checksSpelling: $0) }
+            ))
+            Toggle("Correct spelling automatically", isOn: Binding(
+                get: { settings.editor.correctsSpelling },
+                set: { settings.editor = settings.editor.with(correctsSpelling: $0) }
+            ))
             Toggle("Show the Format bar over the Note", isOn: $settings.showsFormatBar)
             Button("Restore Defaults") { settings.editor = .standard }
                 .disabled(settings.editor == .standard)
