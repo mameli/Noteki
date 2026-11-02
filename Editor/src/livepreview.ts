@@ -3,7 +3,7 @@ import type { EditorState, Range } from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import type { SyntaxNode } from "@lezer/common";
 import { calloutOf, calloutTheme, drawCallout, quoteMarks, type RenderedCallout } from "./callouts";
-import { embeddedFile } from "./embeds";
+import { embeddedFile, svgSource } from "./embeds";
 import { drawFrontmatter, foldedLists, frontmatterLayout, frontmatterReading, frontmatterTheme, type RenderedFrontmatter } from "./frontmatter";
 import { tagChipsTheme } from "./tagchips";
 import { CheckboxWidget, isTicked, taskTheme } from "./tasks";
@@ -145,6 +145,12 @@ function preview(state: EditorState, from: number, to: number, measuring = true)
     to,
     enter(ref) {
       const node = ref.node;
+      // An SVG on one line is drawn under it (embeds.ts) and its source hides, as an image's. One
+      // across lines stays as written above its drawing: its line breaks cannot hide.
+      if (svgSource(state, node) !== null) {
+        if (state.doc.lineAt(node.from).number === state.doc.lineAt(node.to).number) hide(node, { from: node.from, to: node.to });
+        return false;
+      }
       if (asWritten.has(node.name)) return false;
       if (node.name === "FencedCode" || node.name === "CodeBlock") {
         // The box stays; the fences hide while the cursor is out of the block, their lines kept

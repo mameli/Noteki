@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Images on the web (`![](https://…)`) are drawn, as Obsidian does.
+- A middle click closes a Tab.
+- SVGs written in a Note (`<svg>…</svg>`, as web clippers save diagrams) are drawn.
+- A Property's single item below its key (`author:` then `- "[[name]]"`) no longer breaks letter by letter.
+
 ## 0.1.0 — 1 November 2026
 
 The first release, as a notarized DMG on GitHub (`scripts/release.sh`).

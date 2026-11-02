@@ -1,9 +1,12 @@
+import AppKit
 import NotekiCore
 import SwiftUI
 
-/// Noteki's own tab bar, in the toolbar's band above the Note (ADR 0003): a click brings a Tab in front, its × closes it.
+/// Noteki's own tab bar, in the toolbar's band above the Note (ADR 0003): a click brings a Tab in front, its × or a middle click closes it.
 struct TabBar: View {
     let model: AppModel
+    /// Where each Tab is in the bar, scrolled as shown: a middle click finds its Tab here.
+    @State private var frames: [NotekiCore.Tab.ID: CGRect] = [:]
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
@@ -15,6 +18,7 @@ struct TabBar: View {
                         select: { model.select(tab.id) },
                         close: { model.closeTab(tab.id) }
                     )
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(TabBar.space)) } action: { frames[tab.id] = $0 }
                     Divider().frame(height: 16)
                 }
             }
@@ -22,7 +26,16 @@ struct TabBar: View {
         .frame(height: 30)
         .padding(.horizontal, 8)
         .frame(maxHeight: .infinity)
+        .coordinateSpace(.named(TabBar.space))
+        // Behind the whole bar, not each Tab: a view of AppKit inside a Tab took its first click.
+        .background(MiddleClick { point in
+            guard let tab = model.tabs.all.first(where: { frames[$0.id]?.contains(point) == true }) else { return false }
+            model.closeTab(tab.id)
+            return true
+        })
     }
+
+    private static let space = "TabBar"
 }
 
 private struct TabButton: View {
@@ -64,4 +77,41 @@ private struct TabButton: View {
         .accessibilityLabel(title)
         .accessibilityAction(.default, select)
     }
+}
+
+/// A middle click on the view it is behind, where it is from the view's top left; `action` says whether it used it.
+/// SwiftUI never sees the middle button.
+private struct MiddleClick: NSViewRepresentable {
+    let action: (CGPoint) -> Bool
+
+    func makeNSView(context: Context) -> MiddleClickView {
+        MiddleClickView()
+    }
+
+    func updateNSView(_ view: MiddleClickView, context: Context) {
+        view.action = action
+    }
+}
+
+private final class MiddleClickView: NSView {
+    var action: (CGPoint) -> Bool = { _ in false }
+    private var monitor: Any?
+
+    // From the top left, as SwiftUI measures.
+    override var isFlipped: Bool { true }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if let monitor { NSEvent.removeMonitor(monitor) }
+        monitor = nil
+        guard window != nil else { return }
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .otherMouseUp) { [weak self] event in
+            guard let self, event.buttonNumber == 2, event.window === self.window else { return event }
+            let point = self.convert(event.locationInWindow, from: nil)
+            return self.bounds.contains(point) && self.action(point) ? nil : event
+        }
+    }
+
+    // Clicks go through to the Tabs: only the monitor listens.
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }

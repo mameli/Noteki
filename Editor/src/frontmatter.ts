@@ -350,7 +350,9 @@ export const frontmatterTheme = EditorView.baseTheme({
     maxWidth: "calc(100% - var(--key-width) - 1em)",
     cursor: "text",
   },
-  ".cm-property-list .cm-property-item": { margin: "1px 0.25em 1px 0" },
+  // In a list the chip's room is the list's, not the line's: measured against the list's own
+  // width, less the keys' column, a single item was squeezed and broken letter by letter.
+  ".cm-property-list .cm-property-item": { margin: "1px 0.25em 1px 0", maxWidth: "100%", whiteSpace: "pre" },
   // CodeMirror's 6px before every line, and the keys' column.
   ".cm-line.cm-property-items": { paddingLeft: "calc(var(--key-width) + 6px)" },
   ".cm-frontmatter-unreadable": { textDecoration: "underline wavy var(--error)", textUnderlineOffset: "3px" },

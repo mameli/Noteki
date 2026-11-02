@@ -1,7 +1,7 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import type { EditorState } from "@codemirror/state";
-import { type EmbeddedFile, imageWidgets, setEmbeds } from "../src/embeds";
+import { type EmbeddedFile, imageWidgets, setEmbeds, svgWidgets } from "../src/embeds";
 import { hiddenRanges } from "../src/livepreview";
 import { linkInners, setUnresolved, unresolved } from "../src/wikilink";
 import { stateOf } from "./helpers";
@@ -65,6 +65,30 @@ test("a PDF Embed shows its name or its Alias, a link; a Note's Embed is left as
 test("the app is asked about Markdown images by their decoded path, not about web images", () => {
   const state = stateOf("![[a.png]] ![x](Media/b%20c.png) ![y](https://example.com/z.png) ![z](<Media/d e.png>)");
   assert.deepEqual(linkInners(state), ["Media/b c.png", "Media/d e.png", "a.png"]);
+});
+
+test("an image on the web is drawn from its address, its source hidden while the cursor is away", () => {
+  const state = stateOf("Before\n![Cover](https://example.com/z.png)\nAfter‸");
+  assert.equal(shown(state), "Before\n\nAfter");
+  assert.deepEqual(
+    imageWidgets(state).map((widget) => [widget.at, widget.file.url]),
+    [[42, "https://example.com/z.png"]],
+  );
+});
+
+test("an SVG written on one line is drawn under it, its source hidden while the cursor is away", () => {
+  const svg = '<svg width="3"><path d="M0 0"></path></svg>';
+  const state = stateOf(`Before\n\n${svg}\n\nAfter‸`);
+  assert.equal(shown(state), "Before\n\n\n\nAfter");
+  assert.deepEqual(svgWidgets(state), [{ at: 8 + svg.length, source: svg }]);
+  assert.equal(shown(stateOf(`Before\n\n${svg}‸\n\nAfter`)), `Before\n\n${svg}\n\nAfter`);
+});
+
+test("an SVG across lines is drawn under its source, left as written; one in a code block is code", () => {
+  const svg = '<svg width="3">\n<path d="M0 0"/>\n</svg>';
+  const state = stateOf(`${svg}\n\n\`\`\`\n<svg></svg>\n\`\`\`\n‸`);
+  assert.equal(shown(state).slice(0, svg.length), svg);
+  assert.deepEqual(svgWidgets(state), [{ at: svg.length, source: svg }]);
 });
 
 test("a missing image shows its name, as an Unresolved link", () => {
