@@ -308,7 +308,8 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
             logger.fault("editor.html is missing from the app")
             return
         }
-        webView.loadFileURL(page, allowingReadAccessTo: page)
+        // Its folder: Mermaid's script is next to it, loaded only for a diagram.
+        webView.loadFileURL(page, allowingReadAccessTo: page.deletingLastPathComponent())
     }
 
     /// Sends a command; `reply` gets what the editor returned, nil for nothing.

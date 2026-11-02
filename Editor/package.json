@@ -29,7 +29,9 @@
     "@codemirror/view": "6.43.15",
     "@lezer/common": "1.5.3",
     "@lezer/highlight": "1.2.5",
-    "@lezer/markdown": "1.8.1"
+    "@lezer/markdown": "1.8.1",
+    "katex": "0.19.1",
+    "mermaid": "11.17.2"
   },
   "devDependencies": {
     "esbuild": "0.28.2",

@@ -5,6 +5,8 @@
 Themes and a simpler window: Ayu, Everforest and One Dark Pro, sidebars in their colours, Settings on one page, and text that never runs off the side.
 
 - One Light's text a little softer: its near-black is a dark grey.
+- LaTeX drawn by KaTeX: `$…$` in the text, `$$…$$` on its own; a click edits it. KaTeX is loaded only for a Note that has a formula.
+- Mermaid diagrams drawn from ```` ```mermaid ```` code blocks, in the theme's colours; a click edits the source. Mermaid is loaded only for a Note that has one.
 - *Open in Ghostty* (or the user's terminal) in the menu of a folder in Files, and *File → Open Vault in …*.
 - The sidebars and the Quick switcher in the theme's panel colour, solid, not translucent.
 - *Settings* on one page, grouped as System Settings does: Appearance, Text, Writing, Excluded folders and the Daily note; nearly square at first.

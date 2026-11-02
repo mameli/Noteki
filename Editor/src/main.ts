@@ -9,6 +9,8 @@ import { tags } from "@lezer/highlight";
 import { type EditorCommand, type EditorMessage, send } from "./bridge";
 import { linkCompletion, receiveLinkCompletions } from "./completion";
 import { embeddedFile, embedFiles, embedImages, setEmbeds } from "./embeds";
+import { mathFormulas } from "./math";
+import { mermaidDiagrams } from "./mermaid";
 import { bodyStart, frontmatterReading, frontmatterText, setFrontmatter } from "./frontmatter";
 import { broughtBack, changeTo, fromDisk } from "./states";
 import { type TagEditing, tagEditing } from "./tagchips";
@@ -170,7 +172,7 @@ const tagEditingByApp: TagEditing = {
 /** Live preview, or nothing in Source mode, which the app chooses. */
 const preview = new Compartment();
 let sourceMode = false;
-const previewed = () => (sourceMode ? [] : [livePreview, embedImages]);
+const previewed = () => (sourceMode ? [] : [livePreview, embedImages, mermaidDiagrams, mathFormulas]);
 
 function initialState(text: string, editable: boolean) {
   return EditorState.create({
