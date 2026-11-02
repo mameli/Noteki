@@ -48,7 +48,7 @@ struct SearchPane: View {
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 0) {
                     Text(found.total == 1 ? "1 Note" : "\(found.total) Notes")
-                        .font(.subheadline.weight(.semibold))
+                        .interfaceFont(.subheadline, weight: .semibold)
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, 12)
                         .padding(.vertical, 6)
@@ -58,7 +58,7 @@ struct SearchPane: View {
                     if found.total > found.results.count {
                         let more = found.total - found.results.count
                         Text("\(more) more \(more == 1 ? "Note" : "Notes"): add a word to narrow the search.")
-                            .font(.callout)
+                            .interfaceFont(.callout)
                             .foregroundStyle(.secondary)
                             .padding(12)
                     }
@@ -88,7 +88,7 @@ private struct SearchResultView: View {
             ForEach(result.lines, id: \.line) { line in
                 row { open(result.note, line.line) } label: {
                     Text(line.text)
-                        .font(.callout)
+                        .interfaceFont(.callout)
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                         .padding(.leading, 22)
@@ -96,7 +96,7 @@ private struct SearchResultView: View {
             }
             if result.moreLines > 0 {
                 Text(result.moreLines == 1 ? "1 more line" : "\(result.moreLines) more lines")
-                    .font(.caption)
+                    .interfaceFont(.caption)
                     .foregroundStyle(.tertiary)
                     .padding(.leading, 34)
                     .padding(.bottom, 2)

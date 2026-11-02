@@ -2,7 +2,7 @@ import AppKit
 import NotekiCore
 import SwiftUI
 
-/// Noteki → Settings… (⌘,): the editor's text, and the folders the Vault leaves out.
+/// Noteki → Settings… (⌘,): the size of the sidebars and Tabs, the editor's text, and the folders the Vault leaves out.
 struct SettingsView: View {
     /// The Vault of the first window: its Excluded folders are shown.
     let model: AppModel
@@ -27,6 +27,11 @@ private struct EditorSettingsView: View {
 
     var body: some View {
         Form {
+            Picker("Interface size:", selection: $settings.interfaceSize) {
+                ForEach(InterfaceSize.allCases) { Text($0.name).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .help("The sidebars, the Tabs and the panes; the Note's text has its own size below.")
             // In the menu's own font: a thousand families each in its own would load them all.
             Picker("Font:", selection: Binding(
                 get: { settings.editor.font ?? "" },

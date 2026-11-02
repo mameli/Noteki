@@ -54,7 +54,7 @@ private struct BacklinkRow: View {
                 }
             }
             Text(backlink.text)
-                .font(.callout)
+                .interfaceFont(.callout)
                 .foregroundStyle(.secondary)
                 .lineLimit(3)
         }

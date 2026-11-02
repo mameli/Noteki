@@ -65,7 +65,7 @@ private struct TabButton: View {
                 .foregroundStyle(isInFront ? .primary : .secondary)
             Spacer(minLength: 0)
         }
-        .font(.callout)
+        .interfaceFont(.callout)
         .padding(.horizontal, 8)
         .frame(minWidth: 120, maxWidth: 220, maxHeight: .infinity)
         .background(isInFront ? AnyShapeStyle(.quaternary) : AnyShapeStyle(.clear), in: .rect(cornerRadius: 7))

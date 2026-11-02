@@ -33,7 +33,7 @@ private struct OutlinePane: View {
                 ForEach(model.outline, id: \.line) { heading in
                     Button { model.go(to: heading) } label: {
                         Text(heading.text)
-                            .font(.callout)
+                            .interfaceFont(.callout)
                             .foregroundStyle(heading.level == 1 ? .primary : .secondary)
                             .lineLimit(2)
                             .padding(.leading, 12 + CGFloat(heading.level - 1) * 12)

@@ -35,7 +35,7 @@ struct QuickSwitcher: View {
             VStack(spacing: 0) {
                 TextField("Find or create a Note", text: $typed)
                     .textFieldStyle(.plain)
-                    .font(.title3)
+                    .interfaceFont(.title3)
                     .padding(12)
                     .focused($isTyping)
                     .onKeyPress(.downArrow) { move(by: 1) }

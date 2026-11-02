@@ -95,6 +95,8 @@ struct ContentView: View {
                 QuickSwitcher(model: model)
             }
         }
+        // The sidebars, the Tabs, the panes and the Quick switcher.
+        .interfaceSize(AppSettings.shared.interfaceSize)
         .onChange(of: model.wantsSearchField) { _, wants in
             if wants, columns == .detailOnly { columns = .all }
         }
@@ -213,15 +215,16 @@ struct NoteDetail: View {
 /// space below to the root.
 struct FilesPane: View {
     @Bindable var model: AppModel
+    @Environment(\.interfaceSize) private var interfaceSize
     @FocusState private var hasKeyboard: Bool
 
     var body: some View {
         List(selection: $model.selection) {
             FileRows(items: model.tree, model: model)
         }
-        // Grey icons, the accent only on the selection; rows as compact as Mail's.
+        // Grey icons, the accent only on the selection; rows as compact as Mail's at Small.
         .listItemTint(.monochrome)
-        .environment(\.sidebarRowSize, .small)
+        .environment(\.sidebarRowSize, interfaceSize.rowSize)
         .focused($hasKeyboard)
         .contextMenu(forSelectionType: String.self) { paths in
             let item = paths.first.flatMap { model.tree.item(at: $0) }

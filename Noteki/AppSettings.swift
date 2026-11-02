@@ -3,7 +3,7 @@ import NotekiCore
 import Observation
 
 /// What the user chooses in Settings, kept in the app's preferences, outside the Vault (ADR
-/// 0002): the editor's font, size and line width, the folders each Vault excludes, and where
+/// 0002): the size of the window's sidebars and Tabs, the editor's font, size and line width, the folders each Vault excludes, and where
 /// the Daily note is. Every window's editor and model follow a change at once, told by a
 /// notification; the Daily note's place is read when ⌘⇧D is pressed.
 @MainActor
@@ -22,6 +22,12 @@ final class AppSettings {
     private static let dailyFolderKey = "dailyNoteFolder"
     private static let dailyFormatKey = "dailyNoteFormat"
     private static let formatBarKey = "showsFormatBar"
+    private static let interfaceSizeKey = "interfaceSize"
+
+    /// How large the sidebars, the Tabs and the panes are drawn; the Note's text has its own size.
+    var interfaceSize = InterfaceSize(rawValue: UserDefaults.standard.string(forKey: AppSettings.interfaceSizeKey) ?? "") ?? .medium {
+        didSet { UserDefaults.standard.set(interfaceSize.rawValue, forKey: Self.interfaceSizeKey) }
+    }
 
     /// The row of Format buttons over the Note; hidden at first, for those who use the shortcuts.
     var showsFormatBar = UserDefaults.standard.bool(forKey: AppSettings.formatBarKey) {

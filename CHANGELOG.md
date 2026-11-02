@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- *Settings → Interface size*: Small, Medium or Large for the sidebars, the Tabs, the panes and the Quick switcher; Medium at first, a little larger than before.
 - Images on the web (`![](https://…)`) are drawn, as Obsidian does.
 - A middle click closes a Tab.
 - SVGs written in a Note (`<svg>…</svg>`, as web clippers save diagrams) are drawn.
