@@ -1,6 +1,6 @@
 import type { SyntaxNode, SyntaxNodeRef } from "@lezer/common";
 import { ensureSyntaxTree, syntaxTree } from "@codemirror/language";
-import { type EditorState, RangeSetBuilder, StateEffect, StateField, type Text } from "@codemirror/state";
+import { EditorSelection, type EditorState, RangeSetBuilder, StateEffect, StateField, type Text } from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
 import { styleTags, tags } from "@lezer/highlight";
 import type { InlineContext, MarkdownConfig } from "@lezer/markdown";
@@ -116,11 +116,14 @@ export function followWikilinks(
     mousedown(event, view) {
       pressed = null;
       if (event.button !== 0 || !event.metaKey || event.shiftKey || event.ctrlKey || view.composing) return false;
-      // Only over the text itself: not beside it, where the nearest position would be a link.
+      // Only over the text itself: not beside it, where the nearest position would be a link. The
+      // row clicked, not the whole line: a line that wraps ends on its last row, left of the others.
       const pos = view.posAtCoords({ x: event.clientX, y: event.clientY }, false);
-      const line = view.state.doc.lineAt(pos);
-      const start = view.coordsAtPos(line.from, 1);
-      const end = view.coordsAtPos(line.to, -1);
+      const cursor = EditorSelection.cursor(pos, 1);
+      const rowStart = view.moveToLineBoundary(cursor, false, true);
+      const rowEnd = view.moveToLineBoundary(cursor, true, true);
+      const start = view.coordsAtPos(rowStart.head, 1);
+      const end = view.coordsAtPos(rowEnd.head, -1);
       if (!start || !end || event.clientX < start.left || event.clientX > end.right) return false;
       const found = linkAt(view, pos);
       // An image drawn under its line has its source hidden: a click there places the cursor.
