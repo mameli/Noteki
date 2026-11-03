@@ -6,6 +6,8 @@
 
 <p align="center">macOS 15+ · Apple Silicon</p>
 
+<p align="center"><a href="https://noteki.app">noteki.app</a> · <a href="https://github.com/mameli/Noteki/releases/latest/download/Noteki.dmg">Download</a> · <a href="CHANGELOG.md">What's new</a></p>
+
 A light native Mac app to read and write the Markdown vault you keep with **Obsidian**, a fraction of its weight. It works on the same files, side by side with Obsidian, and keeps the parts used every day.
 
 - **Live preview**: the Markdown syntax hides and shows again where the cursor is; tables, callouts, task lists, code blocks coloured in their language, images in the text.

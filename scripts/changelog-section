@@ -1,0 +1,11 @@
+#!/bin/sh
+# Prints the CHANGELOG's section of one version, without its heading: what a GitHub Release says
+# is in it (scripts/release.sh).
+#
+#   scripts/changelog-section 0.2.0
+set -e
+cd "$(dirname "$0")/.."
+awk -v version="$1" '
+    /^## / { inside = (index($0, "## " version " ") == 1); next }
+    inside
+' CHANGELOG.md | sed -e '/./,$!d' | sed -e ':a' -e '/^\n*$/{$d;N;ba' -e '}'

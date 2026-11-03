@@ -3,7 +3,7 @@
 # DMG with a link to Applications, has Apple notarize the DMG (notarytool profile "noteki", else
 # "takku" or "dimmela" if one of those is on this Mac, or $NOTEKI_NOTARY_PROFILE), staples the
 # ticket and publishes it as a GitHub Release tagged v<MARKETING_VERSION> (from
-# Config/Base.xcconfig). The Release also carries a copy named Noteki.dmg, so
+# Config/Base.xcconfig), its notes the version's section of CHANGELOG.md. The Release also carries a copy named Noteki.dmg, so
 # releases/latest/download/Noteki.dmg always gives the latest version. Adapted from Dimmela's script.
 #
 #   scripts/release.sh            build, sign, notarize into build.noindex/release/, then ask before publishing
@@ -101,6 +101,10 @@ Mac with macOS 15 or later.
 
 Download \`Noteki-$version.dmg\` (\`Noteki.dmg\` is the same file), open it and drag **Noteki** to **Applications**. Noteki is notarized by Apple: it opens like any other app.
 
-What's in it: see [CHANGELOG.md](https://github.com/mameli/Noteki/blob/$tag/CHANGELOG.md).
+## What's new
+
+$(scripts/changelog-section "$version")
+
+Every version: [CHANGELOG.md](https://github.com/mameli/Noteki/blob/$tag/CHANGELOG.md).
 NOTES
 echo "Published: $(gh release view "$tag" --json url --jq .url)"
