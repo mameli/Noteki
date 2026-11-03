@@ -25,6 +25,10 @@ ENABLE_USER_SCRIPT_SANDBOXING = NO
 // directly, without security-scoped bookmarks.
 ENABLE_APP_SANDBOX = NO
 ENABLE_HARDENED_RUNTIME[config=Release] = YES
+// The Release's binary without its symbols, 3.6 MB down to 1.7 MB: `xcodebuild build` strips only
+// with post-processing on. They stay in the dSYM next to the app, for crash reports.
+DEPLOYMENT_POSTPROCESSING[config=Release] = YES
+STRIP_INSTALLED_PRODUCT[config=Release] = YES
 
 // Without Local.xcconfig the app is signed ad hoc.
 CODE_SIGN_STYLE = Manual

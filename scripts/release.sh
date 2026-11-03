@@ -65,12 +65,13 @@ xcodebuild -project Noteki.xcodeproj -scheme Noteki -configuration Release \
 codesign --verify --strict --deep "$app"
 [[ $(codesign -dvv "$app" 2>&1) == *"Authority=$identity"* ]] || { echo "Not signed with the $identity certificate." >&2; exit 1; }
 
-# The DMG: the app and a link to Applications, to drag it there.
+# The DMG: the app and a link to Applications, to drag it there. LZMA (ULMO), read since macOS
+# 10.15: a quarter smaller than zlib's UDZO.
 staging=build.noindex/release/dmg
 mkdir -p "$staging"
 ditto "$app" "$staging/Noteki.app"
 ln -s /Applications "$staging/Applications"
-hdiutil create -quiet -volname "Noteki $version" -srcfolder "$staging" -fs HFS+ -format UDZO "$dmg"
+hdiutil create -quiet -volname "Noteki $version" -srcfolder "$staging" -fs HFS+ -format ULMO "$dmg"
 codesign --sign "$identity" --timestamp "$dmg"
 
 # The DMG is notarized and its ticket stapled, so Gatekeeper accepts it offline too; the app
