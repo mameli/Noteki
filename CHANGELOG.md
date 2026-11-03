@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.1 — 3 November 2026
+
+A fix, and a smaller download.
+
+- ⌘-click follows a link that wraps onto a second row from anywhere on it, not only from its last row.
+- The DMG is a quarter smaller (3.6 MB instead of 4.9): the app without its debugging symbols, compressed with LZMA.
+
 ## 0.2.0 — 2 November 2026
 
 Themes and a simpler window: Ayu, Everforest and One Dark Pro, sidebars in their colours, Settings on one page, and text that never runs off the side.
