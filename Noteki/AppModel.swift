@@ -452,16 +452,19 @@ final class AppModel {
     /// The row of Files whose name is being typed: a Note just made with ⌘N, or Rename. Its
     /// folders open, so the row is on screen.
     var renaming: String? {
-        didSet {
-            var folder = renaming.map(folderOf) ?? ""
-            while !folder.isEmpty {
-                expandedFolders.insert(folder)
-                folder = folderOf(folder)
-            }
-        }
+        didSet { if let renaming { expandFolders(around: renaming) } }
     }
     /// The folders open in Files, by their paths.
     var expandedFolders: Set<String> = []
+
+    /// Opens the folders that hold `path` in Files, so its row is on screen.
+    private func expandFolders(around path: String) {
+        var folder = folderOf(path)
+        while !folder.isEmpty {
+            expandedFolders.insert(folder)
+            folder = folderOf(folder)
+        }
+    }
 
     /// What Noteki did to the Vault's files, for every window of it to follow.
     enum FileChange {
@@ -875,11 +878,12 @@ final class AppModel {
         return true
     }
 
-    /// Files selects what the Tab in front shows.
+    /// Files selects what the Tab in front shows, its folders opened so the row is on screen.
     private func followFrontInFiles() {
         isFollowingTab = true
         selection = tabs.front?.path
         isFollowingTab = false
+        if let selection, !isLooseFile { expandFolders(around: selection) }
     }
 
     func chooseVault() {

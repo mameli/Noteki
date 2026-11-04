@@ -223,6 +223,25 @@ struct FilesPane: View {
     @FocusState private var hasKeyboard: Bool
 
     var body: some View {
+        ScrollViewReader { scroller in
+            list
+                // The row of the Note in front scrolled into view: opened from the Quick
+                // switcher, a link or another Tab, and when Files is shown again.
+                .onChange(of: model.selection) { _, path in scroll(scroller, to: path) }
+                .onAppear { scroll(scroller, to: model.selection) }
+        }
+    }
+
+    /// After its folders open: their rows are in the List a moment later.
+    private func scroll(_ scroller: ScrollViewProxy, to path: String?) {
+        guard let path else { return }
+        Task { @MainActor in
+            await Task.yield()
+            scroller.scrollTo(path)
+        }
+    }
+
+    private var list: some View {
         List(selection: $model.selection) {
             FileRows(items: model.tree, model: model)
         }

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- *Files* shows the Note in front wherever it was opened from (the Quick switcher, a link, Search, Tags, another Tab, Takku): its folders open and the list scrolls to its row, selected.
+
 ## 0.2.1 — 3 November 2026
 
 A fix, and a smaller download.
