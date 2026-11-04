@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.2.2 — 4 November 2026
+
+Files keeps up with the Note you are reading.
 
 - *Files* shows the Note in front wherever it was opened from (the Quick switcher, a link, Search, Tags, another Tab, Takku): its folders open and the list scrolls to its row, selected.
 
