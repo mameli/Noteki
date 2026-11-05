@@ -880,11 +880,20 @@ final class AppModel {
 
     /// Files selects what the Tab in front shows, its folders opened so the row is on screen.
     private func followFrontInFiles() {
+        let before = selection
         isFollowingTab = true
         selection = tabs.front?.path
         isFollowingTab = false
-        if let selection, !isLooseFile { expandFolders(around: selection) }
+        if let selection, !isLooseFile {
+            expandFolders(around: selection)
+            // Another row than the one clicked: it goes near the top, so it is not left at the
+            // bottom of a long list. A click already selected its row.
+            if selection != before { rowToRaise = selection }
+        }
     }
+
+    /// The row Files scrolls near the top, taken once by the pane.
+    var rowToRaise: String?
 
     func chooseVault() {
         let panel = NSOpenPanel()

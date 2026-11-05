@@ -19,6 +19,9 @@ struct NotekiApp: App {
             )
         }
         .defaultSize(width: 1100, height: 750)
+        // A file opened from the Finder or Takku is the AppDelegate's: left to SwiftUI, the
+        // window is presented again, with the animation of a new one.
+        .handlesExternalEvents(matching: [])
         .commands {
             CommandGroup(replacing: .newItem) {
                 VaultCommands(main: model, windows: appDelegate.windows, showMainWindow: { appDelegate.showMainWindow() })
@@ -45,17 +48,22 @@ struct NotekiApp: App {
         }
         .defaultSize(width: 1100, height: 750)
         .restorationBehavior(.disabled)
+        // A file opened from the Finder or Takku is the AppDelegate's: left to SwiftUI, a
+        // WindowGroup answers it with a window of its own, a second view of the Vault.
+        .handlesExternalEvents(matching: [])
         Settings {
             SettingsView(model: model)
         }
         // Nearly square at first; taller to see more without scrolling.
         .defaultSize(width: 500, height: 540)
         .windowResizability(.contentMinSize)
+        .handlesExternalEvents(matching: [])
         Window("Keyboard Shortcuts", id: ShortcutsView.windowID) {
             ShortcutsView()
         }
         .windowResizability(.contentSize)
         .restorationBehavior(.disabled)
+        .handlesExternalEvents(matching: [])
     }
 }
 

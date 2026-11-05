@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- A Note opened from Takku, its notification or the Finder no longer looks like a new window opening: the window used to pulse (SwiftUI answered the event as well), now it only comes to the front.
+- *Files* puts a Note that comes in front from elsewhere near the top of the list, not at the bottom of a long folder. A click on a row does not move the list.
+
 ## 0.2.2 — 4 November 2026
 
 Files keeps up with the Note you are reading.

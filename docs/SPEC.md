@@ -176,7 +176,7 @@ The right sidebar's Outline lists the Headings of the Note in front, indented by
   - It opens in the Tab in front and the editor takes the keyboard; missing, it is created empty (no template), its folders too, under their names on disk. One setting for the app, not per Vault.
   - The format is Obsidian's, moment.js's tokens (years, quarters, months, days, weekdays, weeks, ordinals, times; not the localized `L`…), names of days and months in English whatever Obsidian's language; text in `[brackets]` or after `\` stays as written, and a `/` makes folders. *Settings* shows today's path as the format is typed.
   - Refused, with an alert: a Daily note in an Excluded folder, a name that leaves its folder (`..`) or is empty, or that holds `\ :` or what a Wikilink cannot hold (`[ ] # ^ |`).
-- *Files* selects the Note or Attachment in front, wherever it was opened from: its folders open and the list scrolls to its row. A folder closed by hand stays closed until a Note inside it comes in front again.
+- *Files* selects the Note or Attachment in front, wherever it was opened from: its folders open and the list scrolls to its row. When the Note came in front from elsewhere (not by a click on its row), the row goes near the top, a fifth of the list down, so a long folder does not leave it at the bottom; a click does not move the list. A folder closed by hand stays closed until a Note inside it comes in front again.
 - In the *Files* pane, Notes and folders can be created, renamed, moved by dragging and moved to the Trash (never deleted for good). In v1 renaming does not update the Wikilinks that point to the Note.
   - *Open in Ghostty* (or the user's terminal: the first installed of Ghostty, iTerm, Warp, WezTerm, kitty, Alacritty, else Terminal) opens a window of it in the folder clicked, the folder of the file clicked, or the Vault's root; *File → Open Vault in …* in the Vault's root (no shortcut: ⌥⌘T is Hide Toolbar). No terminal is embedded.
   - The menu of a row, or of the space below the rows: *New Note* and *New Folder* (`Untitled`, `Untitled 1`…) in the folder clicked, in the folder of the file clicked, or at the root; *Rename*; *Move to Trash*, also with ⌘⌫ on the row selected, as in the Finder (not Delete alone). Attachments are renamed and moved to the Trash the same way.
@@ -188,6 +188,8 @@ The right sidebar's Outline lists the Headings of the Note in front, indented by
 ## Takku
 
 Noteki works with Takku without changes to Takku:
+
+- A Note opened from Takku, or from its notification, comes into the window already open: no scene answers the event but the app delegate (`handlesExternalEvents(matching: [])` on every scene), so SwiftUI plays no window opening.
 
 - Its `Info.plist` declares the *Editor* role for `net.daringfireball.markdown`, so Takku lists it among the Editors, and the *Viewer* role for `public.folder`, so Takku's *Show all* hands it the Vault. Not `public.plain-text`: that type covers every source file.
 - Opening a Note or Attachment of the Vault shows it; a folder equal to or inside the Vault is selected in *Files*; a file in an Excluded folder only brings the window forward. A Markdown or text file outside the Vault opens as a **Loose file** in its own window, without indexing anything around it. Any other folder asks whether to switch Vault.

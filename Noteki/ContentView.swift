@@ -232,12 +232,19 @@ struct FilesPane: View {
         }
     }
 
-    /// After its folders open: their rows are in the List a moment later.
+    /// After its folders open: their rows are in the List a moment later. A row that came in
+    /// front from elsewhere goes near the top, a few rows below it; one clicked is only brought
+    /// into view.
     private func scroll(_ scroller: ScrollViewProxy, to path: String?) {
         guard let path else { return }
         Task { @MainActor in
             await Task.yield()
-            scroller.scrollTo(path)
+            if model.rowToRaise == path {
+                model.rowToRaise = nil
+                scroller.scrollTo(path, anchor: UnitPoint(x: 0, y: 0.2))
+            } else {
+                scroller.scrollTo(path)
+            }
         }
     }
 
