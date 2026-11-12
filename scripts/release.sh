@@ -168,7 +168,7 @@ fi
 gh release create "$tag" "$dmg" "$latest" "$appcast" --target main --title "Noteki $version" --notes-file - <<NOTES
 Mac with macOS 15 or later.
 
-Download \`Noteki-$version.dmg\` (\`Noteki.dmg\` is the same file), open it and drag **Noteki** to **Applications**. Noteki is notarized by Apple: it opens like any other app. With Homebrew: \`brew install --cask mameli/noteki/noteki\`.
+Download \`Noteki-$version.dmg\` (\`Noteki.dmg\` is the same file), open it and drag **Noteki** to **Applications**. Noteki is notarized by Apple: it opens like any other app. With Homebrew: \`brew tap mameli/noteki && brew trust mameli/noteki && brew install --cask noteki\`.
 
 From 0.3.0 on Noteki updates itself: *Check for Updates…* in the Noteki menu, then **Install Update**.
 
