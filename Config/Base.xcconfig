@@ -1,8 +1,9 @@
 // Shared settings of the Noteki target.
 PRODUCT_NAME = Noteki
 PRODUCT_BUNDLE_IDENTIFIER = app.noteki.noteki
-MARKETING_VERSION = 0.2.3
-CURRENT_PROJECT_VERSION = 1
+MARKETING_VERSION = 0.3.0
+// Sparkle compares it: one more at every release (scripts/release.sh checks).
+CURRENT_PROJECT_VERSION = 2
 
 MACOSX_DEPLOYMENT_TARGET = 15.0
 SWIFT_VERSION = 6.0

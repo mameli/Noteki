@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.3.0 — 12 November 2026
+
+Noteki updates itself, tables are edited in place, and a Command palette finds every command.
+
+- Noteki updates itself (Sparkle): *Check for Updates…* in the Noteki menu, or *Settings → Updates*, shows the new version and installs it; a daily check, which can be turned off, never opens a window by itself. Every Note is saved first, as when quitting. Versions up to 0.2.3 are updated by hand once more.
+- The disk image opens on a window to drag Noteki into Applications. With Homebrew: `brew tap mameli/noteki && brew trust mameli/noteki && brew install --cask noteki`.
+- Tables stay drawn while the cursor is in them, as in Obsidian: the cell being edited shows all its text, wrapped in its column. Tab and ⇧Tab go from cell to cell, ↑ ↓ and Return to the cell above and below; Tab after the last cell and Return on the last row add a row. Their sides are straight, and when a table is wider than the text only its widest columns shrink.
+- *Command palette* (⇧⌘P, *View → Command Palette…*): every command of the menus, found by part of its name, with its shortcut. *Help → Keyboard Shortcuts* opens it.
+- Text copied with its formatting (a web page, Mail, Outlook, Teams, Word) is pasted as Markdown: headings, bold, italic, links, lists, quotes, code and tables. *Edit → Paste and Match Style* (⇧⌘V) pastes the text alone.
+- Footnotes: `[^1]` is a small raised number, its definition shows the number; a click goes from one to the other.
+- *File → Export as HTML…*, *Export as PDF…* and *Print…* (⌘P): the Note as one page, in light colours, with its images, tables, callouts, formulas and diagrams.
+- *View → Focus Mode* fades everything but the paragraph being written; *View → Typewriter Mode* keeps the line being written in the middle of the window.
+- `---` is drawn as a line; selected code is visibly selected; *Make a Copy* in the menu of a file in *Files*.
+- A Markdown file opened with Noteki from outside the Vault has the Format bar, if chosen in Settings, and its menus (Format, Find, Export) work.
+- Shortcuts as other apps have them: ⌘T opens a Note in a new Tab, ⇧⌘T reopens the Tab closed last, ⌥⌘F replaces, ⇧⌘] and ⇧⌘[ change Tab, ⌘0 is Actual Size. The sidebars are ⌃⌘S and ⌃⌥⌘S, *Files*, *Tags* and *Search* ⌃⌘1, ⌃⌘2 and ⌃⌘3.
+- *Files* no longer scrolls under the window's buttons, and *Settings* shows Noteki's icon centred over the page.
+
 ## 0.2.3 — 5 November 2026
 
 Opening a Note from Takku is calmer, and Files shows it higher.
