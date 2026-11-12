@@ -153,7 +153,7 @@ The right sidebar lists the Notes with a Wikilink to the Note in front, each wit
 - A link counts as Obsidian counts it: `[[name]]`, with an Alias, a heading or a block (`[[name#heading]]`, which leads to the Note), a path, an Embed `![[name]]`, and a link in the Frontmatter. A link to the Note itself does not, and several on a line are one Backlink. Which Note a link leads to is decided by the same resolution as a click, from the Note that holds it.
 - Links in code (inline, fenced) do not count; a backslash-escaped `\[[` does not either. Not excluded: indented code blocks, fences nested in a list, a code span across lines, `%%comments%%`.
 - Backlinks come from the files on disk: a link typed in a Note shows in the Backlinks of its target a moment after it is saved.
-- The sidebar is **hidden at first** (⌃⌥⌘S, or the toolbar button; remembered in the preferences). Its *Outline* and *Backlinks* are chosen with a control at its top, the Outline first; the choice is remembered too. The links of the Vault are read when the Backlinks are first shown, not at launch, because holding them costs memory (see Budget). Until then, "Reading the links of your Notes…".
+- The sidebar is **hidden at first** (⌥⌘0, as Xcode's inspector, or the toolbar button; remembered in the preferences). Its *Outline* and *Backlinks* are chosen with a control at its top, the Outline first; the choice is remembered too. The links of the Vault are read when the Backlinks are first shown, not at launch, because holding them costs memory (see Budget). Until then, "Reading the links of your Notes…".
 
 ### Outline
 

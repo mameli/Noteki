@@ -431,7 +431,8 @@ private struct SidebarCommands: View {
         Button(model.isShowingSidebar ? "Hide Right Sidebar" : "Show Right Sidebar") {
             model.isShowingSidebar.toggle()
         }
-        .keyboardShortcut("s", modifiers: [.command, .control, .option])
+        // Xcode's for its inspector. Not ⌃⌥⌘S: window managers take ⌃⌥⌘ chords before the app.
+        .keyboardShortcut("0", modifiers: [.command, .option])
         Divider()
         // ⌃⌘: ⌘1–⌘6 are the Headings, as in Typora.
         Button("Files") { model.leftPane = .files }.keyboardShortcut("1", modifiers: [.command, .control])

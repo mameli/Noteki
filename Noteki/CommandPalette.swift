@@ -33,7 +33,8 @@ enum CommandPaletteCatalog {
     static func commands() -> [PaletteCommand] {
         guard let bar = NSApp.mainMenu else { return [] }
         var found: [PaletteCommand] = []
-        for top in bar.items {
+        // The app's menu (About, Settings, Quit) last: the Note's commands first.
+        for top in bar.items.dropFirst() + bar.items.prefix(1) {
             guard let menu = top.submenu else { continue }
             walk(menu, path: [menu.title.isEmpty ? top.title : menu.title], into: &found)
         }

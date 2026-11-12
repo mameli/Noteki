@@ -27,7 +27,9 @@ struct ContentView: View {
     var body: some View {
         NavigationSplitView(columnVisibility: $columns) {
             LeftSidebar(model: model, isShown: columns != .detailOnly)
-                .navigationSplitViewColumnWidth(min: 200, ideal: 260)
+                // Wide enough for the window's buttons, the sidebar toggle and the Files, Tags and Search icons:
+                // narrower, the toolbar hid the icons in its overflow menu, on a first launch too.
+                .navigationSplitViewColumnWidth(min: 280, ideal: 300)
         } detail: {
             if model.vault == nil {
                 ContentUnavailableView {
