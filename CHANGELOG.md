@@ -1,8 +1,10 @@
 # Changelog
 
-## Unreleased
+## 0.3.1 — 12 November 2026
 
-- *Help → Support Noteki…*, and a *Support* section in *Settings*: an optional payment that supports Noteki. The app is free and the same without it.
+Noteki can be supported, if you want.
+
+- *Help → Support Noteki…*, and a *Support* section in *Settings*: an optional payment that supports Noteki. The app is free, open source and the same without it; the Command palette lists it with the rest of Help.
 
 ## 0.3.0 — 12 November 2026
 
