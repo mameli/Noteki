@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- *Help → Support Noteki…*, and a *Support* section in *Settings*: an optional payment that supports Noteki. The app is free and the same without it.
+
 ## 0.3.0 — 12 November 2026
 
 Noteki updates itself, tables are edited in place, and a Command palette finds every command.
