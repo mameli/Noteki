@@ -11,7 +11,7 @@
 A light native Mac app to read and write the Markdown vault you keep with **Obsidian**, a fraction of its weight. It works on the same files, side by side with Obsidian, and keeps the parts used every day.
 
 <p align="center">
-  <img src="docs/screenshots/latex.png" alt="Noteki showing a note with Maxwell's equations drawn by KaTeX, a callout and Properties" width="900">
+  <img src="docs/screenshots/latex.png" alt="Noteki showing a note with Maxwell's equations drawn by KaTeX, a callout and Properties" width="640">
 </p>
 
 - **Live preview**: the Markdown syntax hides and shows again where the cursor is; formulas drawn with KaTeX, Mermaid diagrams, tables edited cell by cell, callouts, task lists, footnotes, code coloured in its language, images in the text.
