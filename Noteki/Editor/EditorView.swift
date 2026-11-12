@@ -182,6 +182,15 @@ final class EditorController: NSObject, WKScriptMessageHandler, WKNavigationDele
         return applied
     }
 
+    /// Export and Print: the Note shown as a page of HTML, its images still at the editor's
+    /// addresses; nil when the editor could not give it.
+    func exportHTML(title: String) async -> String? {
+        guard isReady else { return nil }
+        return await withCheckedContinuation { continuation in
+            run(.exportHTML(title: title)) { continuation.resume(returning: $0) }
+        }
+    }
+
     /// The cursor at the start of `line` in the Note shown, as for a search result in it.
     func goToLine(noteID: String, line: Int) {
         guard isReady, loaded?.noteID == noteID else { return }

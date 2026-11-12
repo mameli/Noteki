@@ -32,5 +32,13 @@
 			</array>
 		</dict>
 	</array>
+	<!-- Updates with Sparkle (ADR 0011): the appcast of the latest GitHub Release, and the public
+	     half of the EdDSA key that signs the disk images (account "noteki" in the keychain). -->
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
+	<key>SUFeedURL</key>
+	<string>https://github.com/mameli/Noteki/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>yiDSZZuHxZyVOGgVD1WcUiTePxFrTHbyMjLr9iIW+CE=</string>
 </dict>
 </plist>

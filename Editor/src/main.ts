@@ -1,7 +1,7 @@
 import { defaultKeymap, history, historyKeymap, indentLess, indentMore, redo, selectAll, undo } from "@codemirror/commands";
 import { HighlightStyle, syntaxHighlighting } from "@codemirror/language";
 import { formatKeys, formatting } from "./format";
-import { createFindBar, findBarTheme } from "./findbar";
+import { createFindBar, findBarTheme, openReplace } from "./findbar";
 import { findNext, findPrevious, openSearchPanel, search, searchKeymap } from "@codemirror/search";
 import { Compartment, EditorState, Prec, type StateEffect, Transaction } from "@codemirror/state";
 import { drawSelection, EditorView, keymap } from "@codemirror/view";
@@ -9,17 +9,20 @@ import { tags } from "@lezer/highlight";
 import { type EditorCommand, type EditorMessage, send } from "./bridge";
 import { linkCompletion, receiveLinkCompletions } from "./completion";
 import { embeddedFile, embedFiles, embedImages, setEmbeds } from "./embeds";
-import { mathFormulas } from "./math";
-import { mermaidDiagrams } from "./mermaid";
+import { loadKatex, mathFormulas } from "./math";
+import { noteBody, page } from "./export";
+import { mermaidDiagrams, render as renderDiagram } from "./mermaid";
 import { bodyStart, frontmatterReading, frontmatterText, setFrontmatter } from "./frontmatter";
 import { broughtBack, changeTo, fromDisk } from "./states";
 import { type TagEditing, tagEditing } from "./tagchips";
 import { highlightTag } from "./highlight";
 import { insertion } from "./insert";
-import { applySettings } from "./settings";
+import { applySettings, type EditorSettings } from "./settings";
+import { writingModes } from "./writing";
 import { noteLanguage } from "./language";
 import { livePreview } from "./livepreview";
 import { selectionOverBackgrounds } from "./selection";
+import { pasteAsMarkdown } from "./paste";
 import { followWikilinks, linkInners, markUnresolved, unresolvedLinks } from "./wikilink";
 
 // Colours come from the CSS variables in editor.css, so light and dark follow the system.
@@ -170,6 +173,10 @@ const tagEditingByApp: TagEditing = {
   },
 };
 
+/** Focus mode and Typewriter mode, as the settings say: every Note's state has them. */
+const modes = new Compartment();
+let settings: EditorSettings | undefined = window.notekiSettings;
+
 /** Live preview, or nothing in Source mode, which the app chooses. */
 const preview = new Compartment();
 let sourceMode = false;
@@ -185,6 +192,7 @@ function initialState(text: string, editable: boolean) {
       // The app's answer too: the table comes back with Live preview.
       frontmatterReading,
       preview.of(previewed()),
+      modes.of(writingModes(settings)),
       // An image drawn under its line hides its source: a click there places the cursor.
       followWikilinks(
         (inner, newTab) => send({ type: "followLink", inner, newTab }),
@@ -206,6 +214,8 @@ function initialState(text: string, editable: boolean) {
       EditorState.allowMultipleSelections.of(true),
       drawSelection(),
       selectionOverBackgrounds,
+      // Text copied with its formatting pasted as Markdown.
+      pasteAsMarkdown,
       systemTextServices,
       // Before CodeMirror's own ⌘↩ and ⌘/.
       Prec.high(keymap.of(formatKeys.map(({ key, action }) => ({ key, run: () => (send({ type: "format", action }), true) })))),
@@ -294,7 +304,8 @@ window.noteki = {
         } else {
           view.setState(broughtBack(back.state, command.text));
           // Live preview or Source mode as the window has it now.
-          view.dispatch({ effects: [preview.reconfigure(previewed()), back.scroll] });
+          // The writing modes too, which may have changed while it was behind.
+          view.dispatch({ effects: [preview.reconfigure(previewed()), modes.reconfigure(writingModes(settings)), back.scroll] });
         }
         view.focus();
         askAboutShown();
@@ -360,6 +371,12 @@ window.noteki = {
         return null;
       case "settings":
         applySettings(command.settings);
+        settings = command.settings;
+        view.dispatch({ effects: modes.reconfigure(writingModes(settings)) });
+        // Typewriter mode just turned on: the line of the cursor goes to the middle at once.
+        if (settings.typewriterMode) {
+          view.dispatch({ effects: EditorView.scrollIntoView(view.state.selection.main.head, { y: "center" }) });
+        }
         // Lines change height with the font: CodeMirror measures them again, and once more when
         // the new font has loaded, if it was not yet.
         view.requestMeasure();
@@ -385,6 +402,7 @@ window.noteki = {
         return null;
       case "find":
         if (command.step === "open") openSearchPanel(view);
+        else if (command.step === "replace") openReplace(view);
         else if (command.step === "next") findNext(view);
         else findPrevious(view);
         return null;
@@ -406,6 +424,12 @@ window.noteki = {
         const message = report();
         return message ? JSON.stringify(message) : null;
       }
+      case "pastePlain":
+        view.dispatch(view.state.replaceSelection(command.text), { userEvent: "input.paste", scrollIntoView: true });
+        view.focus();
+        return null;
+      case "exportHTML":
+        return noteBody(view.state, { katex: loadKatex, mermaid: renderDiagram }).then((body) => page(command.title, body, null));
     }
   },
 };

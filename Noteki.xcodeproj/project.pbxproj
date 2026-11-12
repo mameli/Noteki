@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		B10000000000000000000022 /* NotekiCore in Frameworks */ = {isa = PBXBuildFile; productRef = B10000000000000000000021 /* NotekiCore */; };
+		C10000000000000000000003 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = C10000000000000000000002 /* Sparkle */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -25,6 +26,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				B10000000000000000000022 /* NotekiCore in Frameworks */,
+				C10000000000000000000003 /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -78,6 +80,7 @@
 			name = Noteki;
 			packageProductDependencies = (
 				B10000000000000000000021 /* NotekiCore */,
+				C10000000000000000000002 /* Sparkle */,
 			);
 			productName = Noteki;
 			productReference = B10000000000000000000005 /* Noteki.app */;
@@ -104,6 +107,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				B10000000000000000000020 /* XCLocalSwiftPackageReference "NotekiCore" */,
+				C10000000000000000000001 /* XCRemoteSwiftPackageReference "Sparkle" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = B10000000000000000000002 /* Products */;
@@ -233,10 +237,26 @@
 		};
 /* End XCLocalSwiftPackageReference section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+		C10000000000000000000001 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = upToNextMinorVersion;
+				minimumVersion = 2.10.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
 		B10000000000000000000021 /* NotekiCore */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = NotekiCore;
+		};
+		C10000000000000000000002 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C10000000000000000000001 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

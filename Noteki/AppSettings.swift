@@ -29,6 +29,17 @@ final class AppSettings {
     private static let formatBarKey = "showsFormatBar"
     private static let interfaceSizeKey = "interfaceSize"
     private static let appearanceKey = "appearance"
+    private static let checksForUpdatesKey = "checksForUpdates"
+    private static let focusModeKey = "focusMode"
+    private static let typewriterModeKey = "typewriterMode"
+
+    /// Sparkle's daily look for a new version (UpdateChecker); on at first.
+    var checksForUpdates = UserDefaults.standard.object(forKey: AppSettings.checksForUpdatesKey) as? Bool ?? true {
+        didSet {
+            UserDefaults.standard.set(checksForUpdates, forKey: Self.checksForUpdatesKey)
+            UpdateChecker.shared.setChecksAutomatically(checksForUpdates)
+        }
+    }
 
     /// Light, dark or the Mac's: set on the app, which the editor's page and the colours follow.
     var appearance = Appearance(rawValue: UserDefaults.standard.string(forKey: AppSettings.appearanceKey) ?? "") ?? .system {
@@ -71,6 +82,8 @@ final class AppSettings {
             defaults.set(editor.limitsLineLength, forKey: Self.limitsLineLengthKey)
             defaults.set(editor.size, forKey: Self.sizeKey)
             defaults.set(editor.lineLength, forKey: Self.lineLengthKey)
+            defaults.set(editor.focusMode, forKey: Self.focusModeKey)
+            defaults.set(editor.typewriterMode, forKey: Self.typewriterModeKey)
             defaults.removeObject(forKey: Self.lineWidthKey)
             NotificationCenter.default.post(name: Self.editorChanged, object: nil)
         }
@@ -87,7 +100,9 @@ final class AppSettings {
             monoFont: defaults.string(forKey: Self.monoFontKey),
             size: size,
             lineLength: defaults.object(forKey: Self.lineLengthKey) as? Double ?? oldWidth ?? standard.lineLength,
-            limitsLineLength: defaults.object(forKey: Self.limitsLineLengthKey) as? Bool ?? standard.limitsLineLength
+            limitsLineLength: defaults.object(forKey: Self.limitsLineLengthKey) as? Bool ?? standard.limitsLineLength,
+            focusMode: defaults.bool(forKey: Self.focusModeKey),
+            typewriterMode: defaults.bool(forKey: Self.typewriterModeKey)
         )
         dailyNote = DailyNote(
             folder: defaults.string(forKey: Self.dailyFolderKey) ?? DailyNote.standard.folder,

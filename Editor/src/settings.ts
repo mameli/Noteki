@@ -12,6 +12,10 @@ export interface EditorSettings {
   size: number;
   lineLength: number;
   limitsLineLength: boolean;
+  /** View → Focus Mode: all but the paragraph being written faded (writing.ts). */
+  focusMode?: boolean;
+  /** View → Typewriter Mode: the line being written kept in the middle of the window. */
+  typewriterMode?: boolean;
 }
 
 /** A family's name in quotes it cannot break out of, before the fallback. */

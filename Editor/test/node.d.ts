@@ -9,3 +9,6 @@ declare module "node:assert" {
     deepEqual(actual: unknown, expected: unknown, message?: string): void;
   };
 }
+declare module "@mixmark-io/domino" {
+  export function createDocument(html: string): Document;
+}

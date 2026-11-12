@@ -110,7 +110,7 @@ export function formulas(state: EditorState): Formula[] {
   return found;
 }
 
-interface Katex {
+export interface Katex {
   renderToString(tex: string, options: Record<string, unknown>): string;
 }
 
@@ -118,7 +118,7 @@ let katex: Katex | null = null;
 let loading: Promise<Katex> | null = null;
 
 /** KaTeX and its stylesheet, loaded once from next to the page. */
-function loadKatex(): Promise<Katex> {
+export function loadKatex(): Promise<Katex> {
   loading ??= new Promise((resolve, reject) => {
     const style = document.createElement("link");
     style.rel = "stylesheet";

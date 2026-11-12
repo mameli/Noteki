@@ -1,6 +1,6 @@
 # Third-party code
 
-Code adapted from other projects (ADR 0007). Dependencies installed by npm are listed in `Editor/package.json` and keep their own licences.
+Code adapted from other projects (ADR 0007). Dependencies installed by npm are listed in `Editor/package.json`, and Sparkle (https://sparkle-project.org, MIT, the updater: ADR 0011) is a Swift package of the Xcode project; they keep their own licences.
 
 ## MarkEdit
 

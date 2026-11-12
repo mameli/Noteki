@@ -33,6 +33,16 @@ struct EmbedTests {
         return (vault, VaultIndex(tree: try vault.tree()), folder)
     }
 
+    @Test("an export's images of the Vault go in as data; one missing is left out")
+    func inliningImages() throws {
+        let (vault, _, folder) = try vault(images: ["Media/a b.png": (10, 20)])
+        let html = #"<img src="noteki-file://vault/Media/a%20b.png?v=3"><img src="noteki-file://vault/Gone.png"><img src="https://x.org/a.png">"#
+        let inlined = vault.inliningImages(in: html)
+        #expect(inlined.hasPrefix(#"<img src="data:image/png;base64,"#))
+        #expect(inlined.contains(#"<img src=""><img src="https://x.org/a.png">"#))
+        _ = folder
+    }
+
     @Test("an Embed of an image is its file and its size in pixels, found as a Wikilink is")
     func image() throws {
         let (vault, index, folder) = try vault(images: ["Media/Pasted image 1.png": (640, 480)], files: ["Note.md": ""])

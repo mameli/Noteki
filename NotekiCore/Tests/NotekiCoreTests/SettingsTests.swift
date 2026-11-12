@@ -56,10 +56,11 @@ struct SettingsTests {
     @Test("the editor gets its settings as JSON, the system font as none")
     func editorSettingsJSON() throws {
         let command = EditorCommand.settings(EditorSettings(
-            theme: .everforest, font: "Iowan Old Style", monoFont: "JetBrains Mono", size: 17, lineLength: 80, limitsLineLength: false
+            theme: .everforest, font: "Iowan Old Style", monoFont: "JetBrains Mono", size: 17, lineLength: 80, limitsLineLength: false,
+            typewriterMode: true
         ))
 
-        #expect(try command.json() == #"{"settings":{"font":"Iowan Old Style","limitsLineLength":false,"lineLength":80,"monoFont":"JetBrains Mono","size":17,"theme":"everforest"},"type":"settings"}"#)
-        #expect(try EditorSettings.standard.json() == #"{"limitsLineLength":true,"lineLength":100,"size":15,"theme":"ayu"}"#)
+        #expect(try command.json() == #"{"settings":{"focusMode":false,"font":"Iowan Old Style","limitsLineLength":false,"lineLength":80,"monoFont":"JetBrains Mono","size":17,"theme":"everforest","typewriterMode":true},"type":"settings"}"#)
+        #expect(try EditorSettings.standard.json() == #"{"focusMode":false,"limitsLineLength":true,"lineLength":100,"size":15,"theme":"ayu","typewriterMode":false}"#)
     }
 }

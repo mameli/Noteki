@@ -96,6 +96,9 @@ struct ContentView: View {
             if model.isShowingSwitcher {
                 QuickSwitcher(model: model)
             }
+            if model.isShowingPalette {
+                CommandPalette(model: model)
+            }
         }
         // The sidebars, the Tabs, the panes and the Quick switcher.
         .interfaceSize(AppSettings.shared.interfaceSize)
@@ -153,6 +156,9 @@ struct LooseFileView: View {
             if AppSettings.shared.showsFormatBar, model.isShowingNote { FormatBar(model: model) }
             NoteDetail(model: model)
         }
+            .overlay(alignment: .top) {
+                if model.isShowingPalette { CommandPalette(model: model) }
+            }
             .navigationTitle(model.shown?.name ?? file.deletingPathExtension().lastPathComponent)
             .navigationDocument(model.looseFileNow ?? file)
             .focusedSceneValue(\.noteEditor, model.isShowingNote ? model.editor : nil)

@@ -61,7 +61,7 @@ function loadMermaid(): Promise<Mermaid> {
 let rendered = 0;
 
 /** Draws `source` in the theme's colours: Mermaid's own `base` theme, given the page's. */
-async function render(source: string): Promise<string> {
+export async function render(source: string): Promise<string> {
   const mermaid = await loadMermaid();
   const colours = getComputedStyle(document.documentElement);
   const value = (name: string) => colours.getPropertyValue(name).trim();

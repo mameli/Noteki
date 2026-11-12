@@ -40,6 +40,8 @@ struct NotekiApp: App {
             EditCommands(main: model, showMainWindow: { appDelegate.showMainWindow() })
             ZoomCommands()
             HelpCommands()
+            UpdateCommands()
+            ExportCommands()
         }
         WindowGroup("Noteki", id: "vault", for: UUID.self) { $id in
             if let id, let model = appDelegate.windows.models[id] {
@@ -57,12 +59,6 @@ struct NotekiApp: App {
         // Nearly square at first; taller to see more without scrolling.
         .defaultSize(width: 500, height: 540)
         .windowResizability(.contentMinSize)
-        .handlesExternalEvents(matching: [])
-        Window("Keyboard Shortcuts", id: ShortcutsView.windowID) {
-            ShortcutsView()
-        }
-        .windowResizability(.contentSize)
-        .restorationBehavior(.disabled)
         .handlesExternalEvents(matching: [])
     }
 }
@@ -172,7 +168,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     let model: AppModel
     let windows: VaultWindows
     /// Reopens the main window, set by it when it first appears.
-    var showMainWindow: () -> Void = {}
+    var showMainWindow: () -> Void = { AppDelegate.openMainWindowFromMenu() }
+
+    /// Before the main window has ever appeared (Noteki opened with a Loose file), it has not
+    /// registered its way back: the Window menu's item for its scene opens it, as a click would.
+    private static func openMainWindowFromMenu() {
+        guard let menu = NSApp.windowsMenu,
+              let index = menu.items.firstIndex(where: { $0.title == "Noteki" && $0.action != #selector(NSWindow.makeKeyAndOrderFront(_:)) })
+        else { return }
+        menu.performActionForItem(at: index)
+    }
     private var isQuitting = false
     /// Loose files, each in its window.
     private var looseFileWindows: [NSWindow: AppModel] = [:]
@@ -194,10 +199,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        UpdateChecker.shared.start()
         // ⌃Tab and ⌃⇧Tab are the Go menu's, wherever the keyboard is: the editor and the
         // sidebar's lists would take them to move the keyboard to another view.
         NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            // ⇧⌘] and ⇧⌘[ too, as in Safari and Xcode: the same items as ⌃Tab and ⌃⇧Tab, which
+            // a menu item cannot have as a second shortcut.
+            if modifiers == [.command, .shift], event.keyCode == 30 || event.keyCode == 33,
+               let tab = NSEvent.keyEvent(
+                   with: .keyDown, location: event.locationInWindow, modifierFlags: event.keyCode == 30 ? .control : [.control, .shift],
+                   timestamp: event.timestamp, windowNumber: event.windowNumber, context: nil,
+                   characters: "\t", charactersIgnoringModifiers: "\t", isARepeat: false, keyCode: 48
+               ) {
+                return NSApp.mainMenu?.performKeyEquivalent(with: tab) == true ? nil : event
+            }
             guard event.keyCode == 48, modifiers == .control || modifiers == [.control, .shift] else { return event }
             return NSApp.mainMenu?.performKeyEquivalent(with: event) == true ? nil : event
         }
@@ -263,9 +279,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.contentViewController = NSHostingController(rootView: LooseFileView(model: looseFile, file: file))
         window.delegate = self
         window.cascadeTopLeft(from: NSApp.keyWindow?.frame.origin ?? .zero)
+        // Known before it becomes key: the menus follow it from then (LooseFileFocus).
+        looseFileWindows[window] = looseFile
         window.makeKeyAndOrderFront(nil)
         NSApp.activate()
-        looseFileWindows[window] = looseFile
+    }
+
+    func windowDidBecomeKey(_ notification: Notification) {
+        if let window = notification.object as? NSWindow, let looseFile = looseFileWindows[window] {
+            LooseFileFocus.shared.model = looseFile
+        }
+    }
+
+    func windowDidResignKey(_ notification: Notification) {
+        if let window = notification.object as? NSWindow, LooseFileFocus.shared.model === looseFileWindows[window] {
+            LooseFileFocus.shared.model = nil
+        }
     }
 
     /// A Loose file's window saves it first, as quitting does; `close()` then skips this.
@@ -300,6 +329,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
         return .terminateLater
     }
+}
+
+/// The Loose file whose window is key. Its window is AppKit's, not a SwiftUI scene: the menus'
+/// focused values never see it, and without this its Format, Find, Export and palette items stayed
+/// disabled. The menus read it when no scene gives them a value.
+@MainActor
+@Observable
+final class LooseFileFocus {
+    static let shared = LooseFileFocus()
+    var model: AppModel?
+
+    /// As `noteWindow`: the model while a Note is in front of the window.
+    var noteWindow: AppModel? { model?.isShowingNote == true ? model : nil }
+    /// As `noteEditor`.
+    var editor: EditorController? { noteWindow?.editor }
 }
 
 extension FocusedValues {
@@ -345,6 +389,13 @@ private struct VaultCommands: View {
         }
         .keyboardShortcut("o")
         .disabled(!(window ?? main).canShowSwitcher)
+        // As in Obsidian and the browsers; the Note chosen in the Quick switcher opens in it.
+        Button("New Tab…") {
+            if window == nil { showMainWindow() }
+            (window ?? main).showSwitcher(in: NSApp.keyWindow, inNewTab: true)
+        }
+        .keyboardShortcut("t")
+        .disabled(!(window ?? main).canShowSwitcher)
         Button("Open Vault…") { main.chooseVault() }
             .keyboardShortcut("o", modifiers: [.command, .shift])
         // The Vault's folder; a folder of it from its menu in Files.
@@ -359,6 +410,9 @@ private struct VaultCommands: View {
             if let window, let tab = window.tabs.front { window.closeTab(tab.id) } else { NSApp.keyWindow?.performClose(nil) }
         }
         .keyboardShortcut("w")
+        Button("Reopen Closed Tab") { window?.reopenClosedTab() }
+            .keyboardShortcut("t", modifiers: [.command, .shift])
+            .disabled(window?.canReopenClosedTab != true)
     }
 }
 
@@ -372,15 +426,17 @@ private struct SidebarCommands: View {
         Button("Toggle Left Sidebar") {
             NSApp.sendAction(#selector(NSSplitViewController.toggleSidebar(_:)), to: nil, from: nil)
         }
-        .keyboardShortcut("0")
+        // The Mac's own; ⌘0 is Actual Size, as everywhere.
+        .keyboardShortcut("s", modifiers: [.command, .control])
         Button(model.isShowingSidebar ? "Hide Right Sidebar" : "Show Right Sidebar") {
             model.isShowingSidebar.toggle()
         }
-        .keyboardShortcut("0", modifiers: [.command, .option])
+        .keyboardShortcut("s", modifiers: [.command, .control, .option])
         Divider()
-        Button("Files") { model.leftPane = .files }.keyboardShortcut("1")
-        Button("Tags") { model.leftPane = .tags }.keyboardShortcut("2")
-        Button("Search") { model.leftPane = .search }.keyboardShortcut("3")
+        // ⌃⌘: ⌘1–⌘6 are the Headings, as in Typora.
+        Button("Files") { model.leftPane = .files }.keyboardShortcut("1", modifiers: [.command, .control])
+        Button("Tags") { model.leftPane = .tags }.keyboardShortcut("2", modifiers: [.command, .control])
+        Button("Search") { model.leftPane = .search }.keyboardShortcut("3", modifiers: [.command, .control])
         Button("Outline") { model.rightPane = .outline; model.isShowingSidebar = true }
             .keyboardShortcut("1", modifiers: [.command, .option])
         Button("Backlinks") { model.rightPane = .backlinks; model.isShowingSidebar = true }
@@ -415,11 +471,20 @@ private struct EditCommands: Commands {
     let main: AppModel
     /// Search is the Vault's: from a Loose file's window, ⌘⇧F brings the Vault's window.
     let showMainWindow: () -> Void
-    @FocusedValue(\.noteEditor) private var editor
+    @FocusedValue(\.noteEditor) private var sceneEditor
+    private var editor: EditorController? { sceneEditor ?? LooseFileFocus.shared.editor }
     @FocusedValue(\.vaultWindow) private var window
 
     var body: some Commands {
         CommandGroup(after: .pasteboard) {
+            // Not in SwiftUI's Edit menu: the text alone, never turned into Markdown, sent to the
+            // editor's web view (EditorWebView.pasteAsPlainText), as a text field gets it. ⇧⌘V as
+            // in Obsidian (and Chrome, Slack, Notion), not the Mac's ⌥⇧⌘V.
+            Button("Paste and Match Style") {
+                NSApp.sendAction(#selector(EditorWebView.pasteAsPlainText(_:)), to: nil, from: nil)
+            }
+            .keyboardShortcut("v", modifiers: [.command, .shift])
+            .disabled(editor == nil)
             Divider()
             Menu("Find") {
                 Button("Find…") { editor?.find(.open) }
@@ -430,6 +495,9 @@ private struct EditCommands: Commands {
                     .disabled(editor == nil)
                 Button("Find Previous") { editor?.find(.previous) }
                     .keyboardShortcut("g", modifiers: [.command, .shift])
+                    .disabled(editor == nil)
+                Button("Replace…") { editor?.find(.replace) }
+                    .keyboardShortcut("f", modifiers: [.command, .option])
                     .disabled(editor == nil)
                 Divider()
                 Button("Search in Vault…") {
@@ -509,7 +577,8 @@ extension FocusedValues {
 /// Markdown written around the selection or on its lines, with Obsidian's shortcuts where it
 /// has them, Typora's and Bear's otherwise.
 private struct FormatCommands: View {
-    @FocusedValue(\.noteEditor) private var editor
+    @FocusedValue(\.noteEditor) private var sceneEditor
+    private var editor: EditorController? { sceneEditor ?? LooseFileFocus.shared.editor }
 
     var body: some View {
         Group {
@@ -546,12 +615,19 @@ private struct FormatCommands: View {
     }
 }
 
-/// Source mode, for the Note in front of the window.
+/// The Command palette, Source mode for the Note in front of the window, the writing modes.
 private struct ViewCommands: Commands {
-    @FocusedValue(\.noteWindow) private var window
+    @FocusedValue(\.noteWindow) private var sceneWindow
+    private var window: AppModel? { sceneWindow ?? LooseFileFocus.shared.noteWindow }
+    @FocusedValue(\.vaultWindow) private var vaultWindow
 
     var body: some Commands {
         CommandGroup(before: .toolbar) {
+            // As VS Code's (⌘P is Print): every command of the menus, found by name.
+            Button("Command Palette…") { (vaultWindow ?? window)?.showPalette(in: NSApp.keyWindow) }
+                .keyboardShortcut("p", modifiers: [.command, .shift])
+                .disabled(vaultWindow ?? window == nil)
+            Divider()
             Toggle("Source Mode", isOn: Binding(
                 get: { window?.isSourceMode ?? false },
                 set: { window?.prefersSourceMode = $0 }
@@ -559,6 +635,15 @@ private struct ViewCommands: Commands {
             .keyboardShortcut("e")
             // A Note too large for Live preview stays in Source mode.
             .disabled(window == nil || window?.isSourceModeForced == true)
+            // For every window, kept in Settings as the editor's other choices.
+            Toggle("Focus Mode", isOn: Binding(
+                get: { AppSettings.shared.editor.focusMode },
+                set: { AppSettings.shared.editor = AppSettings.shared.editor.with(focusMode: $0) }
+            ))
+            Toggle("Typewriter Mode", isOn: Binding(
+                get: { AppSettings.shared.editor.typewriterMode },
+                set: { AppSettings.shared.editor = AppSettings.shared.editor.with(typewriterMode: $0) }
+            ))
             Divider()
         }
     }
@@ -575,8 +660,8 @@ private struct ZoomCommands: Commands {
                 .keyboardShortcut("+")
             Button("Zoom Out") { if let zoom { zoom.zoomOut() } else { stepTextSize(by: -1) } }
                 .keyboardShortcut("-")
-            // No ⌘0: it shows the left sidebar.
             Button("Actual Size") { setTextSize(EditorSettings.standard.size) }
+                .keyboardShortcut("0")
                 .disabled(zoom != nil)
         }
     }

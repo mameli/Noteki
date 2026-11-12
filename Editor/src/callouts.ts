@@ -44,6 +44,11 @@ const colours = {
 
 export type CalloutKind = keyof typeof colours;
 
+/** The kind of a callout's `[!type]`, by its name or alias; any other type is a note. */
+export function calloutKind(type: string): CalloutKind {
+  return kinds[type.toLowerCase()] ?? "note";
+}
+
 /** `> [!type]± title`: what follows the first line's `>`. */
 const header = /^(\s*)\[!([\w-]+)\][+-]?\s*(.*)$/;
 

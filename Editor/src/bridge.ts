@@ -35,7 +35,7 @@ export type EditorCommand =
   | { type: "undo" }
   | { type: "redo" }
   /** The Edit menu's Find items, over the whole Note. */
-  | { type: "find"; step: "open" | "next" | "previous" }
+  | { type: "find"; step: "open" | "next" | "previous" | "replace" }
   /** The Format menu: Markdown around the selection or on its lines; a link with the pasteboard's web address. */
   | { type: "format"; action: Formatting; url?: string }
   /** The Format menu's Indent and Outdent. */
@@ -68,7 +68,11 @@ export type EditorCommand =
    */
   | { type: "insert"; noteID: string; text: string; point?: { x: number; y: number } }
   /** The text's font, size and line width changed in Settings. */
-  | { type: "settings"; settings: EditorSettings };
+  | { type: "settings"; settings: EditorSettings }
+  /** Export and Print: the Note shown as a page of HTML standing alone, titled `title`; the answer. */
+  | { type: "exportHTML"; title: string }
+  /** Edit → Paste and Match Style (⇧⌘V): the pasteboard's plain text, never turned into Markdown. */
+  | { type: "pastePlain"; text: string };
 
 /** What `[[` offers: the Notes opened recently, the latest first, then all the others. */
 export interface LinkCompletions {
@@ -112,7 +116,8 @@ export type EditorMessage =
 declare global {
   interface Window {
     /** The reply to a `flush` (a message as JSON) or a `reload` ("applied"), else null. */
-    noteki: { receive(command: EditorCommand): string | null };
+    // A promise for the commands answered later (exportHTML): the app waits for it.
+    noteki: { receive(command: EditorCommand): string | null | Promise<string> };
     /** Set by the app before the page loads (ADR 0004): the text is drawn right from the start. */
     notekiSettings?: EditorSettings;
     webkit?: { messageHandlers: { noteki: { postMessage(message: string): void } } };

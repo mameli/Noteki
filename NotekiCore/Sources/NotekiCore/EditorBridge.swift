@@ -63,6 +63,12 @@ public enum EditorCommand: Encodable, Sendable {
     /// The text's font, size and line width changed in Settings.
     case settings(EditorSettings)
 
+    /// Export and Print: the Note shown as a page of HTML standing alone, titled `title`.
+    case exportHTML(title: String)
+
+    /// Edit → Paste and Match Style (⇧⌘V): the pasteboard's plain text, never turned into Markdown.
+    case pastePlain(text: String)
+
     /// A place in the web view, in CSS pixels from its top left.
     public struct Point: Encodable, Equatable, Sendable {
         public let x: Double
@@ -78,6 +84,8 @@ public enum EditorCommand: Encodable, Sendable {
         /// Show the find bar, with the selection as the text to find.
         case open
         case next, previous
+        /// Show the find bar with its replace row, the keyboard in the replace field once there is text to find.
+        case replace
     }
 
     /// What the Format menu writes, as the editor's `format.ts` names it.
@@ -87,10 +95,10 @@ public enum EditorCommand: Encodable, Sendable {
         case task, quote, bulletList, numberedList
     }
 
-    public static let types = ["load", "restore", "drop", "reload", "flush", "clear", "selectAll", "undo", "redo", "find", "format", "indent", "unresolvedLinks", "linkCompletions", "goToLine", "sourceMode", "embeds", "frontmatter", "replaceFrontmatter", "tagCompletions", "insert", "settings"]
+    public static let types = ["load", "restore", "drop", "reload", "flush", "clear", "selectAll", "undo", "redo", "find", "format", "indent", "unresolvedLinks", "linkCompletions", "goToLine", "sourceMode", "embeds", "frontmatter", "replaceFrontmatter", "tagCompletions", "insert", "settings", "exportHTML", "pastePlain"]
 
     private enum CodingKeys: String, CodingKey {
-        case type, noteID, revision, text, step, inners, requestID, completions, line, on, files, reading, replacement, tags, noteIDs, point, settings, action, url, outdent
+        case type, noteID, revision, text, step, inners, requestID, completions, line, on, files, reading, replacement, tags, noteIDs, point, settings, action, url, outdent, title
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -174,6 +182,12 @@ public enum EditorCommand: Encodable, Sendable {
         case .settings(let settings):
             try container.encode("settings", forKey: .type)
             try container.encode(settings, forKey: .settings)
+        case .exportHTML(let title):
+            try container.encode("exportHTML", forKey: .type)
+            try container.encode(title, forKey: .title)
+        case .pastePlain(let text):
+            try container.encode("pastePlain", forKey: .type)
+            try container.encode(text, forKey: .text)
         }
     }
 

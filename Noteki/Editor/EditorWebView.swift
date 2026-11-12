@@ -44,8 +44,16 @@ final class EditorWebView: WKWebView {
         unsafeBitCast(class_getMethodImplementation(WKWebView.self, selector), to: Paste.self)(self, selector, sender)
     }
 
+    /// Edit → Paste and Match Style (⇧⌘V): the text alone, never turned into Markdown, which
+    /// WebKit does not do for the editor (the menu item was disabled, the shortcut beeped).
+    @objc func pasteAsPlainText(_ sender: Any?) {
+        guard takesCommands, let text = NSPasteboard.general.string(forType: .string) else { return NSSound.beep() }
+        onCommand(.pastePlain(text: text))
+    }
+
     override func validateUserInterfaceItem(_ item: any NSValidatedUserInterfaceItem) -> Bool {
         switch item.action {
+        case #selector(pasteAsPlainText(_:)): takesCommands && NSPasteboard.general.availableType(from: [.string]) != nil
         case #selector(undo(_:)), #selector(redo(_:)), #selector(selectAll(_:)): takesCommands
         // From the types alone: the menus validate often, an image is decoded only when pasted.
         case #selector(paste(_:)) where takesCommands && takesImages() && Self.mayHoldImages(.general): true

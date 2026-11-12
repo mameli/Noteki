@@ -701,7 +701,42 @@ final class AppModel {
 
     var canShowSwitcher: Bool { index != nil }
 
-    func showSwitcher(in window: NSWindow?) {
+    /// Over the window, the Command palette (⇧⌘P): every command of the menus, found by name.
+    private(set) var isShowingPalette = false
+    /// What had the keyboard before the palette: it gets it back, and the command chosen runs
+    /// there, as from the menu (Paste and Match Style pastes into the Note, not the palette).
+    @ObservationIgnored private weak var responderBeforePalette: NSResponder?
+    @ObservationIgnored private var commandAfterPalette: (() -> Void)?
+
+    func showPalette(in window: NSWindow?) {
+        guard !isShowingPalette else { return }
+        responderBeforePalette = window?.firstResponder
+        isShowingSwitcher = false
+        isShowingPalette = true
+    }
+
+    /// Closed with a command chosen, run once the keyboard is back; without one, only closed.
+    func closePalette(running command: (() -> Void)? = nil) {
+        commandAfterPalette = command
+        isShowingPalette = false
+    }
+
+    /// Once SwiftUI has removed the palette's field, which takes the keyboard with it.
+    func paletteDisappeared() {
+        if let responder = responderBeforePalette as? NSView {
+            responder.window?.makeFirstResponder(responder)
+        }
+        responderBeforePalette = nil
+        let command = commandAfterPalette
+        commandAfterPalette = nil
+        if let command { DispatchQueue.main.async(execute: command) }
+    }
+
+    /// ⌘T, New Tab…: the Note chosen in the Quick switcher opens in a new Tab.
+    private(set) var switcherOpensInNewTab = false
+
+    func showSwitcher(in window: NSWindow?, inNewTab: Bool = false) {
+        switcherOpensInNewTab = inNewTab
         // Before the switcher's field takes the keyboard.
         responderBeforeSwitcher = window?.firstResponder
         isShowingSwitcher = true
@@ -847,8 +882,23 @@ final class AppModel {
         }
     }
 
+    /// The files of the Tabs closed, the latest last: ⇧⌘T opens them again.
+    private var closedTabPaths: [String] = []
+    var canReopenClosedTab: Bool { !closedTabPaths.isEmpty }
+
+    /// ⇧⌘T: the Tab closed last, in a new Tab, if its file is still there.
+    func reopenClosedTab() {
+        while let path = closedTabPaths.popLast() {
+            if tree.item(at: path) != nil { return reveal(path, inNewTab: tabs.front != nil) }
+        }
+    }
+
     /// ⌘W, or the ×: a Tab closed, its Note saved first.
     func closeTab(_ id: Tab.ID) {
+        if let path = tabs.all.first(where: { $0.id == id })?.path {
+            closedTabPaths.removeAll { $0 == path }
+            closedTabPaths.append(path)
+        }
         afterTransition {
             // A Note behind that only lives on screen (deleted by another app, or not saved) comes
             // in front first: closing its Tab asks the user, as for the Note in front.

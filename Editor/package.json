@@ -31,9 +31,16 @@
     "@lezer/highlight": "1.2.5",
     "@lezer/markdown": "1.8.1",
     "katex": "0.19.1",
-    "mermaid": "11.17.2"
+    "markdown-it": "14.1.0",
+    "markdown-it-footnote": "4.0.0",
+    "mermaid": "11.17.2",
+    "turndown": "7.2.4",
+    "turndown-plugin-gfm": "1.0.2"
   },
   "devDependencies": {
+    "@types/markdown-it": "14.1.2",
+    "@types/markdown-it-footnote": "3.0.4",
+    "@types/turndown": "5.0.6",
     "esbuild": "0.28.2",
     "typescript": "7.0.2"
   }

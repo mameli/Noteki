@@ -4,6 +4,7 @@ import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate
 import type { SyntaxNode } from "@lezer/common";
 import { calloutOf, calloutTheme, drawCallout, quoteMarks, type RenderedCallout } from "./callouts";
 import { embeddedFile, svgSource } from "./embeds";
+import { FootnoteWidget, footnoteLabel, footnoteNumbers, footnoteTheme } from "./footnotes";
 import { drawFrontmatter, foldedLists, frontmatterLayout, frontmatterReading, frontmatterTheme, type RenderedFrontmatter } from "./frontmatter";
 import { tagChipsTheme } from "./tagchips";
 import { CheckboxWidget, isTicked, taskTheme } from "./tasks";
@@ -99,8 +100,21 @@ export function renderedRules(state: EditorState, from = 0, to = state.doc.lengt
   return preview(state, from, to).rules;
 }
 
+/** A footnote drawn as its number: a reference, or the `[^label]:` of a definition. */
+export interface RenderedFootnote extends Span {
+  label: string;
+  number: number | undefined;
+  definition: boolean;
+}
+
+/** The footnotes between `from` and `to` drawn as their number: those the cursor is not on. */
+export function renderedFootnotes(state: EditorState, from = 0, to = state.doc.length): RenderedFootnote[] {
+  return preview(state, from, to).footnotes;
+}
+
 interface Preview {
   hidden: Span[];
+  footnotes: RenderedFootnote[];
   rules: number[];
   code: Span[];
   codeBlocks: RenderedCode[];
@@ -136,6 +150,7 @@ function preview(state: EditorState, from: number, to: number, measuring = true)
   const doneTasks: Span[] = [];
   const callouts: RenderedCallout[] = [];
   const rules: number[] = [];
+  const footnotes: RenderedFootnote[] = [];
   let frontmatter: Preview["frontmatter"] = null;
   const tableLines: number[] = [];
   // A table is written while a cursor or a selection's end is in it: ⌘A leaves tables shown.
@@ -228,6 +243,22 @@ function preview(state: EditorState, from: number, to: number, measuring = true)
           }
           return undefined;
         }
+        case "FootnoteReference": {
+          // Its number, raised; as written while the cursor is in it.
+          if (shows(node, node)) return false;
+          const label = footnoteLabel(state, node.from);
+          footnotes.push({ from: node.from, to: node.to, label, number: footnoteNumbers(state).get(label), definition: false });
+          return false;
+        }
+        case "FootnoteDefinition": {
+          // `[^label]: ` drawn as its number, on the definition's first line; the text is Markdown.
+          const label = footnoteLabel(state, node.from);
+          let markEnd = node.from + label.length + 4;
+          if (state.sliceDoc(markEnd, markEnd + 1) === " ") markEnd++;
+          const mark = { from: node.from, to: markEnd };
+          if (!shows(node, mark)) footnotes.push({ ...mark, label, number: footnoteNumbers(state).get(label), definition: true });
+          return undefined;
+        }
         case "HorizontalRule": {
           // Drawn as a line across the text, its line keeping its height (editor.css below).
           const rule = { from: node.from, to: node.to };
@@ -302,7 +333,7 @@ function preview(state: EditorState, from: number, to: number, measuring = true)
   }
   // Over the whole table, not only the part in view: a column keeps its width while scrolling.
   if (measuring) for (const table of tables) measure(table, preview(state, table.from, table.to, false).hidden);
-  return { hidden: merged, rules, code, codeBlocks, tables, tasks, callouts, frontmatter, doneTasks, tableLines };
+  return { hidden: merged, footnotes, rules, code, codeBlocks, tables, tasks, callouts, frontmatter, doneTasks, tableLines };
 }
 
 /**
@@ -370,13 +401,16 @@ function decorations(view: EditorView): DecorationSet {
   let frontmatterDrawn = false;
   const available = textWidth(view);
   for (const { from, to } of view.visibleRanges) {
-    const { hidden, rules, code, codeBlocks, tables, tasks, callouts, frontmatter, doneTasks, tableLines } = preview(view.state, from, to);
+    const { hidden, footnotes, rules, code, codeBlocks, tables, tasks, callouts, frontmatter, doneTasks, tableLines } = preview(view.state, from, to);
     if (frontmatter && !frontmatterDrawn) {
       frontmatterDrawn = true;
       ranges.push(...drawFrontmatter(view.state, frontmatter.node, frontmatter.layout));
     }
     for (const span of hidden) ranges.push(hide.range(span.from, span.to));
     for (const line of rules) ranges.push(ruleLine.range(line));
+    for (const note of footnotes) {
+      ranges.push(Decoration.replace({ widget: new FootnoteWidget(note.label, note.number, note.definition) }).range(note.from, note.to));
+    }
     for (const span of code) ranges.push(inlineCode.range(span.from, span.to));
     for (const task of tasks) ranges.push(Decoration.widget({ widget: new CheckboxWidget(task.checked), side: 1 }).range(task.at));
     for (const span of doneTasks) ranges.push(doneTask.range(span.from, span.to));
@@ -396,7 +430,7 @@ function decorations(view: EditorView): DecorationSet {
       const lastRow = table.rows[table.rows.length - 1];
       // Never wider than the text: past it, the widest columns shrink, cut with an ellipsis
       // (fitColumns). As a share of the line too, should the text be narrower than measured.
-      const natural = table.columns.map((column) => column.width * 0.6 + 1.4);
+      const natural = table.columns.map((column) => column.width * 0.62 + 1.8);
       const widths = fitColumns(natural, available - 0.2);
       const total = widths.reduce((sum, width) => sum + width, 0);
       const editing = table.editing ?? [];
@@ -465,6 +499,7 @@ export const livePreview = [
   ),
   taskTheme,
   calloutTheme,
+  footnoteTheme,
   foldedLists,
   frontmatterTheme,
   tagChipsTheme,

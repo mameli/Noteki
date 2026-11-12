@@ -10,34 +10,33 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
-            Header()
             AppearanceSection()
             TextSection()
             WritingSection()
             VaultSection(model: model)
+            UpdatesSection()
         }
         .formStyle(.grouped)
         .frame(minWidth: 460, idealWidth: 500, minHeight: 400, idealHeight: 540)
     }
 }
 
-/// The app's icon and name over the page, where System Settings shows what a pane is.
+/// The app's icon, name and version centred over the page, on the window's background: in the
+/// first section's header, not a section of its own, which the grouped form would draw in a box.
 private struct Header: View {
     var body: some View {
-        Section {
-            HStack(spacing: 12) {
-                Image(nsImage: NSApp.applicationIconImage)
-                    .resizable()
-                    .frame(width: 48, height: 48)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Noteki").font(.title2.weight(.semibold))
-                    if let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String {
-                        Text("Version \(version)").foregroundStyle(.secondary)
-                    }
-                }
+        VStack(spacing: 4) {
+            Image(nsImage: NSApp.applicationIconImage)
+                .resizable()
+                .frame(width: 72, height: 72)
+            Text("Noteki").font(.title2.weight(.semibold))
+            if let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String {
+                Text("Version \(version)").font(.body.weight(.regular)).foregroundStyle(.secondary)
             }
-            .padding(.vertical, 4)
         }
+        .foregroundStyle(.primary)
+        .frame(maxWidth: .infinity)
+        .padding(.bottom, 20)
     }
 }
 
@@ -54,7 +53,7 @@ private struct AppearanceSection: View {
     @Bindable private var settings = AppSettings.shared
 
     var body: some View {
-        Section("Appearance") {
+        Section {
             Picker("Theme", selection: editor(\.theme) { $0.with(theme: $1) }) {
                 ForEach(Theme.allCases, id: \.self) { Text($0.name).tag($0) }
             }
@@ -67,6 +66,11 @@ private struct AppearanceSection: View {
             }
             .pickerStyle(.segmented)
             .help("The sidebars, the Tabs and the panes; the Note's text has its own size.")
+        } header: {
+            VStack(alignment: .leading, spacing: 0) {
+                Header()
+                Text("Appearance")
+            }
         }
     }
 }
@@ -137,6 +141,27 @@ private struct WritingSection: View {
         Section("Writing") {
             SpellingToggles(checks: "Check spelling while typing", corrects: "Correct spelling automatically")
             Toggle("Show the Format bar over the Note", isOn: $settings.showsFormatBar)
+        }
+    }
+}
+
+/// Sparkle's daily look for a new version, and the version found (UpdateChecker).
+private struct UpdatesSection: View {
+    @Bindable private var settings = AppSettings.shared
+    private var updates = UpdateChecker.shared
+
+    var body: some View {
+        Section("Updates") {
+            Toggle("Check for updates every day", isOn: $settings.checksForUpdates)
+            if let release = updates.available {
+                LabeledContent("Noteki \(release.version) is available") {
+                    Button("Install…") { updates.check() }
+                }
+            } else {
+                LabeledContent("Updates") {
+                    Button("Check Now") { updates.check() }
+                }
+            }
         }
     }
 }

@@ -3,6 +3,7 @@ import {
   findNext,
   findPrevious,
   getSearchQuery,
+  openSearchPanel,
   replaceAll,
   replaceNext,
   SearchQuery,
@@ -38,6 +39,15 @@ function element<K extends keyof HTMLElementTagNameMap>(tag: K, className: strin
   node.className = className;
   for (const [name, value] of Object.entries(attributes)) node.setAttribute(name, value);
   return node;
+}
+
+/** Shows the replace row of the find bar on screen: set by the bar, which there is one of at a time. */
+let revealReplace: (() => void) | null = null;
+
+/** Edit → Find → Replace… (⌥⌘F): the find bar, with its replace row. */
+export function openReplace(view: EditorView) {
+  openSearchPanel(view);
+  revealReplace?.();
 }
 
 export function createFindBar(view: EditorView): Panel {
@@ -88,6 +98,11 @@ export function createFindBar(view: EditorView): Panel {
   replaceRow.append(spacer, replaceInput, replaceButton, replaceAllButton);
 
   let replacing = false;
+  // ⌥⌘F: the replace row shown, and the keyboard in it once there is something to find.
+  revealReplace = () => {
+    showReplace(true);
+    (input.value === "" ? input : replaceInput).focus();
+  };
   const showReplace = (on: boolean) => {
     replacing = on;
     dom.classList.toggle("cm-findbar-replacing", on);

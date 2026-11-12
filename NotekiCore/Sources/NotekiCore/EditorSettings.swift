@@ -61,6 +61,10 @@ public struct EditorSettings: Equatable, Sendable, Encodable {
     public let lineLength: Double
     /// False: lines as wide as the window, `lineLength` kept for when it is on again.
     public let limitsLineLength: Bool
+    /// View → Focus Mode: all but the paragraph being written faded.
+    public let focusMode: Bool
+    /// View → Typewriter Mode: the line being written kept in the middle of the window.
+    public let typewriterMode: Bool
 
     public static let sizes: ClosedRange<Double> = 10...32
     public static let lineLengths: ClosedRange<Double> = 40...200
@@ -69,7 +73,8 @@ public struct EditorSettings: Equatable, Sendable, Encodable {
 
     /// Sizes are whole points and lengths whole characters, within their bounds; a blank font is the system's.
     public init(
-        theme: Theme = .ayu, font: String?, monoFont: String? = nil, size: Double, lineLength: Double, limitsLineLength: Bool = true
+        theme: Theme = .ayu, font: String?, monoFont: String? = nil, size: Double, lineLength: Double, limitsLineLength: Bool = true,
+        focusMode: Bool = false, typewriterMode: Bool = false
     ) {
         self.theme = theme
         self.font = Self.family(font)
@@ -77,6 +82,8 @@ public struct EditorSettings: Equatable, Sendable, Encodable {
         self.size = min(max(size.rounded(), Self.sizes.lowerBound), Self.sizes.upperBound)
         self.lineLength = min(max(lineLength.rounded(), Self.lineLengths.lowerBound), Self.lineLengths.upperBound)
         self.limitsLineLength = limitsLineLength
+        self.focusMode = focusMode
+        self.typewriterMode = typewriterMode
     }
 
     private static func family(_ name: String?) -> String? {
@@ -92,11 +99,12 @@ public struct EditorSettings: Equatable, Sendable, Encodable {
     /// The same, with what is given changed.
     public func with(
         theme: Theme? = nil, font: String?? = nil, monoFont: String?? = nil, size: Double? = nil, lineLength: Double? = nil,
-        limitsLineLength: Bool? = nil
+        limitsLineLength: Bool? = nil, focusMode: Bool? = nil, typewriterMode: Bool? = nil
     ) -> EditorSettings {
         EditorSettings(
             theme: theme ?? self.theme, font: font ?? self.font, monoFont: monoFont ?? self.monoFont, size: size ?? self.size,
-            lineLength: lineLength ?? self.lineLength, limitsLineLength: limitsLineLength ?? self.limitsLineLength
+            lineLength: lineLength ?? self.lineLength, limitsLineLength: limitsLineLength ?? self.limitsLineLength,
+            focusMode: focusMode ?? self.focusMode, typewriterMode: typewriterMode ?? self.typewriterMode
         )
     }
 

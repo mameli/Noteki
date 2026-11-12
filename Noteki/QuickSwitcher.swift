@@ -71,11 +71,13 @@ struct QuickSwitcher: View {
                     }
                 }
             }
-            .frame(width: 560)
+            // Narrower in a narrow window (a Loose file's): never past its sides.
+            .frame(maxWidth: 560)
             .background(Color.themePanel, in: .rect(cornerRadius: 10))
             .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.separator))
             .shadow(radius: 20, y: 8)
             .padding(.top, 60)
+            .padding(.horizontal, 16)
         }
         .onAppear {
             findRows()
@@ -115,7 +117,7 @@ struct QuickSwitcher: View {
 
     private func choose(_ row: Row?, inNewTab: Bool = false) {
         switch row {
-        case .note(let note): model.openFromSwitcher(note, inNewTab: inNewTab)
+        case .note(let note): model.openFromSwitcher(note, inNewTab: inNewTab || model.switcherOpensInNewTab)
         case .create(let name): model.createFromSwitcher(name)
         case nil: return
         }
