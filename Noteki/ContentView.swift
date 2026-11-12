@@ -148,7 +148,11 @@ struct LooseFileView: View {
     let file: URL
 
     var body: some View {
-        NoteDetail(model: model)
+        VStack(spacing: 0) {
+            // As in the Vault's window: chosen in Settings.
+            if AppSettings.shared.showsFormatBar, model.isShowingNote { FormatBar(model: model) }
+            NoteDetail(model: model)
+        }
             .navigationTitle(model.shown?.name ?? file.deletingPathExtension().lastPathComponent)
             .navigationDocument(model.looseFileNow ?? file)
             .focusedSceneValue(\.noteEditor, model.isShowingNote ? model.editor : nil)
@@ -278,6 +282,7 @@ struct FilesPane: View {
                 }
                 Divider()
                 Button("Rename") { model.startRename(item.path) }
+                Button("Make a Copy") { model.duplicate(item.path) }
                 Button("Move to Trash") { model.trash(item.path) }
             }
         }

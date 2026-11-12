@@ -39,6 +39,22 @@ struct FileOperationTests {
         #expect(try folder.read("Archive/a.md") == "")
     }
 
+    @Test("a copy is made next to the original, named as Obsidian names it, never over an existing file")
+    func duplicate() throws {
+        let folder = try TemporaryVault(files: [
+            "Meetings/Retro.md": "text", "Meetings/retro 1.md": "keep me", "Media/photo.png": "png", "Old/a.md": "a",
+        ])
+        let vault = Vault(root: folder.url)
+
+        #expect(try vault.duplicate("Meetings/Retro.md") == "Meetings/Retro 2.md")
+        #expect(try vault.duplicate("Media/photo.png") == "Media/photo 1.png")
+        #expect(try vault.duplicate("Old") == "Old 1")
+        #expect(try folder.read("Meetings/Retro 2.md") == "text")
+        #expect(try folder.read("Meetings/Retro.md") == "text")
+        #expect(try folder.read("Meetings/retro 1.md") == "keep me")
+        #expect(try folder.read("Old 1/a.md") == "a")
+    }
+
     @Test("a rename that only changes letter case is a rename, not a name taken")
     func renameCase() throws {
         let folder = try TemporaryVault(files: ["retro.md": "text"])

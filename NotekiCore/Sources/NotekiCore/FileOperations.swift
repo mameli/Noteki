@@ -29,6 +29,22 @@ extension Vault {
         }
     }
 
+    /// A copy of the Note, Attachment or folder at `path` next to it, as Obsidian makes one:
+    /// `Retro 1.md`, then `Retro 2.md`…, never over an existing file. Its path.
+    public func duplicate(_ path: String) throws -> String {
+        let source = fileURL(path)
+        var isFolder: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: source.path(percentEncoded: false), isDirectory: &isFolder) else {
+            throw CocoaError(.fileNoSuchFile)
+        }
+        let fileExtension = (path as NSString).pathExtension
+        let hasExtension = !isFolder.boolValue && !fileExtension.isEmpty
+        let name = hasExtension ? (lastComponent(of: path) as NSString).deletingPathExtension : lastComponent(of: path)
+        return try writeNew(as: name, extension: hasExtension ? fileExtension : nil, in: folderOf(path)) { copy in
+            try FileManager.default.copyItem(at: source, to: copy)
+        }
+    }
+
     /// Gives the Note, Attachment or folder at `path` a new `name`, in the same folder; its new
     /// path. A Note's name is without `.md` and an Attachment's without its extension: both keep
     /// theirs (typed again, it is not doubled).

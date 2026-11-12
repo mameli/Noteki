@@ -1,7 +1,7 @@
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import { syntaxTree } from "@codemirror/language";
-import { renderedCode } from "../src/livepreview";
+import { renderedCode, renderedRules } from "../src/livepreview";
 import { shown, stateOf } from "./helpers";
 
 test("bold, italic, inline code and strikethrough show without their marks", () => {
@@ -110,4 +110,14 @@ test("a Comment in code is code", () => {
 
 test("an empty Alias shows the name; in a table the escaped pipe is the Alias's", () => {
   assert.equal(shown("[[Note|]] and [[Note\\|alias]]\n‸"), "Note and alias\n");
+});
+
+test("a horizontal rule is drawn as a line, its dashes shown while the cursor is on it", () => {
+  const state = stateOf("Text\n\n---\n\nMore‸");
+  assert.deepEqual(renderedRules(state), [6]);
+  assert.equal(shown("Text\n\n---\n\nMore‸"), "Text\n\n\n\nMore");
+  assert.equal(shown("Text\n\n-‸--\n\nMore"), "Text\n\n---\n\nMore");
+  assert.deepEqual(renderedRules(stateOf("Text\n\n*‸**\n")), []);
+  // Under a paragraph, `---` makes a Heading, not a rule.
+  assert.deepEqual(renderedRules(stateOf("Title\n---\n‸")), []);
 });

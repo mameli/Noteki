@@ -7,7 +7,7 @@ import { embeddedFile, svgSource } from "./embeds";
 import { drawFrontmatter, foldedLists, frontmatterLayout, frontmatterReading, frontmatterTheme, type RenderedFrontmatter } from "./frontmatter";
 import { tagChipsTheme } from "./tagchips";
 import { CheckboxWidget, isTicked, taskTheme } from "./tasks";
-import { measure, type RenderedTable, rowHidden, tableLayout } from "./tables";
+import { cursorInCells, fitColumns, measure, placeIn, type RenderedTable, rowHidden, tableKeys, tableLayout } from "./tables";
 import { linesOf, type Span } from "./text";
 import { isUnresolved } from "./wikilink";
 
@@ -91,8 +91,17 @@ export function renderedTasks(state: EditorState, from = 0, to = state.doc.lengt
   return preview(state, from, to).tasks;
 }
 
+/**
+ * The horizontal rules between `from` and `to` drawn as a line: the start of each one's line. A
+ * rule's `---` shows, the line gone, while the cursor is on it.
+ */
+export function renderedRules(state: EditorState, from = 0, to = state.doc.length): number[] {
+  return preview(state, from, to).rules;
+}
+
 interface Preview {
   hidden: Span[];
+  rules: number[];
   code: Span[];
   codeBlocks: RenderedCode[];
   tables: RenderedTable[];
@@ -126,6 +135,7 @@ function preview(state: EditorState, from: number, to: number, measuring = true)
   const tasks: RenderedTask[] = [];
   const doneTasks: Span[] = [];
   const callouts: RenderedCallout[] = [];
+  const rules: number[] = [];
   let frontmatter: Preview["frontmatter"] = null;
   const tableLines: number[] = [];
   // A table is written while a cursor or a selection's end is in it: ⌘A leaves tables shown.
@@ -162,9 +172,14 @@ function preview(state: EditorState, from: number, to: number, measuring = true)
       }
       if (node.name === "Table") {
         for (const line of linesOf(state, node.from, node.to)) tableLines.push(line.from);
-        // The cursor in a table shows it as written; inline elements in its cells follow their rules.
-        if (entered(node)) return undefined;
+        // Drawn with the cursor in it too, as in Obsidian: the cell it is in shows all its text
+        // (tables.ts). Inline elements in the cells follow their rules.
         const table = tableLayout(state, node);
+        for (const range of state.selection.ranges) {
+          if (range.head < node.from || range.head > node.to) continue;
+          const place = placeIn(state, table, range.head);
+          if (place) (table.editing ??= []).push({ row: place.row, column: place.column });
+        }
         tables.push(table);
         for (const row of table.rows) hidden.push(...rowHidden(state, row));
         return undefined;
@@ -212,6 +227,14 @@ function preview(state: EditorState, from: number, to: number, measuring = true)
             hide(node, { from: marks[1].from, to: node.to });
           }
           return undefined;
+        }
+        case "HorizontalRule": {
+          // Drawn as a line across the text, its line keeping its height (editor.css below).
+          const rule = { from: node.from, to: node.to };
+          if (shows(rule, rule)) return false;
+          hidden.push(rule);
+          rules.push(state.doc.lineAt(node.from).from);
+          return false;
         }
         case "Autolink":
           for (const mark of children(node, "LinkMark")) hide(node, mark);
@@ -279,7 +302,7 @@ function preview(state: EditorState, from: number, to: number, measuring = true)
   }
   // Over the whole table, not only the part in view: a column keeps its width while scrolling.
   if (measuring) for (const table of tables) measure(table, preview(state, table.from, table.to, false).hidden);
-  return { hidden: merged, code, codeBlocks, tables, tasks, callouts, frontmatter, doneTasks, tableLines };
+  return { hidden: merged, rules, code, codeBlocks, tables, tasks, callouts, frontmatter, doneTasks, tableLines };
 }
 
 /**
@@ -322,11 +345,19 @@ const inlineCode = Decoration.mark({ class: "cm-inline-code" });
 const doneTask = Decoration.mark({ class: "cm-task-done" });
 const codeInfo = Decoration.mark({ class: "cm-code-info" });
 
+const ruleLine = Decoration.line({ class: "cm-hr" });
 const tableLine = Decoration.line({ class: "cm-table-line" });
 const rowLine = {
   header: Decoration.line({ class: "cm-table-line cm-table-row cm-table-header" }),
   rule: Decoration.line({ class: "cm-table-line cm-table-row cm-table-rule" }),
   body: Decoration.line({ class: "cm-table-line cm-table-row" }),
+};
+
+/** A row with a cell being edited: as tall as that cell's text wrapped, the others as tall. */
+const editedRowLine = {
+  header: Decoration.line({ class: "cm-table-line cm-table-row cm-table-header cm-table-edited" }),
+  rule: rowLine.rule,
+  body: Decoration.line({ class: "cm-table-line cm-table-row cm-table-edited" }),
 };
 
 function decorations(view: EditorView): DecorationSet {
@@ -337,13 +368,15 @@ function decorations(view: EditorView): DecorationSet {
   const calloutLines = new Set<number>();
   const codeLines = new Set<number>();
   let frontmatterDrawn = false;
+  const available = textWidth(view);
   for (const { from, to } of view.visibleRanges) {
-    const { hidden, code, codeBlocks, tables, tasks, callouts, frontmatter, doneTasks, tableLines } = preview(view.state, from, to);
+    const { hidden, rules, code, codeBlocks, tables, tasks, callouts, frontmatter, doneTasks, tableLines } = preview(view.state, from, to);
     if (frontmatter && !frontmatterDrawn) {
       frontmatterDrawn = true;
       ranges.push(...drawFrontmatter(view.state, frontmatter.node, frontmatter.layout));
     }
     for (const span of hidden) ranges.push(hide.range(span.from, span.to));
+    for (const line of rules) ranges.push(ruleLine.range(line));
     for (const span of code) ranges.push(inlineCode.range(span.from, span.to));
     for (const task of tasks) ranges.push(Decoration.widget({ widget: new CheckboxWidget(task.checked), side: 1 }).range(task.at));
     for (const span of doneTasks) ranges.push(doneTask.range(span.from, span.to));
@@ -361,27 +394,34 @@ function decorations(view: EditorView): DecorationSet {
       if (drawn.has(table.from)) continue;
       drawn.add(table.from);
       const lastRow = table.rows[table.rows.length - 1];
-      // Never wider than the text: past it, each column gets its share of the line, cut with an
-      // ellipsis. Its share is its natural width over the table's, so all fit or all shrink.
+      // Never wider than the text: past it, the widest columns shrink, cut with an ellipsis
+      // (fitColumns). As a share of the line too, should the text be narrower than measured.
       const natural = table.columns.map((column) => column.width * 0.6 + 1.4);
-      const total = natural.reduce((sum, width) => sum + width, 0);
-      for (const row of table.rows) {
+      const widths = fitColumns(natural, available - 0.2);
+      const total = widths.reduce((sum, width) => sum + width, 0);
+      const editing = table.editing ?? [];
+      table.rows.forEach((row, index) => {
         shown.add(row.lineStart);
-        ranges.push(rowLine[row.kind].range(row.lineStart));
+        const edited = editing.some((place) => place.row === index);
+        ranges.push((edited ? editedRowLine : rowLine)[row.kind].range(row.lineStart));
         row.cells.forEach((cell, column) => {
           const { align } = table.columns[column];
           // In em, not ch: a bold header's ch is wider than a body's, and the columns must line up.
-          const share = (natural[column] / total) * 100;
-          const style = `width: min(${natural[column]}em, ${share.toFixed(3)}%); text-align: ${align}`;
+          const share = (widths[column] / total) * 100;
+          const style = `width: min(${widths[column].toFixed(3)}em, ${share.toFixed(3)}%); text-align: ${align}`;
           let classes = "cm-table-cell";
           if (row.kind === "header") classes += " cm-table-head";
           if (row === lastRow) classes += " cm-table-bottom";
           if (column === 0) classes += " cm-table-first";
           if (column === table.columns.length - 1) classes += " cm-table-last";
           if (cell.text === "") classes += " cm-table-empty";
-          ranges.push(Decoration.mark({ class: classes, attributes: { style } }).range(cell.from, cell.to));
+          if (editing.some((place) => place.row === index && place.column === column)) classes += " cm-table-editing";
+          // Inclusive, so it wraps what starts and ends with it, a cell of nothing but `code`: inside
+          // the code's span, the cell would be pushed sideways by the code's padding, and the
+          // table's sides would not be straight.
+          ranges.push(Decoration.mark({ class: classes, attributes: { style }, inclusive: true }).range(cell.from, cell.to));
         });
-      }
+      });
     }
     for (const line of tableLines) {
       if (!shown.has(line)) {
@@ -393,7 +433,18 @@ function decorations(view: EditorView): DecorationSet {
   return Decoration.set(ranges, true);
 }
 
+/** The width of the text, in em of its font, for the tables to fit in; 0 before it is laid out. */
+function textWidth(view: EditorView): number {
+  const content = view.contentDOM;
+  const style = getComputedStyle(content);
+  const fontSize = parseFloat(style.fontSize);
+  const width = content.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+  return fontSize > 0 && width > 0 ? width / fontSize : 0;
+}
+
 export const livePreview = [
+  tableKeys,
+  cursorInCells,
   ViewPlugin.fromClass(
     class {
       decorations: DecorationSet;
@@ -404,7 +455,8 @@ export const livePreview = [
         const parsed = syntaxTree(update.startState) !== syntaxTree(update.state);
         // The app's answer about the Frontmatter draws the Properties table.
         const answered = update.startState.field(frontmatterReading, false) !== update.state.field(frontmatterReading, false);
-        if (update.docChanged || update.selectionSet || update.viewportChanged || parsed || answered) {
+        // The window resized: the tables fit its new width.
+        if (update.docChanged || update.selectionSet || update.viewportChanged || update.geometryChanged || parsed || answered) {
           this.decorations = decorations(update.view);
         }
       }
@@ -417,6 +469,14 @@ export const livePreview = [
   frontmatterTheme,
   tagChipsTheme,
   EditorView.baseTheme({
+    // A rule in the middle of its line, which keeps one line's height.
+    ".cm-hr": {
+      backgroundImage: "linear-gradient(var(--separator), var(--separator))",
+      backgroundSize: "100% 1px",
+      backgroundPosition: "center",
+      backgroundRepeat: "no-repeat",
+      backgroundClip: "content-box",
+    },
     ".cm-inline-code": { backgroundColor: "var(--code-background)", borderRadius: "3px", padding: "0 2px" },
     ".cm-code-block": { backgroundColor: "var(--code-background)", padding: "0 1em", fontFamily: "var(--mono)", fontSize: "0.92em" },
     ".cm-code-first": { borderTopLeftRadius: "6px", borderTopRightRadius: "6px" },
@@ -442,6 +502,18 @@ export const livePreview = [
       borderBottom: "1px solid var(--separator)",
     },
     ".cm-table-first": { borderLeft: "1px solid var(--separator)" },
+    // The row of the cell being edited grows with its text, wrapped in its column, and its other
+    // cells grow with it: a flex line. Only the cursor's line changes height, as anywhere.
+    ".cm-table-edited": { display: "flex", alignItems: "stretch" },
+    ".cm-table-edited .cm-table-cell": { flex: "none", height: "auto", minHeight: "1.6em" },
+    ".cm-table-edited .cm-table-head": { minHeight: "3.2em" },
+    ".cm-table-editing": {
+      whiteSpace: "pre-wrap",
+      overflowWrap: "anywhere",
+      textOverflow: "clip",
+      boxShadow: "inset 0 0 0 2px rgba(var(--accent-rgb), 0.45)",
+    },
+    ".cm-table-editing.cm-table-empty, .cm-table-editing.cm-table-empty *": { color: "inherit !important" },
     // A header's cells reach down over the delimiter row, whose text is all hidden, their text in
     // the middle: one row twice as tall, while each line keeps one line's height (its negative
     // margin), so nothing moves when the cursor enters the table.

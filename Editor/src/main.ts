@@ -19,6 +19,7 @@ import { insertion } from "./insert";
 import { applySettings } from "./settings";
 import { noteLanguage } from "./language";
 import { livePreview } from "./livepreview";
+import { selectionOverBackgrounds } from "./selection";
 import { followWikilinks, linkInners, markUnresolved, unresolvedLinks } from "./wikilink";
 
 // Colours come from the CSS variables in editor.css, so light and dark follow the system.
@@ -204,6 +205,7 @@ function initialState(text: string, editable: boolean) {
       // ⌘D adds the next occurrence of the selection: several cursors, drawn by CodeMirror.
       EditorState.allowMultipleSelections.of(true),
       drawSelection(),
+      selectionOverBackgrounds,
       systemTextServices,
       // Before CodeMirror's own ⌘↩ and ⌘/.
       Prec.high(keymap.of(formatKeys.map(({ key, action }) => ({ key, run: () => (send({ type: "format", action }), true) })))),

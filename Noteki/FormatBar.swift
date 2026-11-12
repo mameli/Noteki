@@ -30,9 +30,12 @@ struct FormatBar: View {
             button("list.number", "Numbered List", .numberedList)
             button("list.bullet", "Bulleted List", .bulletList)
             button("checklist", "Task (⌘↩)", .task)
-            Divider().frame(height: 16).padding(.horizontal, 4)
-            Button { model.attachFiles() } label: { Image(systemName: "paperclip") }
-                .help("Attach Images…")
+            // A Loose file takes no images: nothing is embedded next to it.
+            if !model.isLooseFileWindow {
+                Divider().frame(height: 16).padding(.horizontal, 4)
+                Button { model.attachFiles() } label: { Image(systemName: "paperclip") }
+                    .help("Attach Images…")
+            }
         }
         // Quiet: grey icons on the theme's background, the page's own, no bar or line under it.
         .buttonStyle(.borderless)

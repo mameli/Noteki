@@ -290,6 +290,8 @@ final class AppModel {
     }
 
     private var isLooseFile: Bool { looseFile != nil }
+    /// For the Format bar: a Loose file's window has no paperclip.
+    var isLooseFileWindow: Bool { isLooseFile }
 
     @ObservationIgnored private var settingsObserver: (any NSObjectProtocol)?
 
@@ -501,6 +503,20 @@ final class AppModel {
             self.renaming = note.path
             // Opened once Files lists it, right after.
             self.pendingReveal = (note.path, false)
+            return nil
+        }
+    }
+
+    /// From Files' menu: a copy next to the file or folder, its name in Files ready to type over;
+    /// a file's copy opened, as after New Note.
+    func duplicate(_ path: String) {
+        guard !isLooseFile else { return }
+        operate { vault in
+            let copy = try vault.duplicate(path)
+            self.leftPane = .files
+            self.renaming = copy
+            // Shown once Files lists it, right after: a file opened, a folder selected.
+            self.pendingReveal = (copy, false)
             return nil
         }
     }

@@ -22,6 +22,15 @@ struct LeftSidebar: View {
             }
         }
         .themePanel()
+        // The rows stop under the toolbar: scrolled up, they went on behind the window's buttons
+        // and the pane icons. The band above the panes in the panel's colour, over them.
+        .overlay(alignment: .top) {
+            Color.clear
+                .frame(height: 0)
+                .background(Color.themePanel.ignoresSafeArea(edges: .top))
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
         .toolbar {
             if isShown {
                 ToolbarItem {
