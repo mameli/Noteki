@@ -10,6 +10,9 @@ struct HelpCommands: Commands {
 
     private static let repository = URL(string: "https://github.com/mameli/Noteki")!
 
+    /// The page where a payment supports Noteki: optional, the app is the same without it.
+    static let support = URL(string: "https://buy.stripe.com/6oU5kCeuudcFeoIeac6wE05")!
+
     var body: some Commands {
         CommandGroup(replacing: .help) {
             Button("Keyboard Shortcuts") { (vaultWindow ?? noteWindow)?.showPalette(in: NSApp.keyWindow) }
@@ -18,6 +21,8 @@ struct HelpCommands: Commands {
             Link("Noteki on GitHub", destination: Self.repository)
             Link("Release Notes", destination: Self.repository.appending(path: "releases"))
             Link("Report an Issue", destination: Self.repository.appending(path: "issues/new"))
+            Divider()
+            Link("Support Noteki…", destination: Self.support)
         }
     }
 }

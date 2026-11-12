@@ -37,6 +37,10 @@ A light native Mac app to read and write the Markdown vault you keep with **Obsi
   </tr>
 </table>
 
+## Support
+
+Noteki is free and open source, and it will stay that way. If it is useful to you, you can [support its development](https://buy.stripe.com/6oU5kCeuudcFeoIeac6wE05). It works exactly the same whether you do or not.
+
 ## Build
 
 Requires Xcode with Swift 6. The editor (CodeMirror 6, in `Editor/`) is committed already built in `Noteki/Resources/editor.html`, so the app builds without Node.

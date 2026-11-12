@@ -15,6 +15,7 @@ struct SettingsView: View {
             WritingSection()
             VaultSection(model: model)
             UpdatesSection()
+            SupportSection()
         }
         .formStyle(.grouped)
         .frame(minWidth: 460, idealWidth: 500, minHeight: 400, idealHeight: 540)
@@ -161,6 +162,23 @@ private struct UpdatesSection: View {
                 LabeledContent("Updates") {
                     Button("Check Now") { updates.check() }
                 }
+            }
+        }
+    }
+}
+
+/// An optional payment that supports Noteki's development. Nothing is locked: the app is the
+/// same without it.
+private struct SupportSection: View {
+    @Environment(\.openURL) private var openURL
+
+    var body: some View {
+        Section("Support") {
+            LabeledContent {
+                Button("Support Noteki…") { openURL(HelpCommands.support) }
+            } label: {
+                Text("Noteki is free and open source. If it is useful to you, you can support its development. It works the same either way.")
+                    .foregroundStyle(.secondary)
             }
         }
     }
