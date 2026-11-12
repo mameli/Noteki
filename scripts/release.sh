@@ -166,7 +166,7 @@ if [[ $(git rev-parse HEAD) != $(gh api "repos/{owner}/{repo}/commits/main" --jq
     exit 1
 fi
 gh release create "$tag" "$dmg" "$latest" "$appcast" --target main --title "Noteki $version" --notes-file - <<NOTES
-Mac with macOS 15 or later.
+Apple Silicon Mac with macOS 15 or later.
 
 Download \`Noteki-$version.dmg\` (\`Noteki.dmg\` is the same file), open it and drag **Noteki** to **Applications**. Noteki is notarized by Apple: it opens like any other app. With Homebrew: \`brew tap mameli/noteki && brew trust mameli/noteki && brew install --cask noteki\`.
 
@@ -185,7 +185,7 @@ echo "Published: $(gh release view "$tag" --json url --jq .url)"
 sha=$(shasum -a 256 "$dmg" | cut -d ' ' -f 1)
 git -C "$tap" pull --ff-only -q
 sed -i '' -e "s/^  version \".*\"/  version \"$version\"/" -e "s/^  sha256 \".*\"/  sha256 \"$sha\"/" "$cask"
-grep -q '^  auto_updates true$' "$cask" || sed -i '' 's/^  depends_on macos: :sequoia$/  auto_updates true\
+grep -q '^  auto_updates true$' "$cask" || sed -i '' 's/^  depends_on arch: :arm64$/  auto_updates true\
 \
 &/' "$cask"
 git -C "$tap" commit -q -am "Noteki $version"
