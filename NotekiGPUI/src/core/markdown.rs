@@ -636,6 +636,19 @@ pub fn wikilink_at(text: &str, offset: usize) -> Option<Wikilink> {
         .map(|(_, tok)| Wikilink::parse(&text[tok.inner]))
 }
 
+/// What a line holding only an image Embed points at: `![[target]]` gives
+/// `target`, `![alt](path)` gives `path`.
+pub fn image_embed(line: &str) -> Option<&str> {
+    let t = line.trim();
+    if let Some(inner) = t.strip_prefix("![[").and_then(|r| r.strip_suffix("]]")) {
+        return (!inner.contains("]]")).then_some(inner);
+    }
+    let rest = t.strip_prefix("![")?.strip_suffix(')')?;
+    let (_, dest) = rest.split_once("](")?;
+    let dest = dest.split_whitespace().next()?;
+    Some(dest.trim_start_matches('<').trim_end_matches('>'))
+}
+
 /// A link of the text, as a click opens it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Link {
@@ -1194,6 +1207,18 @@ mod tests {
             .into_iter()
             .map(|t| (t.kind, &line[t.range]))
             .collect()
+    }
+
+    #[test]
+    fn an_image_embed_alone_on_its_line() {
+        assert_eq!(image_embed("![[noteki.png]]"), Some("noteki.png"));
+        assert_eq!(
+            image_embed("  ![alt](Media/a b.png \"t\")"),
+            Some("Media/a")
+        );
+        assert_eq!(image_embed("![](<Media/a.png>)"), Some("Media/a.png"));
+        assert_eq!(image_embed("testo ![[x.png]]"), None);
+        assert_eq!(image_embed("![[a]] e ![[b]]"), None);
     }
 
     #[test]

@@ -1311,3 +1311,28 @@ fn a_click_on_a_link_opens_its_url_unless_the_cursor_is_in_it(cx: &mut TestAppCo
     click(cx, &f, at, 1);
     assert_eq!(editor_state(cx, &f).1, label + 4);
 }
+
+#[gpui_kit::test]
+fn an_image_embed_is_drawn_as_the_image_and_shows_its_source_with_the_cursor(
+    cx: &mut TestAppContext,
+) {
+    let f = fixture(cx);
+    let text = "testo\n![[noteki.png]]\n![[manca.png]]\nfine";
+    editor_with(cx, &f, text, 0);
+    let off = heights(cx, &f);
+    assert!(off[1] > off[0] * 3., "the image's height: {off:?}");
+    assert_eq!(off[2], off[0], "a missing image stays one line of source");
+    // The cursor onto the image's line: its source shows above the image;
+    // the line above does not move.
+    let top0 = caret_at(cx, &f, 0).1;
+    press(cx, &f, "down");
+    let on = heights(cx, &f);
+    assert!(on[1] > off[1], "source row added: {off:?} → {on:?}");
+    assert_eq!(caret_at(cx, &f, 0).1, top0);
+    let line = text.find("![[").unwrap();
+    let cursor = editor_state(cx, &f).1;
+    assert!(
+        (line..=line + "![[noteki.png]]".len()).contains(&cursor),
+        "{cursor}"
+    );
+}

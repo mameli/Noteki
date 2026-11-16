@@ -4,13 +4,16 @@
 
 use std::cell::RefCell;
 use std::ops::Range;
+use std::path::Path;
 use std::rc::Rc;
+use std::sync::Arc;
 
 use gpui_kit::{
     fill, point, px, size, App, AvailableSpace, Bounds, Corners, DispatchPhase, Element, ElementId,
-    ElementInputHandler, Entity, Font, GlobalElementId, HighlightStyle, Hsla, InspectorElementId,
-    IntoElement, LayoutId, MouseMoveEvent, MouseUpEvent, Pixels, Point, SharedString, Size, Style,
-    TextAlign, TextRun, UnderlineStyle, Window, WindowTextSystem, WrappedLine,
+    ElementInputHandler, Entity, Font, GlobalElementId, HighlightStyle, Hsla, ImageAssetLoader,
+    InspectorElementId, IntoElement, LayoutId, MouseMoveEvent, MouseUpEvent, Pixels, Point,
+    Resource, SharedString, Size, Style, TextAlign, TextRun, UnderlineStyle, Window,
+    WindowTextSystem, WrappedLine,
 };
 
 use crate::core::editor::display::{shown_text, to_buffer, to_display};
@@ -56,11 +59,15 @@ pub(super) struct LaidLine {
     /// How far the text starts from the left edge (a quote's bars).
     indent: Pixels,
     decoration: Option<Decoration>,
+    /// The height of the text's rows: none for an image whose source is hidden.
+    text_height: Pixels,
+    /// An image drawn under the text, at the size it is drawn.
+    image: Option<(Rc<Path>, Size<Pixels>)>,
 }
 
 impl LaidLine {
     fn height(&self) -> Pixels {
-        self.shaped.size(self.line_height).height
+        self.text_height + self.image.as_ref().map_or(px(0.), |(_, s)| s.height)
     }
 
     /// The position of `offset` (clamped to the line) relative to the line's top-left.
@@ -489,7 +496,31 @@ fn paint_decoration(
                 }
             }
         }
-        None => {}
+        // Painted after the text, in `paint`.
+        Some(Decoration::Image(_)) | None => {}
+    }
+}
+
+/// An image under its line's text: loaded in the background the first time
+/// (a placeholder until then), then from GPUI's cache.
+fn paint_image(
+    line: &LaidLine,
+    (left, top): (Pixels, Pixels),
+    input: &ShapeInput,
+    window: &mut Window,
+    cx: &mut App,
+) {
+    let Some((path, size)) = &line.image else {
+        return;
+    };
+    let bounds = Bounds::new(point(left + line.indent, top + line.text_height), *size);
+    let source = Resource::Path(Arc::from(&**path));
+    match window.use_asset::<ImageAssetLoader>(&source, cx) {
+        Some(Ok(image)) => {
+            let _ = window.paint_image(bounds, bounds, Corners::all(px(4.)), image, 0, false);
+        }
+        Some(Err(_)) => {}
+        None => window.paint_quad(fill(bounds, input.palette.code_bg).corner_radii(px(4.))),
     }
 }
 
@@ -534,6 +565,20 @@ fn shape_line(
         .ok()
         .and_then(|mut v| (!v.is_empty()).then(|| v.remove(0)))
         .unwrap_or_default();
+    // An image as wide as its file, or as the text if narrower, in proportion.
+    let image = match &style.decoration {
+        Some(Decoration::Image(img)) if img.width > 0 => {
+            let w = px(img.width as f32).min(width - indent);
+            let h = w * (img.height as f32 / img.width as f32);
+            Some((img.path.clone(), size(w, h)))
+        }
+        _ => None,
+    };
+    let text_height = if image.is_some() && shaped.len() == 0 {
+        px(0.)
+    } else {
+        shaped.size(line_height).height
+    };
     LaidLine {
         range,
         line_height,
@@ -541,6 +586,8 @@ fn shape_line(
         shaped: Rc::new(shaped),
         indent,
         decoration: style.decoration.clone(),
+        text_height,
+        image,
     }
 }
 
@@ -824,6 +871,7 @@ impl Element for EditorElement {
                 window,
                 cx,
             );
+            paint_image(line, (layout.origin.x, top), input, window, cx);
             let _ = line.shaped.paint(
                 point(layout.origin.x + line.indent, top),
                 line.line_height,

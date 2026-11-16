@@ -45,8 +45,6 @@ pub fn shown_text(line: &str, hidden: &[Range<usize>]) -> String {
 }
 
 #[cfg(test)]
-// A list holding one hidden range is what these tests are about.
-#[allow(clippy::single_range_in_vec_init)]
 mod tests {
     use super::*;
 

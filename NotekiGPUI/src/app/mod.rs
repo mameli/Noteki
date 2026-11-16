@@ -36,7 +36,7 @@ use crate::core::vault::{
     validate_item_name, write_note_atomic, AttachmentKind, VaultItem,
 };
 use crate::core::wikilink::{folder_of, ResolvedItem, VaultIndex};
-use crate::editor::{NoteEditor, NoteEditorEvent};
+use crate::editor::{LinkContext, NoteEditor, NoteEditorEvent};
 use crate::theme::{apply_noteki_theme, AppearanceMode, NotekiPalette, NotekiThemeName};
 
 pub use settings::{LeftPane, RightPane, Settings, ViewMode};
@@ -741,9 +741,13 @@ impl NotekiApp {
             .as_ref()
             .map(|v| v.index.clone())
             .unwrap_or_default();
-        let path = self.editor_path.clone();
+        let context = LinkContext {
+            path: self.editor_path.clone(),
+            index,
+            root: self.vault.as_ref().map(|v| v.root.clone()),
+        };
         self.editor
-            .update(cx, |ed, cx| ed.set_link_context(path, index, cx));
+            .update(cx, |ed, cx| ed.set_link_context(context, cx));
     }
 
     fn refresh_tree(&mut self, cx: &mut Context<Self>) {

@@ -5,8 +5,8 @@ use std::ops::Range;
 use std::rc::Rc;
 
 use crate::core::markdown::{
-    lines, list_item, parse_atx_heading, quote_prefix, BlockKind, Line, ListKind, MdSpan,
-    MdSpanKind,
+    image_embed, lines, list_item, parse_atx_heading, quote_prefix, BlockKind, Line, ListKind,
+    MdSpan, MdSpanKind,
 };
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -36,6 +36,17 @@ pub enum Decoration {
     /// A line of a fenced code block's box: its opening fence (with the
     /// language it names, shown as a label), its code, its closing fence.
     Code(CodePart),
+    /// A line holding only an image Embed: drawn as the image, its source
+    /// hidden while the cursor is off the line.
+    Image(Image),
+}
+
+/// An image of the Vault, as the editor draws it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Image {
+    pub path: Rc<std::path::Path>,
+    pub width: u32,
+    pub height: u32,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -51,14 +62,23 @@ pub type CodeColours = Rc<[(Range<usize>, MdSpanKind)]>;
 /// Colours a code block's code for its language.
 pub type Highlight<'a> = dyn FnMut(&str, &str) -> CodeColours + 'a;
 
+/// Finds the image an Embed's target names, in the Vault.
+pub type ResolveImage<'a> = dyn FnMut(&str) -> Option<Image> + 'a;
+
+/// What the editor knows that the text does not tell: code colours, images.
+pub struct Context<'a> {
+    pub highlight: &'a mut Highlight<'a>,
+    pub image: &'a mut ResolveImage<'a>,
+}
+
 /// One [`LineStyle`] per logical line of `text` (as `lines` splits it).
 /// A span across lines is cut at each line's end. Fenced code is coloured by
 /// `highlight`, which the editor caches per block.
-pub fn style_lines(text: &str, spans: &[MdSpan], highlight: &mut Highlight) -> Vec<LineStyle> {
+pub fn style_lines(text: &str, spans: &[MdSpan], cx: Context) -> Vec<LineStyle> {
     let lines = lines(text);
     let mut clipped: Vec<Vec<(Range<usize>, MdSpanKind)>> = vec![Vec::new(); lines.len()];
     let mut parts: Vec<Option<CodePart>> = vec![None; lines.len()];
-    let code_spans = code_blocks(&lines, text, &mut parts, highlight);
+    let code_spans = code_blocks(&lines, text, &mut parts, cx.highlight);
     for span in spans.iter().chain(&code_spans) {
         let first = lines
             .partition_point(|l| l.start <= span.range.start)
@@ -78,6 +98,13 @@ pub fn style_lines(text: &str, spans: &[MdSpan], highlight: &mut Highlight) -> V
             let mut style = style_of(line, spans);
             if let Some(part) = part {
                 style.decoration = Some(Decoration::Code(part));
+            } else if line.kind == BlockKind::Text {
+                // The cursor is off every line here: an image hides its source.
+                if let Some(image) = image_embed(line.text).and_then(&mut *cx.image) {
+                    style.decoration = Some(Decoration::Image(image));
+                    style.hidden = vec![0..line.text.len()];
+                    style.segments.clear();
+                }
             }
             style
         })
@@ -210,8 +237,6 @@ fn segments(spans: Vec<(Range<usize>, MdSpanKind)>) -> Vec<(Range<usize>, Vec<Md
 }
 
 #[cfg(test)]
-// A list holding one hidden range is what these tests are about.
-#[allow(clippy::single_range_in_vec_init)]
 mod tests {
     use super::*;
     use crate::core::markdown::compute_markdown_spans;
@@ -221,7 +246,12 @@ mod tests {
         style_lines(
             text,
             &compute_markdown_spans(text, cursor, None, &VaultIndex::default()),
-            &mut |language, code| crate::core::editor::code::highlight(language, code).into(),
+            Context {
+                highlight: &mut |language, code| {
+                    crate::core::editor::code::highlight(language, code).into()
+                },
+                image: &mut |_| None,
+            },
         )
     }
 
@@ -268,7 +298,14 @@ mod tests {
             range: 1..5,
             kind: MdSpanKind::Comment,
         }];
-        let s = style_lines(text, &spans, &mut |_, _| Rc::from([]));
+        let s = style_lines(
+            text,
+            &spans,
+            Context {
+                highlight: &mut |_, _| Rc::from([]),
+                image: &mut |_| None,
+            },
+        );
         assert_eq!(s[0].segments, vec![(1..2, vec![MdSpanKind::Comment])]);
         assert_eq!(s[1].segments, vec![(0..2, vec![MdSpanKind::Comment])]);
     }
@@ -432,6 +469,28 @@ mod tests {
             .segments
             .iter()
             .any(|(_, k)| k.contains(&MdSpanKind::CodeString)));
+    }
+
+    #[test]
+    fn an_image_line_hides_its_source_and_is_drawn_as_the_image() {
+        let text = "testo\n![[noteki.png]]\n![[manca.png]]";
+        let spans = compute_markdown_spans(text, None, None, &VaultIndex::default());
+        let image = Image {
+            path: std::path::Path::new("/v/noteki.png").into(),
+            width: 10,
+            height: 5,
+        };
+        let s = style_lines(
+            text,
+            &spans,
+            Context {
+                highlight: &mut |_, _| Rc::from([]),
+                image: &mut |t| (t == "noteki.png").then(|| image.clone()),
+            },
+        );
+        assert_eq!(s[1].decoration, Some(Decoration::Image(image.clone())));
+        assert_eq!(s[1].hidden, vec![0..15]);
+        assert_eq!(s[2].decoration, None, "a missing image stays as its source");
     }
 
     #[test]

@@ -31,12 +31,15 @@ use crate::core::editor::code;
 use crate::core::editor::lines::edge_scroll;
 use crate::core::editor::movement::{line_range_at, word_range_at};
 use crate::core::editor::styling::{
-    style_line, style_lines, CodeColours, CodePart, Decoration, LineStyle,
+    style_line, style_lines, CodeColours, CodePart, Context as StyleContext, Decoration, Image,
+    LineStyle,
 };
 use crate::core::editor::{EditBuffer, Motion};
+use crate::core::embeds::resolve_embed;
 use crate::core::markdown::{
     self, compute_markdown_spans, line_of_offset, link_at, BlockKind, Link,
 };
+use crate::core::vault::resolve_vault_path;
 use crate::core::wikilink::VaultIndex;
 use crate::theme::NotekiPalette;
 
@@ -143,6 +146,14 @@ pub fn register_keybindings(cx: &mut App) {
     ]);
 }
 
+/// What the editor needs from the Vault: the Note's path, the index, the folder.
+#[derive(Clone, Default)]
+pub struct LinkContext {
+    pub path: Option<String>,
+    pub index: Arc<VaultIndex>,
+    pub root: Option<std::path::PathBuf>,
+}
+
 /// The Live preview style of each line, shared with the element.
 pub(crate) type LineStyles = Rc<Vec<Rc<LineStyle>>>;
 
@@ -174,7 +185,9 @@ pub struct NoteEditor {
     /// Bumped at every change of the text, so the styles know when to recompute.
     revision: u64,
     /// The Note's path and the Vault's links, to tell resolved Wikilinks.
-    link_context: (Option<String>, Arc<VaultIndex>),
+    link_context: LinkContext,
+    /// The images Embeds name, by target: resolved and measured once.
+    images: HashMap<String, Option<Image>>,
     /// The colours of the code blocks of the last styling, by language and code.
     code_colours: HashMap<u64, CodeColours>,
     /// Live preview styles per line with every mark hidden, and the revision.
@@ -223,7 +236,8 @@ impl NoteEditor {
             reveal: false,
             over_link: false,
             revision: 0,
-            link_context: (None, Arc::default()),
+            link_context: LinkContext::default(),
+            images: HashMap::new(),
             code_colours: HashMap::new(),
             base_styles: (None, Rc::default()),
             styles: (None, Rc::default()),
@@ -261,15 +275,11 @@ impl NoteEditor {
         cx.notify();
     }
 
-    /// The Note's path and the Vault's index, for Live preview to tell
-    /// resolved Wikilinks from unresolved ones.
-    pub fn set_link_context(
-        &mut self,
-        path: Option<String>,
-        index: Arc<VaultIndex>,
-        cx: &mut Context<Self>,
-    ) {
-        self.link_context = (path, index);
+    /// The Note's path, the Vault's index and folder: for Live preview to tell
+    /// resolved Wikilinks from unresolved ones and to find images.
+    pub fn set_link_context(&mut self, context: LinkContext, cx: &mut Context<Self>) {
+        self.link_context = context;
+        self.images.clear();
         self.revision += 1;
         cx.notify();
     }
@@ -347,7 +357,7 @@ impl NoteEditor {
         if text.len() > LIVE_PREVIEW_MAX_BYTES {
             return Rc::default();
         }
-        let (path, index) = &self.link_context;
+        let LinkContext { path, index, root } = &self.link_context;
         // Every line with its marks hidden, once per change of the text. A code
         // block is highlighted again only when its code or language changed.
         if self.base_styles.0 != Some(self.revision) {
@@ -365,7 +375,30 @@ impl NoteEditor {
                 used.insert(key, Rc::clone(&colours));
                 colours
             };
-            let styles = style_lines(text, &spans, &mut highlight);
+            let images = &mut self.images;
+            let mut image = |target: &str| -> Option<Image> {
+                images
+                    .entry(target.to_string())
+                    .or_insert_with(|| {
+                        let root = root.as_deref()?;
+                        let found = resolve_embed(root, target, path.as_deref(), index)?;
+                        let abs = resolve_vault_path(root, &found.path).ok()?;
+                        Some(Image {
+                            path: abs.into(),
+                            width: u32::try_from(found.width?).ok()?,
+                            height: u32::try_from(found.height?).ok()?,
+                        })
+                    })
+                    .clone()
+            };
+            let styles = style_lines(
+                text,
+                &spans,
+                StyleContext {
+                    highlight: &mut highlight,
+                    image: &mut image,
+                },
+            );
             *cache = used;
             let styles = keep_equal(&self.base_styles.1, styles);
             self.base_styles = (Some(self.revision), Rc::new(styles));
@@ -385,10 +418,14 @@ impl NoteEditor {
                 markdown::line_spans(line, Some(in_line), path.as_deref(), index, &mut spans);
                 let mut style = style_line(line, &spans);
                 if let Some(slot) = styles.get_mut(line.index) {
-                    // A code block's part of the box is the block's, not the line's.
-                    if matches!(slot.decoration, Some(Decoration::Code(_))) {
-                        style.decoration = slot.decoration.clone();
-                        style.segments = slot.segments.clone();
+                    // A code block's box and an image are the block's, not the line's.
+                    match slot.decoration {
+                        Some(Decoration::Code(_)) => {
+                            style.decoration = slot.decoration.clone();
+                            style.segments = slot.segments.clone();
+                        }
+                        Some(Decoration::Image(_)) => style.decoration = slot.decoration.clone(),
+                        _ => {}
                     }
                     if **slot != style {
                         *slot = Rc::new(style);
