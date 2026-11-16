@@ -968,6 +968,36 @@ impl NotekiApp {
         }
     }
 
+    /// Closes every Tab but the `keep`-th (each saved as when closed alone).
+    pub fn close_other_tabs(&mut self, keep: usize, window: &mut Window, cx: &mut Context<Self>) {
+        for i in (0..self.tabs.len()).rev().filter(|&i| i != keep) {
+            self.close_tab(i, window, cx);
+        }
+    }
+
+    /// Closes the Tabs to the right of the `ix`-th.
+    pub fn close_tabs_after(&mut self, ix: usize, window: &mut Window, cx: &mut Context<Self>) {
+        for i in (ix + 1..self.tabs.len()).rev() {
+            self.close_tab(i, window, cx);
+        }
+    }
+
+    /// Copies a file's path in the Vault, or (`full`) its absolute path.
+    pub fn copy_path(&mut self, path: &str, full: bool, cx: &mut Context<Self>) {
+        let text = match (&self.vault, full) {
+            (Some(v), true) => v.root.join(path).to_string_lossy().into_owned(),
+            _ => path.to_string(),
+        };
+        cx.write_to_clipboard(gpui_kit::ClipboardItem::new_string(text));
+    }
+
+    /// Shows a file or folder in the Finder.
+    pub(crate) fn reveal(&mut self, path: &str, cx: &mut Context<Self>) {
+        if let Some(v) = &self.vault {
+            cx.reveal_path(&v.root.join(path));
+        }
+    }
+
     pub(crate) fn close_active_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(i) = self.tabs.active_index() {
             self.close_tab(i, window, cx);

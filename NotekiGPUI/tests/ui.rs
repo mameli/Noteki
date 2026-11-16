@@ -1600,3 +1600,104 @@ fn cmd_plus_and_minus_change_the_text_size_and_cmd_0_resets_it(cx: &mut TestAppC
     press(cx, &f, "cmd-0");
     assert_eq!(heights(cx, &f)[0], normal);
 }
+
+// ---- Tabs and files ----
+
+#[gpui_kit::test]
+fn a_middle_click_closes_the_tab_under_it(cx: &mut TestAppContext) {
+    use gpui_kit::{Modifiers, MouseButton, MouseDownEvent, PlatformInput};
+    let f = fixture(cx);
+    app(cx, &f, |a, w, cx| {
+        a.open_path("Ideas.md", OpenIn::NewTab, w, cx)
+    });
+    app(cx, &f, |a, w, cx| {
+        a.open_path("Reading list.md", OpenIn::NewTab, w, cx)
+    });
+    frame(cx, &f);
+    let before = app(cx, &f, |a, _, _| a.tabs().len());
+    let b = ui(cx, &f, |w, _| w.find(("tab-label", 1usize)).bounds());
+    ui(cx, &f, |window, cx| {
+        window.dispatch_event(
+            PlatformInput::MouseDown(MouseDownEvent {
+                button: MouseButton::Middle,
+                position: b.center(),
+                modifiers: Modifiers::default(),
+                click_count: 1,
+                first_mouse: false,
+            }),
+            cx,
+        );
+    });
+    frame(cx, &f);
+    let paths: Vec<String> = app(cx, &f, |a, _, _| {
+        a.tabs().iter().map(|t| t.path.clone()).collect()
+    });
+    assert_eq!(paths.len(), before - 1);
+    assert!(
+        !paths.contains(&"Ideas.md".to_string()),
+        "the middle-clicked Tab: {paths:?}"
+    );
+}
+
+#[gpui_kit::test]
+fn tab_menu_closes_the_others_and_those_to_the_right(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    for p in ["Ideas.md", "Reading list.md", "Welcome.md"] {
+        app(cx, &f, |a, w, cx| a.open_path(p, OpenIn::NewTab, w, cx));
+    }
+    let n = app(cx, &f, |a, _, _| a.tabs().len());
+    app(cx, &f, |a, w, cx| a.close_tabs_after(n - 2, w, cx));
+    assert_eq!(app(cx, &f, |a, _, _| a.tabs().len()), n - 1);
+    app(cx, &f, |a, w, cx| a.close_other_tabs(0, w, cx));
+    assert_eq!(app(cx, &f, |a, _, _| a.tabs().len()), 1);
+}
+
+#[gpui_kit::test]
+fn copy_path_writes_the_vault_path_or_the_full_one(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    app(cx, &f, |a, _, cx| {
+        a.copy_path("Daily/2026-11-01.md", false, cx)
+    });
+    assert_eq!(
+        cx.read_from_clipboard().and_then(|c| c.text()),
+        Some("Daily/2026-11-01.md".to_string())
+    );
+    app(cx, &f, |a, _, cx| a.copy_path("Ideas.md", true, cx));
+    let full = cx.read_from_clipboard().and_then(|c| c.text()).unwrap();
+    assert_eq!(full, f.vault.join("Ideas.md").to_string_lossy());
+}
+
+#[gpui_kit::test]
+fn a_right_click_on_a_file_and_on_a_tab_opens_a_menu(cx: &mut TestAppContext) {
+    use gpui_kit::test::TestQueryExt;
+    let f = fixture(cx);
+    app(cx, &f, |a, w, cx| {
+        a.open_path("Ideas.md", OpenIn::CurrentTab, w, cx)
+    });
+    frame(cx, &f);
+    ui(cx, &f, |w, cx| {
+        w.within("file-tree").right_click(("file", 5usize), cx)
+    }); // Ideas.md, after the folders
+    frame(cx, &f);
+    assert!(
+        ui(cx, &f, |w, _| w
+            .try_find_by_label("Copy full path")
+            .is_some()),
+        "a menu on the file"
+    );
+    // "Make a copy" from the menu makes the copy.
+    let files = || std::fs::read_dir(&f.vault).unwrap().count();
+    let before = files();
+    let item = ui(cx, &f, |w, _| {
+        w.find_by_label("Make a copy").bounds().center()
+    });
+    click(cx, &f, (f32::from(item.x), f32::from(item.y)), 1);
+    frame(cx, &f);
+    assert_eq!(files(), before + 1);
+    ui(cx, &f, |w, cx| w.right_click(("tab-label", 0usize), cx));
+    frame(cx, &f);
+    assert!(
+        ui(cx, &f, |w, _| w.try_find_by_label("Close others").is_some()),
+        "a menu on the Tab"
+    );
+}

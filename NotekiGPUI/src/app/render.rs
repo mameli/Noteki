@@ -26,6 +26,8 @@ use super::*;
 use crate::core::markdown::{percent_decode, EMBED_SCHEME};
 use crate::core::vault::resolve_vault_path;
 use crate::core::wikilink::note_name;
+use gpui_kit::component::menu::{ContextMenuExt as _, PopupMenu, PopupMenuItem};
+use gpui_kit::MouseButton;
 
 impl Render for NotekiApp {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
@@ -586,6 +588,11 @@ impl NotekiApp {
                 })
         });
 
+        let menu_app = cx.entity();
+        let file_tree = file_tree.context_menu(move |_, entry, menu, _, _| {
+            let path = entry.item().id.to_string();
+            file_menu(menu, &menu_app, path, entry.is_folder())
+        });
         v_flex().size_full().child(toolbar).child(
             div()
                 .id("file-tree")
@@ -990,18 +997,31 @@ impl NotekiApp {
             } else if doc.is_some_and(NoteDoc::is_dirty) {
                 label = format!("• {label}");
             }
-            let entity = entity.clone();
+            let (entity, middle, path) = (entity.clone(), entity.clone(), tab.path.clone());
+            let menu_app = entity.clone();
+            let label = div()
+                .id(("tab-label", ix))
+                .test_support()
+                .child(label)
+                .context_menu(move |menu, _, _| tab_menu(menu, &menu_app, ix, path.clone()));
             bar = bar.child(
-                Tab::new().label(label).suffix(
-                    Button::new(("close-tab", ix))
-                        .icon(Icon::new(AssetIcon::X))
-                        .xsmall()
-                        .ghost()
-                        .on_click(move |_, window, cx| {
-                            cx.stop_propagation();
-                            entity.update(cx, |app, cx| app.close_tab(ix, window, cx));
-                        }),
-                ),
+                Tab::new()
+                    .child(label)
+                    // A middle click closes the Tab, as in a browser.
+                    .on_mouse_down(MouseButton::Middle, move |_, window, cx| {
+                        cx.stop_propagation();
+                        middle.update(cx, |app, cx| app.close_tab(ix, window, cx));
+                    })
+                    .suffix(
+                        Button::new(("close-tab", ix))
+                            .icon(Icon::new(AssetIcon::X))
+                            .xsmall()
+                            .ghost()
+                            .on_click(move |_, window, cx| {
+                                cx.stop_propagation();
+                                entity.update(cx, |app, cx| app.close_tab(ix, window, cx));
+                            }),
+                    ),
             );
         }
         h_flex()
@@ -1540,4 +1560,97 @@ fn find_tag_notes(nodes: &[TagNode], full_lower: &str) -> Option<Vec<String>> {
             find_tag_notes(&n.children, full_lower)
         }
     })
+}
+
+/// An item of a context menu that calls `act` on the app.
+fn menu_item(
+    label: &'static str,
+    app: &Entity<NotekiApp>,
+    act: impl Fn(&mut NotekiApp, &mut Window, &mut Context<NotekiApp>) + 'static,
+) -> PopupMenuItem {
+    let app = app.clone();
+    PopupMenuItem::new(label).on_click(move |_, window, cx| {
+        app.update(cx, |a, cx| act(a, window, cx));
+    })
+}
+
+/// The right-click menu of a file or folder of the tree (feedback: a richer
+/// menu, copy the path, make a copy).
+fn file_menu(menu: PopupMenu, app: &Entity<NotekiApp>, path: String, is_folder: bool) -> PopupMenu {
+    let p = move || path.clone();
+    let menu = if is_folder {
+        let (a, b) = (p(), p());
+        menu.item(menu_item("New note here", app, move |a2, w, cx| {
+            a2.open_name_prompt(PromptKind::NewNote, String::new(), Some(a.clone()), w, cx)
+        }))
+        .item(menu_item("New folder here", app, move |a2, w, cx| {
+            a2.open_name_prompt(PromptKind::NewFolder, String::new(), Some(b.clone()), w, cx)
+        }))
+    } else {
+        let (a, b) = (p(), p());
+        menu.item(menu_item("Open", app, move |app, w, cx| {
+            app.open_path(&a, OpenIn::CurrentTab, w, cx);
+        }))
+        .item(menu_item("Open in new tab", app, move |app, w, cx| {
+            app.open_path(&b, OpenIn::NewTab, w, cx);
+        }))
+    };
+    let (rename, copy, rel, abs, reveal, trash) = (p(), p(), p(), p(), p(), p());
+    let menu = menu
+        .separator()
+        .item(menu_item("Rename…", app, move |app, w, cx| {
+            let name = if is_folder {
+                rename.rsplit('/').next().unwrap_or(&rename).to_string()
+            } else {
+                note_name(&rename)
+            };
+            app.open_name_prompt(PromptKind::Rename, name, Some(rename.clone()), w, cx)
+        }));
+    let menu = if is_folder {
+        menu
+    } else {
+        menu.item(menu_item("Make a copy", app, move |app, w, cx| {
+            let r = app.duplicate(&copy, w, cx).map(|_| ());
+            app.report(r);
+        }))
+    };
+    menu.separator()
+        .item(menu_item("Copy path", app, move |app, _, cx| {
+            app.copy_path(&rel, false, cx)
+        }))
+        .item(menu_item("Copy full path", app, move |app, _, cx| {
+            app.copy_path(&abs, true, cx)
+        }))
+        .item(menu_item("Reveal in Finder", app, move |app, _, cx| {
+            app.reveal(&reveal, cx)
+        }))
+        .separator()
+        .item(menu_item("Move to Trash", app, move |app, w, cx| {
+            let r = app.trash(&trash, w, cx);
+            app.report(r);
+            cx.notify();
+        }))
+}
+
+/// The right-click menu of a Tab.
+fn tab_menu(menu: PopupMenu, app: &Entity<NotekiApp>, ix: usize, path: String) -> PopupMenu {
+    let (rel, reveal) = (path.clone(), path);
+    menu.item(menu_item("Close", app, move |app, w, cx| {
+        app.close_tab(ix, w, cx)
+    }))
+    .item(menu_item("Close others", app, move |app, w, cx| {
+        app.close_other_tabs(ix, w, cx)
+    }))
+    .item(menu_item(
+        "Close tabs to the right",
+        app,
+        move |app, w, cx| app.close_tabs_after(ix, w, cx),
+    ))
+    .separator()
+    .item(menu_item("Copy path", app, move |app, _, cx| {
+        app.copy_path(&rel, false, cx)
+    }))
+    .item(menu_item("Reveal in Finder", app, move |app, _, cx| {
+        app.reveal(&reveal, cx)
+    }))
 }

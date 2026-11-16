@@ -6,7 +6,15 @@
 
 **Status:** ready-for-agent
 
-- [ ] Menus with GPUI Kit's `Tree::context_menu` and `ContextMenuExt`, items calling `NotekiApp`'s existing actions
-- [ ] Copy path: the path in the Vault; Copy full path: the absolute path; Reveal: `cx.reveal_path`
-- [ ] `core::tabs`: close others, close to the right (unsaved Notes saved first, as closing one Tab does)
-- [ ] Tests: `core::tabs` closing rules; UI (a middle click closes the Tab under it; Copy path writes the clipboard; Make a copy from the menu creates the copy)
+- [x] Menus with GPUI Kit's `Tree::context_menu` and `ContextMenuExt`, items calling `NotekiApp`'s existing actions
+- [x] Copy path: the path in the Vault; Copy full path: the absolute path; Reveal: `cx.reveal_path`
+- [x] Close others, close to the right: closing Tabs one by one with `close_tab` (each saved as when closed alone); nothing new in `core::tabs` was needed
+- [x] Tests: `core::tabs` closing rules; UI (a middle click closes the Tab under it; Copy path writes the clipboard; Make a copy from the menu creates the copy)
+
+## Comments
+
+Done (2026-11-17).
+
+- Tree: GPUI Kit's `Tree::context_menu`, per entry. A file: Open, Open in new tab, Rename…, Make a copy, Copy path, Copy full path, Reveal in Finder, Move to Trash. A folder: New note here, New folder here, Rename…, Copy path, Copy full path, Reveal in Finder, Move to Trash. Each item calls the app's existing action (`open_path`, the name prompt, `duplicate`, `trash`) or a new small one (`copy_path`, `reveal`).
+- Tabs: a middle click anywhere on a Tab closes it (`on_mouse_down(MouseButton::Middle)`); a right-click on its label: Close, Close others, Close tabs to the right, Copy path, Reveal in Finder. The menu is on the label (GPUI Kit's `TabBar` takes `Tab`s, so the menu cannot wrap the whole Tab).
+- Tests: UI with real events (a middle click closes the Tab under it; a right-click on a file shows its menu and its "Make a copy" makes the copy; a right-click on a Tab shows its menu), plus close others / to the right and both copy paths. New mutant: the middle click not closing. Killed.
