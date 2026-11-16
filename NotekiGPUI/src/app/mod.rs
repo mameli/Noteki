@@ -5,8 +5,6 @@
 
 mod render;
 pub mod settings;
-#[allow(dead_code)] // Live preview styles: drawn by the new editor again from ticket 03.
-mod style;
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -732,6 +730,20 @@ impl NotekiApp {
         self.refresh_tree(cx);
         self.refresh_search(cx);
         self.refresh_backlinks();
+        self.update_link_context(cx);
+    }
+
+    /// Tells the editor the Note it shows and the Vault's links (Live preview
+    /// draws an unresolved Wikilink faded).
+    fn update_link_context(&mut self, cx: &mut Context<Self>) {
+        let index = self
+            .vault
+            .as_ref()
+            .map(|v| v.index.clone())
+            .unwrap_or_default();
+        let path = self.editor_path.clone();
+        self.editor
+            .update(cx, |ed, cx| ed.set_link_context(path, index, cx));
     }
 
     fn refresh_tree(&mut self, cx: &mut Context<Self>) {
@@ -858,6 +870,7 @@ impl NotekiApp {
             }
             _ => self.editor_path = None,
         }
+        self.update_link_context(cx);
         self.refresh_outline();
         self.refresh_backlinks();
         self.refresh_reader();

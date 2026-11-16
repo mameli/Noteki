@@ -75,7 +75,7 @@ impl AppearanceMode {
     }
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct NotekiPalette {
     pub dark: bool,
     pub text: Hsla,

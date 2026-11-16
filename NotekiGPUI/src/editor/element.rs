@@ -8,25 +8,34 @@ use std::rc::Rc;
 
 use gpui_kit::{
     fill, point, px, size, App, AvailableSpace, Bounds, Element, ElementId, ElementInputHandler,
-    Entity, Font, GlobalElementId, Hsla, InspectorElementId, IntoElement, LayoutId, Pixels, Point,
-    SharedString, Size, Style, TextAlign, TextRun, UnderlineStyle, Window, WindowTextSystem,
-    WrappedLine,
+    Entity, Font, GlobalElementId, HighlightStyle, Hsla, InspectorElementId, IntoElement, LayoutId,
+    Pixels, Point, SharedString, Size, Style, TextAlign, TextRun, UnderlineStyle, Window,
+    WindowTextSystem, WrappedLine,
 };
 
-use crate::core::editor::lines::{line_index_of, logical_lines, scroll_to_reveal, LineTops};
+use crate::core::editor::lines::{logical_lines, scroll_to_reveal, LineTops};
 use crate::core::editor::movement::prev_grapheme;
+use crate::core::editor::styling::LineStyle;
+use crate::theme::NotekiPalette;
 
-use super::NoteEditor;
+use super::style::span_style;
+
+use super::{LineStyles, NoteEditor};
 
 /// Text line height as a multiple of the font size.
 const LINE_HEIGHT: f32 = 1.6;
+/// Heading 1 to 6 font sizes as multiples of the text's, as Obsidian's default theme.
+const HEADING_SCALE: [f32; 6] = [1.802, 1.602, 1.424, 1.266, 1.125, 1.0];
+/// A Heading's line height as a multiple of its own font size: tighter than text.
+const HEADING_LINE_HEIGHT: f32 = 1.35;
 const CARET_WIDTH: Pixels = px(2.);
 
+#[derive(Clone)]
 pub(super) struct LaidLine {
     /// The line's bytes in the text, without its line break.
     range: Range<usize>,
     line_height: Pixels,
-    shaped: WrappedLine,
+    shaped: Rc<WrappedLine>,
 }
 
 impl LaidLine {
@@ -49,12 +58,16 @@ pub(super) struct Layout {
     origin: Point<Pixels>,
     width: Pixels,
     lines: Rc<Vec<LaidLine>>,
-    tops: LineTops,
+    tops: Rc<LineTops>,
 }
 
 impl Layout {
     fn top_of(&self, line: usize) -> Pixels {
         px(self.tops.top(line))
+    }
+
+    pub(super) fn line_heights(&self) -> Vec<f32> {
+        self.lines.iter().map(|l| f32::from(l.height())).collect()
     }
 
     pub(super) fn text_top(&self) -> Pixels {
@@ -66,8 +79,9 @@ impl Layout {
     }
 
     fn line_of(&self, offset: usize) -> usize {
-        let ranges: Vec<_> = self.lines.iter().map(|l| l.range.clone()).collect();
-        line_index_of(&ranges, offset)
+        self.lines
+            .partition_point(|l| l.range.start <= offset)
+            .saturating_sub(1)
     }
 
     /// The caret's rectangle at `offset`, as tall as its row. `None` when the
@@ -165,65 +179,245 @@ impl Layout {
 #[derive(Clone)]
 pub(super) struct ShapeInput {
     text: SharedString,
+    /// Bumped at every change of the text.
+    revision: u64,
     marked: Option<Range<usize>>,
+    /// One per logical line; empty when Live preview is off (a very large Note).
+    styles: LineStyles,
+    palette: NotekiPalette,
     font: Font,
     font_size: Pixels,
-    color: Hsla,
+    cache: Rc<RefCell<ShapeCache>>,
 }
 
-fn shape(input: &ShapeInput, width: Pixels, ts: &WindowTextSystem) -> Vec<LaidLine> {
-    let line_height = input.font_size * LINE_HEIGHT;
-    logical_lines(&input.text)
-        .into_iter()
-        .map(|range| {
-            let runs = runs_for(input, &range);
-            let shaped = ts
-                .shape_text(
-                    SharedString::from(input.text[range.clone()].to_string()),
-                    input.font_size,
-                    &runs,
-                    Some(width),
-                    None,
-                )
-                .ok()
-                .and_then(|mut v| (!v.is_empty()).then(|| v.remove(0)))
-                .unwrap_or_default();
-            LaidLine {
-                range,
-                line_height,
-                shaped,
-            }
-        })
-        .collect()
+/// What a whole frame's lines were shaped for: when nothing of it changed
+/// (the cursor blinked, the view scrolled), the lines are reused as they are.
+#[derive(Clone, PartialEq)]
+struct FrameKey {
+    revision: u64,
+    styles: *const Vec<Rc<LineStyle>>,
+    marked: Option<Range<usize>>,
+    width: Pixels,
+    look: Look,
 }
 
-/// The text runs of one line: plain, with the text being composed underlined.
-fn runs_for(input: &ShapeInput, line: &Range<usize>) -> Vec<TextRun> {
-    let run = |len: usize, underline: bool| TextRun {
-        len,
+/// What every line is drawn with: when it changes, every line is shaped again.
+#[derive(Clone, PartialEq)]
+struct Look {
+    font: Font,
+    font_size: Pixels,
+    palette: NotekiPalette,
+}
+
+/// What one line was shaped from.
+#[derive(Clone, PartialEq)]
+struct LineSource {
+    text: SharedString,
+    style: Rc<LineStyle>,
+    /// The composed text inside this line, relative to its start.
+    marked: Option<Range<usize>>,
+}
+
+/// The lines shaped in earlier frames, kept by the [`NoteEditor`]: a keystroke
+/// shapes again only the lines whose text or style changed.
+#[derive(Default)]
+pub(super) struct ShapeCache {
+    frame: Option<FrameKey>,
+    lines: Rc<Vec<LaidLine>>,
+    tops: Rc<LineTops>,
+    sources: Vec<LineSource>,
+}
+
+impl ShapeCache {
+    pub(super) fn height(&self) -> Pixels {
+        px(self.tops.total())
+    }
+}
+
+/// The lines of `input` wrapped to `width`, reusing what the cache holds.
+fn shape(
+    input: &ShapeInput,
+    width: Pixels,
+    ts: &WindowTextSystem,
+) -> (Rc<Vec<LaidLine>>, Rc<LineTops>) {
+    let look = Look {
         font: input.font.clone(),
-        color: input.color,
-        background_color: None,
-        underline: underline.then_some(UnderlineStyle {
-            color: Some(input.color),
-            thickness: px(1.),
-            wavy: false,
-        }),
-        strikethrough: None,
+        font_size: input.font_size,
+        palette: input.palette,
     };
-    match &input.marked {
-        Some(m) if m.start < line.end && m.end > line.start => {
-            let (a, b) = (m.start.max(line.start), m.end.min(line.end));
-            [
-                run(a - line.start, false),
-                run(b - a, true),
-                run(line.end - b, false),
-            ]
-            .into_iter()
-            .filter(|r| r.len > 0)
-            .collect()
+    let key = FrameKey {
+        revision: input.revision,
+        styles: Rc::as_ptr(&input.styles),
+        marked: input.marked.clone(),
+        width,
+        look: look.clone(),
+    };
+    let mut cache = input.cache.borrow_mut();
+    if cache.frame.as_ref() == Some(&key) {
+        return (cache.lines.clone(), cache.tops.clone());
+    }
+    let same_look = cache
+        .frame
+        .as_ref()
+        .is_some_and(|f| f.look == look && f.width == width);
+    let plain = Rc::new(LineStyle::default());
+    let mut sources = Vec::with_capacity(cache.sources.len());
+    let lines: Vec<LaidLine> = logical_lines(&input.text)
+        .into_iter()
+        .enumerate()
+        .map(|(i, range)| {
+            let style = input.styles.get(i).unwrap_or(&plain);
+            let marked = input.marked.as_ref().and_then(|m| {
+                let (a, b) = (m.start.max(range.start), m.end.min(range.end));
+                (a < b).then(|| a - range.start..b - range.start)
+            });
+            let text = &input.text[range.clone()];
+            let reusable = same_look
+                && cache.sources.get(i).is_some_and(|src| {
+                    src.text.as_ref() == text
+                        && (Rc::ptr_eq(&src.style, style) || src.style == *style)
+                        && src.marked == marked
+                });
+            let laid = if reusable {
+                LaidLine {
+                    range: range.clone(),
+                    ..cache.lines[i].clone()
+                }
+            } else {
+                shape_line(input, range.clone(), style, width, ts)
+            };
+            sources.push(LineSource {
+                text: if reusable {
+                    cache.sources[i].text.clone()
+                } else {
+                    SharedString::from(text.to_string())
+                },
+                style: Rc::clone(style),
+                marked,
+            });
+            laid
+        })
+        .collect();
+    let tops = Rc::new(LineTops::new(lines.iter().map(|l| f32::from(l.height()))));
+    let lines = Rc::new(lines);
+    *cache = ShapeCache {
+        frame: Some(key),
+        lines: lines.clone(),
+        tops: tops.clone(),
+        sources,
+    };
+    (lines, tops)
+}
+
+fn shape_line(
+    input: &ShapeInput,
+    range: Range<usize>,
+    style: &LineStyle,
+    width: Pixels,
+    ts: &WindowTextSystem,
+) -> LaidLine {
+    let (font_size, line_height) = match style.heading {
+        Some(level) => {
+            let size = input.font_size * HEADING_SCALE[usize::from(level.clamp(1, 6)) - 1];
+            (size, size * HEADING_LINE_HEIGHT)
         }
-        _ => vec![run(line.len(), false)],
+        None => (input.font_size, input.font_size * LINE_HEIGHT),
+    };
+    let runs = runs_for(input, &range, style);
+    let shaped = ts
+        .shape_text(
+            SharedString::from(input.text[range.clone()].to_string()),
+            font_size,
+            &runs,
+            Some(width),
+            None,
+        )
+        .ok()
+        .and_then(|mut v| (!v.is_empty()).then(|| v.remove(0)))
+        .unwrap_or_default();
+    LaidLine {
+        range,
+        line_height,
+        shaped: Rc::new(shaped),
+    }
+}
+
+/// The text runs of one line: the Live preview styles of its segments, and
+/// the text being composed underlined. Ranges are relative to the line.
+fn runs_for(input: &ShapeInput, line: &Range<usize>, style: &LineStyle) -> Vec<TextRun> {
+    let len = line.len();
+    let mut layers: Vec<(Range<usize>, HighlightStyle)> = style
+        .segments
+        .iter()
+        .map(|(r, kinds)| {
+            let merged = kinds.iter().fold(HighlightStyle::default(), |acc, k| {
+                acc.highlight(span_style(*k, &input.palette))
+            });
+            (r.start.min(len)..r.end.min(len), merged)
+        })
+        .collect();
+    if let Some(m) = &input.marked {
+        let (a, b) = (m.start.max(line.start), m.end.min(line.end));
+        if a < b {
+            let underline = HighlightStyle {
+                underline: Some(UnderlineStyle {
+                    color: Some(input.palette.text),
+                    thickness: px(1.),
+                    wavy: false,
+                }),
+                ..Default::default()
+            };
+            layers.push((a - line.start..b - line.start, underline));
+        }
+    }
+    // Cut the line at every layer's ends; each piece gets every layer over it.
+    let mut bounds = vec![0, len];
+    for (r, _) in &layers {
+        bounds.extend([r.start, r.end]);
+    }
+    bounds.sort_unstable();
+    bounds.dedup();
+    let runs: Vec<TextRun> = bounds
+        .windows(2)
+        .map(|w| {
+            let style = layers
+                .iter()
+                .filter(|(r, _)| r.start <= w[0] && w[1] <= r.end)
+                .fold(HighlightStyle::default(), |acc, (_, s)| acc.highlight(*s));
+            text_run(w[1] - w[0], &input.font, input.palette.text, style)
+        })
+        .collect();
+    if runs.is_empty() {
+        vec![text_run(
+            0,
+            &input.font,
+            input.palette.text,
+            HighlightStyle::default(),
+        )]
+    } else {
+        runs
+    }
+}
+
+fn text_run(len: usize, font: &Font, base: Hsla, style: HighlightStyle) -> TextRun {
+    let mut color = style.color.unwrap_or(base);
+    if let Some(f) = style.fade_out {
+        color.fade_out(f);
+    }
+    let mut font = font.clone();
+    if let Some(w) = style.font_weight {
+        font.weight = w;
+    }
+    if let Some(s) = style.font_style {
+        font.style = s;
+    }
+    TextRun {
+        len,
+        font,
+        color,
+        background_color: style.background_color,
+        underline: style.underline,
+        strikethrough: style.strikethrough,
     }
 }
 
@@ -245,8 +439,6 @@ impl IntoElement for EditorElement {
     }
 }
 
-pub(super) type Measured = Rc<RefCell<Option<(Pixels, Vec<LaidLine>)>>>;
-
 pub(super) struct PrepaintState {
     layout: Layout,
     selection: Vec<Bounds<Pixels>>,
@@ -254,7 +446,7 @@ pub(super) struct PrepaintState {
 }
 
 impl Element for EditorElement {
-    type RequestLayoutState = (ShapeInput, Measured);
+    type RequestLayoutState = ShapeInput;
     type PrepaintState = PrepaintState;
 
     fn id(&self) -> Option<ElementId> {
@@ -272,31 +464,44 @@ impl Element for EditorElement {
         window: &mut Window,
         cx: &mut App,
     ) -> (LayoutId, Self::RequestLayoutState) {
+        let (styles, text) = self
+            .editor
+            .update(cx, |ed, _| (ed.line_styles(), ed.shared_text()));
         let ed = self.editor.read(cx);
         let style = window.text_style();
         let input = ShapeInput {
-            text: SharedString::from(ed.buf.text().to_string()),
+            text,
+            revision: ed.revision,
             marked: ed.buf.marked(),
+            styles,
+            palette: ed.palette,
             font: style.font(),
             font_size: style.font_size.to_pixels(window.rem_size()),
-            color: ed.palette.text,
+            cache: ed.shape_cache.clone(),
         };
-        let measured: Measured = Rc::default();
-        let (inp, out) = (input.clone(), measured.clone());
+        let inp = input.clone();
         let mut layout_style = Style::default();
         layout_style.size.width = gpui_kit::relative(1.).into();
         let id =
             window.request_measured_layout(layout_style, move |known, available, window, _| {
-                let width = known.width.unwrap_or(match available.width {
-                    AvailableSpace::Definite(w) => w,
-                    _ => px(800.),
-                });
-                let lines = shape(&inp, width, window.text_system());
-                let height: Pixels = lines.iter().map(|l| l.height()).sum();
-                *out.borrow_mut() = Some((width, lines));
-                Size { width, height }
+                let width = match (known.width, available.width) {
+                    (Some(w), _) | (None, AvailableSpace::Definite(w)) => w,
+                    // Asked for a natural size: the text takes any width it gets,
+                    // so give the last height rather than shaping for nothing.
+                    _ => {
+                        return Size {
+                            width: px(0.),
+                            height: inp.cache.borrow().height(),
+                        }
+                    }
+                };
+                let (_, tops) = shape(&inp, width, window.text_system());
+                Size {
+                    width,
+                    height: px(tops.total()),
+                }
             });
-        (id, (input, measured))
+        (id, input)
     }
 
     fn prepaint(
@@ -304,19 +509,15 @@ impl Element for EditorElement {
         _: Option<&GlobalElementId>,
         _: Option<&InspectorElementId>,
         bounds: Bounds<Pixels>,
-        (input, measured): &mut Self::RequestLayoutState,
+        input: &mut Self::RequestLayoutState,
         window: &mut Window,
         cx: &mut App,
     ) -> PrepaintState {
-        let lines = match measured.borrow_mut().take() {
-            Some((w, lines)) if w == bounds.size.width => lines,
-            _ => shape(input, bounds.size.width, window.text_system()),
-        };
-        let tops = LineTops::new(lines.iter().map(|l| f32::from(l.height())));
+        let (lines, tops) = shape(input, bounds.size.width, window.text_system());
         let layout = Layout {
             origin: bounds.origin,
             width: bounds.size.width,
-            lines: Rc::new(lines),
+            lines,
             tops,
         };
         let ed = self.editor.read(cx);
@@ -427,10 +628,13 @@ pub fn shape_for_bench(
 ) -> Pixels {
     let input = ShapeInput {
         text: SharedString::from(text.to_string()),
+        revision: 0,
         marked: None,
+        cache: Rc::default(),
+        styles: Rc::default(),
+        palette: NotekiPalette::for_theme(crate::theme::NotekiThemeName::default(), false),
         font,
         font_size,
-        color: Hsla::default(),
     };
-    shape(&input, width, ts).iter().map(|l| l.height()).sum()
+    px(shape(&input, width, ts).1.total())
 }

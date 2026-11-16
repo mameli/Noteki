@@ -8,27 +8,36 @@
 //! and dispatches.
 
 mod element;
+mod style;
 
+use std::cell::RefCell;
 use std::ops::Range;
+use std::rc::Rc;
+use std::sync::Arc;
 use std::time::Duration;
 
 use gpui_kit::{
     actions, div, point, prelude::*, px, App, Bounds, ClipboardItem, Context, CursorStyle,
     EntityInputHandler, EventEmitter, FocusHandle, Focusable, KeyBinding, MouseButton,
-    MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Point, ScrollHandle, Task,
+    MouseDownEvent, MouseMoveEvent, MouseUpEvent, Pixels, Point, ScrollHandle, SharedString, Task,
     UTF16Selection, Window,
 };
 
 use crate::core::editor::buffer::{range_from_utf16, range_to_utf16};
+use crate::core::editor::styling::{style_lines, LineStyle};
 use crate::core::editor::{EditBuffer, Motion};
+use crate::core::markdown::{compute_markdown_spans, line_of_offset};
+use crate::core::wikilink::VaultIndex;
 use crate::theme::NotekiPalette;
 
 #[doc(hidden)]
 pub use element::shape_for_bench;
-use element::{EditorElement, Layout};
+use element::{EditorElement, Layout, ShapeCache};
 
 const CONTEXT: &str = "NoteEditor";
 const BLINK: Duration = Duration::from_millis(500);
+/// Above this size Live preview is off: the Note is drawn as plain text.
+pub const LIVE_PREVIEW_MAX_BYTES: usize = 1_000_000;
 
 actions!(
     note_editor,
@@ -123,6 +132,9 @@ pub fn register_keybindings(cx: &mut App) {
     ]);
 }
 
+/// The Live preview style of each line, shared with the element.
+pub(crate) type LineStyles = Rc<Vec<Rc<LineStyle>>>;
+
 /// Emitted when the user changes the text; never for [`NoteEditor::set_text`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NoteEditorEvent {
@@ -142,6 +154,16 @@ pub struct NoteEditor {
     cursor_on: bool,
     /// Scroll the cursor into view at the next frame (keys and edits, not clicks).
     reveal: bool,
+    /// Bumped at every change of the text, so the styles know when to recompute.
+    revision: u64,
+    /// The Note's path and the Vault's links, to tell resolved Wikilinks.
+    link_context: (Option<String>, Arc<VaultIndex>),
+    /// Live preview styles per line, and the `(revision, cursor line)` they are for.
+    styles: (Option<(u64, usize)>, LineStyles),
+    /// The text as GPUI shares it, and the revision it was copied at.
+    shared: (u64, SharedString),
+    /// The lines shaped in earlier frames.
+    shape_cache: Rc<RefCell<ShapeCache>>,
     _blink: Task<()>,
 }
 
@@ -177,6 +199,11 @@ impl NoteEditor {
             selecting: false,
             cursor_on: true,
             reveal: false,
+            revision: 0,
+            link_context: (None, Arc::default()),
+            styles: (None, Rc::default()),
+            shared: (u64::MAX, SharedString::default()),
+            shape_cache: Rc::default(),
             _blink: blink,
         }
     }
@@ -205,6 +232,20 @@ impl NoteEditor {
         self.buf.set_text(text, cursor);
         self.goal_x = None;
         self.layout = None;
+        self.revision += 1;
+        cx.notify();
+    }
+
+    /// The Note's path and the Vault's index, for Live preview to tell
+    /// resolved Wikilinks from unresolved ones.
+    pub fn set_link_context(
+        &mut self,
+        path: Option<String>,
+        index: Arc<VaultIndex>,
+        cx: &mut Context<Self>,
+    ) {
+        self.link_context = (path, index);
+        self.revision += 1;
         cx.notify();
     }
 
@@ -218,6 +259,14 @@ impl NoteEditor {
     pub fn reveal_cursor(&mut self, cx: &mut Context<Self>) {
         self.reveal = true;
         cx.notify();
+    }
+
+    /// The height of each logical line in the last frame (for tests).
+    pub fn line_heights(&self) -> Vec<f32> {
+        self.layout
+            .as_ref()
+            .map(|l| l.line_heights())
+            .unwrap_or_default()
     }
 
     /// How far the text is scrolled: `y` is 0 at the top, negative below it.
@@ -248,6 +297,44 @@ impl NoteEditor {
     }
 
     // ---- Internals ----
+
+    /// The text, copied once per change for the element to shape from.
+    fn shared_text(&mut self) -> SharedString {
+        if self.shared.0 != self.revision {
+            self.shared = (
+                self.revision,
+                SharedString::from(self.buf.text().to_string()),
+            );
+        }
+        self.shared.1.clone()
+    }
+
+    /// The Live preview styles of each line, recomputed when the text changes
+    /// or the cursor moves to another line (whose marks are then shown).
+    fn line_styles(&mut self) -> LineStyles {
+        let text = self.buf.text();
+        if text.len() > LIVE_PREVIEW_MAX_BYTES {
+            return Rc::default();
+        }
+        let key = (self.revision, line_of_offset(text, self.buf.cursor()));
+        if self.styles.0 != Some(key) {
+            let (path, index) = &self.link_context;
+            let spans = compute_markdown_spans(text, key.1, path.as_deref(), index);
+            // A line whose style did not change keeps the same `Rc`, so the
+            // element sees at a glance that it needs no shaping.
+            let prev = &self.styles.1;
+            let styles = style_lines(text, &spans)
+                .into_iter()
+                .enumerate()
+                .map(|(i, s)| match prev.get(i) {
+                    Some(p) if **p == s => p.clone(),
+                    _ => Rc::new(s),
+                })
+                .collect();
+            self.styles = (Some(key), Rc::new(styles));
+        }
+        self.styles.1.clone()
+    }
 
     fn wake(&mut self, cx: &mut Context<Self>) {
         self.cursor_on = true;
@@ -289,6 +376,7 @@ impl NoteEditor {
         self.goal_x = None;
         self.wake(cx);
         if changed {
+            self.revision += 1;
             cx.emit(NoteEditorEvent::Changed);
         }
     }

@@ -736,3 +736,74 @@ fn command_arrows_go_to_the_ends_of_the_wrapped_row(cx: &mut TestAppContext) {
     press(cx, &f, "ctrl-a");
     assert_eq!(editor_state(cx, &f).1, 0);
 }
+
+fn heights(cx: &mut TestAppContext, f: &Fixture) -> Vec<f32> {
+    frame(cx, f);
+    app(cx, f, |a, _, cx| a.editor().read(cx).line_heights())
+}
+
+#[gpui_kit::test]
+fn headings_are_taller_the_higher_their_level(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    editor_with(
+        cx,
+        &f,
+        "testo\n# Uno\n## Due\n### Tre\n###### Sei\n```\n# codice\n```",
+        0,
+    );
+    let h = heights(cx, &f);
+    let text = h[0];
+    assert!(h[1] > h[2] && h[2] > h[3], "H1 > H2 > H3: {h:?}");
+    assert!(h[3] > text, "a Heading is taller than text: {h:?}");
+    assert_eq!(h[6], text, "a # in a code block is no Heading: {h:?}");
+}
+
+#[gpui_kit::test]
+fn typing_a_hash_and_space_makes_a_heading_at_once(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    editor_with(cx, &f, "Titolo\naltro", 0);
+    let before = heights(cx, &f);
+    type_in_editor(cx, &f, "# ");
+    let after = heights(cx, &f);
+    assert!(after[0] > before[0], "{before:?} → {after:?}");
+    assert_eq!(after[1], before[1], "the other line keeps its height");
+    press(cx, &f, "backspace backspace");
+    assert_eq!(heights(cx, &f)[0], before[0]);
+}
+
+#[gpui_kit::test]
+fn up_and_down_across_a_heading_keep_the_x(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let text = "abcdefgh\n# abcdefghijkl\nabcdefgh";
+    editor_with(cx, &f, text, 6);
+    press(cx, &f, "down");
+    let on_heading = editor_state(cx, &f).1;
+    assert!(
+        (9..24).contains(&on_heading),
+        "on the Heading: {on_heading}"
+    );
+    press(cx, &f, "down");
+    assert_eq!(
+        editor_state(cx, &f).1,
+        24 + 6,
+        "back under the same x below"
+    );
+    press(cx, &f, "up up");
+    assert_eq!(editor_state(cx, &f).1, 6);
+}
+
+#[gpui_kit::test]
+fn opening_a_code_block_above_a_heading_draws_it_as_code(cx: &mut TestAppContext) {
+    // The Heading's own text does not change: only its style does.
+    let f = fixture(cx);
+    // Two backticks are no fence; a third, typed on the same line, opens one.
+    editor_with(cx, &f, "``\n# Titolo\nfine", 0);
+    let before = heights(cx, &f);
+    assert!(before[1] > before[2]);
+    type_in_editor(cx, &f, "`");
+    let after = heights(cx, &f);
+    assert_eq!(
+        after[1], after[2],
+        "the Heading is inside the code block now: {after:?}"
+    );
+}

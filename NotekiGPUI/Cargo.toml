@@ -27,3 +27,11 @@ markdown = "=1.0.0"
 
 [dev-dependencies]
 gpui-kit = { version = "0.10.0", features = ["syntect", "test-support"] }
+
+# `cargo run` builds GPUI and the other dependencies optimized: unoptimized, the
+# editor lags at every keystroke. Noteki's own code stays quick to build.
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3

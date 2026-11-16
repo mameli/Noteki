@@ -5,5 +5,6 @@
 pub mod buffer;
 pub mod lines;
 pub mod movement;
+pub mod styling;
 
 pub use buffer::{EditBuffer, Motion, Selection};

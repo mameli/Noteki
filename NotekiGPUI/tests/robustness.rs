@@ -498,3 +498,33 @@ fn editor_edits_and_movements_keep_the_cursor_on_a_char_boundary() {
         }
     }
 }
+
+#[test]
+fn editor_line_styles_stay_inside_their_lines() {
+    use noteki_gpui::core::editor::lines::logical_lines;
+    use noteki_gpui::core::editor::styling::style_lines;
+    let idx = index();
+    let mut rng = Rng(0xED17_0002);
+    for _ in 0..cases() {
+        let text = gen_text(&mut rng, 40);
+        let cursor_line = rng.below(8);
+        let spans = compute_markdown_spans(&text, cursor_line, Some("Dir/Here.md"), &idx);
+        let styles = style_lines(&text, &spans);
+        let lines = logical_lines(&text);
+        assert_eq!(styles.len(), lines.len(), "one style per line of {text:?}");
+        for (style, line) in styles.iter().zip(&lines) {
+            // Segments are relative to their line.
+            let mut end = 0;
+            for (r, kinds) in &style.segments {
+                let abs = line.start + r.start..line.start + r.end;
+                assert_slice(&text, &abs, "style segment");
+                assert!(!kinds.is_empty());
+                assert!(
+                    r.start >= end && abs.end <= line.end,
+                    "{r:?} in {line:?} of {text:?}"
+                );
+                end = r.end;
+            }
+        }
+    }
+}
