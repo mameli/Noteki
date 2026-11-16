@@ -28,6 +28,8 @@ use gpui_kit::{
 
 use crate::core::editor::buffer::{range_from_utf16, range_to_utf16};
 use crate::core::editor::code;
+use crate::core::editor::format::{format_lines, toggle_wrap};
+pub use crate::core::editor::format::{LineFormat, Wrap};
 use crate::core::editor::history::History;
 use crate::core::editor::lines::edge_scroll;
 use crate::core::editor::movement::{line_range_at, word_range_at};
@@ -88,6 +90,15 @@ actions!(
         SelectDocStart,
         SelectDocEnd,
         SelectAll,
+        Heading1,
+        Heading2,
+        Heading3,
+        Heading4,
+        Heading5,
+        Heading6,
+        ToggleTask,
+        Indent,
+        Outdent,
         Undo,
         Redo,
         Copy,
@@ -142,6 +153,15 @@ pub fn register_keybindings(cx: &mut App) {
         KeyBinding::new("cmd-shift-up", SelectDocStart, c),
         KeyBinding::new("cmd-shift-down", SelectDocEnd, c),
         KeyBinding::new("cmd-a", SelectAll, c),
+        KeyBinding::new("cmd-1", Heading1, c),
+        KeyBinding::new("cmd-2", Heading2, c),
+        KeyBinding::new("cmd-3", Heading3, c),
+        KeyBinding::new("cmd-4", Heading4, c),
+        KeyBinding::new("cmd-5", Heading5, c),
+        KeyBinding::new("cmd-6", Heading6, c),
+        KeyBinding::new("cmd-enter", ToggleTask, c),
+        KeyBinding::new("cmd-]", Indent, c),
+        KeyBinding::new("cmd-[", Outdent, c),
         KeyBinding::new("cmd-z", Undo, c),
         KeyBinding::new("cmd-shift-z", Redo, c),
         KeyBinding::new("cmd-c", Copy, c),
@@ -149,6 +169,13 @@ pub fn register_keybindings(cx: &mut App) {
         KeyBinding::new("cmd-v", Paste, c),
         KeyBinding::new("ctrl-cmd-space", ShowCharacterPalette, c),
     ]);
+}
+
+/// A format command: marks around the selection, or a change of its lines.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Format {
+    Wrap(Wrap),
+    Lines(LineFormat),
 }
 
 /// What the editor needs from the Vault: the Note's path, the index, the folder.
@@ -347,8 +374,22 @@ impl NoteEditor {
         self.wake(cx);
     }
 
-    /// Replaces the selection with `text`, as typing would (format shortcuts,
-    /// inserting a Wikilink).
+    /// A format command (SPEC › Format) on the selection: one edit, one undo step.
+    pub fn format(&mut self, command: Format, cx: &mut Context<Self>) {
+        let text = self.buf.text();
+        let sel = self.buf.selection().range();
+        let change = match command {
+            Format::Wrap(w) => toggle_wrap(text, sel, w),
+            Format::Lines(l) => format_lines(text, sel, l),
+        };
+        self.buf.close_undo_step();
+        let changed = self.buf.replace(change.range, &change.text);
+        self.buf
+            .set_selection(change.selection.start, change.selection.end);
+        self.edited(changed, cx);
+    }
+
+    /// Replaces the selection with `text`, as typing would (inserting a Wikilink).
     pub fn replace_selection(&mut self, text: &str, cx: &mut Context<Self>) {
         self.buf.close_undo_step();
         let changed = self.buf.insert(text);
@@ -786,6 +827,15 @@ handlers! {
     SelectDocStart => |ed, cx| ed.motion(Motion::DocStart, true, cx);
     SelectDocEnd => |ed, cx| ed.motion(Motion::DocEnd, true, cx);
     SelectAll => |ed, cx| { ed.buf.select_all(); ed.wake(cx) };
+    Heading1 => |ed, cx| ed.format(Format::Lines(LineFormat::Heading(1)), cx);
+    Heading2 => |ed, cx| ed.format(Format::Lines(LineFormat::Heading(2)), cx);
+    Heading3 => |ed, cx| ed.format(Format::Lines(LineFormat::Heading(3)), cx);
+    Heading4 => |ed, cx| ed.format(Format::Lines(LineFormat::Heading(4)), cx);
+    Heading5 => |ed, cx| ed.format(Format::Lines(LineFormat::Heading(5)), cx);
+    Heading6 => |ed, cx| ed.format(Format::Lines(LineFormat::Heading(6)), cx);
+    ToggleTask => |ed, cx| ed.format(Format::Lines(LineFormat::Task), cx);
+    Indent => |ed, cx| ed.format(Format::Lines(LineFormat::Indent), cx);
+    Outdent => |ed, cx| ed.format(Format::Lines(LineFormat::Outdent), cx);
     Undo => |ed, cx| { let changed = ed.buf.undo(); ed.edited(changed, cx) };
     Redo => |ed, cx| { let changed = ed.buf.redo(); ed.edited(changed, cx) };
     Copy => |ed, cx| {

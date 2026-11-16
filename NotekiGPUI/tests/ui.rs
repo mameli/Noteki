@@ -1451,3 +1451,38 @@ fn a_checkbox_click_is_undone_on_its_own(cx: &mut TestAppContext) {
         "only the tick undone"
     );
 }
+
+// ---- Format commands ----
+
+#[gpui_kit::test]
+fn cmd_b_toggles_bold_on_the_selection_and_the_word_at_the_cursor(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    editor_with(cx, &f, "uno due tre", 5);
+    press(cx, &f, "cmd-b");
+    assert_eq!(editor_state(cx, &f).0, "uno **due** tre");
+    press(cx, &f, "cmd-b");
+    assert_eq!(editor_state(cx, &f).0, "uno due tre", "again, the marks go");
+    press(cx, &f, "cmd-i cmd-z");
+    assert_eq!(editor_state(cx, &f).0, "uno due tre", "one undo step");
+}
+
+#[gpui_kit::test]
+fn cmd_number_makes_a_heading_and_cmd_enter_a_task(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    editor_with(cx, &f, "Titolo\ncomprare pane", 2);
+    press(cx, &f, "cmd-2");
+    assert_eq!(editor_state(cx, &f), ("## Titolo\ncomprare pane".into(), 5));
+    press(cx, &f, "cmd-2");
+    assert_eq!(editor_state(cx, &f).0, "Titolo\ncomprare pane");
+    press(cx, &f, "down cmd-enter");
+    assert_eq!(editor_state(cx, &f).0, "Titolo\n- [ ] comprare pane");
+    press(cx, &f, "cmd-enter");
+    assert_eq!(editor_state(cx, &f).0, "Titolo\n- [x] comprare pane");
+    press(cx, &f, "cmd-] ");
+    assert_eq!(editor_state(cx, &f).0, "Titolo\n\t- [x] comprare pane");
+    press(cx, &f, "cmd-[");
+    assert_eq!(editor_state(cx, &f).0, "Titolo\n- [x] comprare pane");
+    // Each command one undo step: outdent, indent, tick.
+    press(cx, &f, "cmd-z cmd-z cmd-z");
+    assert_eq!(editor_state(cx, &f).0, "Titolo\n- [ ] comprare pane");
+}

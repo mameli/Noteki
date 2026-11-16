@@ -36,7 +36,7 @@ use crate::core::vault::{
     validate_item_name, write_note_atomic, AttachmentKind, VaultItem,
 };
 use crate::core::wikilink::{folder_of, ResolvedItem, VaultIndex};
-use crate::editor::{LinkContext, NoteEditor, NoteEditorEvent};
+use crate::editor::{Format, LineFormat, LinkContext, NoteEditor, NoteEditorEvent, Wrap};
 use crate::theme::{apply_noteki_theme, AppearanceMode, NotekiPalette, NotekiThemeName};
 
 pub use settings::{LeftPane, RightPane, Settings, ViewMode};
@@ -105,7 +105,6 @@ pub fn register_keybindings(cx: &mut App) {
         KeyBinding::new("cmd-shift-x", FormatStrikeAction, None),
         KeyBinding::new("ctrl-`", FormatCodeAction, None),
         KeyBinding::new("cmd-k", InsertWikilinkAction, None),
-        KeyBinding::new("cmd-enter", FollowLinkUnderCursorAction, None),
     ]);
     crate::editor::register_keybindings(cx);
 }
@@ -1696,19 +1695,12 @@ impl NotekiApp {
         };
     }
 
-    pub(crate) fn wrap_selection(
-        &mut self,
-        prefix: &str,
-        suffix: &str,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
+    pub(crate) fn format(&mut self, command: Format, window: &mut Window, cx: &mut Context<Self>) {
         if self.editor_path.is_none() || self.settings.view_mode == ViewMode::Reader {
             return;
         }
         self.editor.update(cx, |ed, cx| {
-            let selected = ed.selected_text().to_string();
-            ed.replace_selection(&format!("{prefix}{selected}{suffix}"), cx);
+            ed.format(command, cx);
             ed.focus(window, cx);
         });
     }

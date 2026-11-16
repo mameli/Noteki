@@ -143,16 +143,16 @@ impl Render for NotekiApp {
                 this.cycle_appearance(window, cx)
             }))
             .on_action(cx.listener(|this, _: &FormatBoldAction, window, cx| {
-                this.wrap_selection("**", "**", window, cx)
+                this.format(Format::Wrap(Wrap::Bold), window, cx)
             }))
             .on_action(cx.listener(|this, _: &FormatItalicAction, window, cx| {
-                this.wrap_selection("*", "*", window, cx)
+                this.format(Format::Wrap(Wrap::Italic), window, cx)
             }))
             .on_action(cx.listener(|this, _: &FormatStrikeAction, window, cx| {
-                this.wrap_selection("~~", "~~", window, cx)
+                this.format(Format::Wrap(Wrap::Strikethrough), window, cx)
             }))
             .on_action(cx.listener(|this, _: &FormatCodeAction, window, cx| {
-                this.wrap_selection("`", "`", window, cx)
+                this.format(Format::Wrap(Wrap::Code), window, cx)
             }))
             .on_action(cx.listener(|this, _: &InsertWikilinkAction, window, cx| {
                 this.open_wikilink_picker(window, cx)
@@ -1434,6 +1434,15 @@ impl NotekiApp {
                 AssetIcon::ArrowRight,
                 |a, w, cx| a.follow_link_under_cursor(w, cx),
             ),
+            ("Quote", AssetIcon::Pencil, |a, w, cx| {
+                a.format(Format::Lines(LineFormat::Quote), w, cx)
+            }),
+            ("Bulleted list", AssetIcon::Pencil, |a, w, cx| {
+                a.format(Format::Lines(LineFormat::Bullet), w, cx)
+            }),
+            ("Numbered list", AssetIcon::Pencil, |a, w, cx| {
+                a.format(Format::Lines(LineFormat::Numbered), w, cx)
+            }),
             ("Live preview", AssetIcon::Pencil, |a, _, cx| {
                 a.set_view_mode(ViewMode::Live, cx)
             }),
