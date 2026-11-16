@@ -8,6 +8,7 @@
 //! and dispatches.
 
 mod element;
+mod find_bar;
 mod style;
 
 use std::cell::RefCell;
@@ -101,6 +102,9 @@ actions!(
         Outdent,
         Undo,
         Redo,
+        OpenFind,
+        FindNext,
+        FindPrevious,
         Copy,
         Cut,
         Paste,
@@ -162,6 +166,12 @@ pub fn register_keybindings(cx: &mut App) {
         KeyBinding::new("cmd-enter", ToggleTask, c),
         KeyBinding::new("cmd-]", Indent, c),
         KeyBinding::new("cmd-[", Outdent, c),
+        KeyBinding::new("cmd-f", OpenFind, c),
+        KeyBinding::new("cmd-g", FindNext, c),
+        KeyBinding::new("cmd-shift-g", FindPrevious, c),
+        KeyBinding::new("cmd-g", FindNext, Some(find_bar::FIND_CONTEXT)),
+        KeyBinding::new("cmd-shift-g", FindPrevious, Some(find_bar::FIND_CONTEXT)),
+        KeyBinding::new("escape", find_bar::CloseFind, Some(find_bar::FIND_CONTEXT)),
         KeyBinding::new("cmd-z", Undo, c),
         KeyBinding::new("cmd-shift-z", Redo, c),
         KeyBinding::new("cmd-c", Copy, c),
@@ -214,6 +224,8 @@ pub struct NoteEditor {
     reveal: bool,
     /// The pointer is over a link that a click would open.
     over_link: bool,
+    /// The find bar, while it is open (⌘F).
+    find: Option<find_bar::FindBar>,
     /// The Note shown, and the undo histories of the others.
     note_key: Option<String>,
     histories: HashMap<String, History>,
@@ -270,6 +282,7 @@ impl NoteEditor {
             cursor_on: true,
             reveal: false,
             over_link: false,
+            find: None,
             note_key: None,
             histories: HashMap::new(),
             revision: 0,
@@ -858,25 +871,34 @@ handlers! {
 
 impl Render for NoteEditor {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let root =
-            div()
-                .id("note-editor")
-                .key_context(CONTEXT)
-                .track_focus(&self.focus_handle)
-                .size_full()
-                .overflow_y_scroll()
-                .track_scroll(&self.scroll)
-                .cursor(if self.over_link {
-                    CursorStyle::PointingHand
-                } else {
-                    CursorStyle::IBeam
-                })
-                .on_mouse_move(cx.listener(Self::on_hover))
-                .on_action(cx.listener(|_, _: &ShowCharacterPalette, window, _| {
+        let find_bar = self.render_find_bar(cx);
+        let root = div()
+            .id("note-editor")
+            .key_context(CONTEXT)
+            .track_focus(&self.focus_handle)
+            .size_full()
+            .overflow_y_scroll()
+            .track_scroll(&self.scroll)
+            .cursor(if self.over_link {
+                CursorStyle::PointingHand
+            } else {
+                CursorStyle::IBeam
+            })
+            .on_mouse_move(cx.listener(Self::on_hover))
+            .on_action(
+                cx.listener(|_, _: &ShowCharacterPalette, window, _| {
                     window.show_character_palette()
-                }))
-                .on_mouse_down(MouseButton::Left, cx.listener(Self::on_mouse_down));
-        self.bind_actions(root, cx).child(
+                }),
+            )
+            .on_mouse_down(MouseButton::Left, cx.listener(Self::on_mouse_down))
+            .on_action(cx.listener(|ed, _: &OpenFind, window, cx| ed.open_find(window, cx)))
+            .on_action(
+                cx.listener(|ed, _: &FindNext, window, cx| ed.find_step(true, false, window, cx)),
+            )
+            .on_action(cx.listener(|ed, _: &FindPrevious, window, cx| {
+                ed.find_step(false, false, window, cx)
+            }));
+        let editor = self.bind_actions(root, cx).child(
             div().w_full().px_6().py_4().child(
                 div()
                     .w_full()
@@ -884,7 +906,15 @@ impl Render for NoteEditor {
                     .mx_auto()
                     .child(EditorElement::new(cx.entity())),
             ),
-        )
+        );
+        // The find bar is outside the editor's key context: typing in it is
+        // not editing the Note.
+        div()
+            .size_full()
+            .flex()
+            .flex_col()
+            .children(find_bar)
+            .child(div().flex_1().min_h_0().child(editor))
     }
 }
 

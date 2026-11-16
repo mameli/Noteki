@@ -1487,3 +1487,73 @@ fn cmd_number_makes_a_heading_and_cmd_enter_a_task(cx: &mut TestAppContext) {
     press(cx, &f, "cmd-z cmd-z cmd-z");
     assert_eq!(editor_state(cx, &f).0, "Titolo\n- [ ] comprare pane");
 }
+
+// ---- Find ----
+
+fn find_status(cx: &mut TestAppContext, f: &Fixture) -> String {
+    frame(cx, f);
+    ui(cx, f, |window, _| {
+        window
+            .find("find-status")
+            .label()
+            .unwrap_or_default()
+            .to_string()
+    })
+}
+
+#[gpui_kit::test]
+fn cmd_f_finds_the_word_at_the_cursor_and_cmd_g_goes_through_the_matches(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let text = "nota uno, Nota due, notaio, nota tre";
+    editor_with(cx, &f, text, 1);
+    press(cx, &f, "cmd-f");
+    assert_eq!(
+        app(cx, &f, |a, _, cx| a.editor().read(cx).selected_range()),
+        0..4
+    );
+    assert_eq!(find_status(cx, &f), "1 of 4");
+    press(cx, &f, "cmd-g");
+    assert_eq!(
+        app(cx, &f, |a, _, cx| a.editor().read(cx).selected_range()),
+        10..14
+    );
+    press(cx, &f, "cmd-shift-g cmd-shift-g");
+    assert_eq!(
+        app(cx, &f, |a, _, cx| a.editor().read(cx).selected_range()),
+        28..32,
+        "previous wraps to the last"
+    );
+    ui(cx, &f, |w, cx| w.click("find-word", cx));
+    assert_eq!(find_status(cx, &f), "3 of 3", "whole words: not notaio");
+    press(cx, &f, "escape");
+    assert!(
+        ui(cx, &f, |w, _| w.try_find("find-bar").is_none()),
+        "Esc closes the bar"
+    );
+    type_in_editor(cx, &f, "X");
+    assert!(
+        editor_state(cx, &f).0.contains('X'),
+        "the text has the focus again"
+    );
+}
+
+#[gpui_kit::test]
+fn replace_all_is_one_undo_step(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    editor_with(cx, &f, "uno due uno tre uno", 0);
+    press(cx, &f, "cmd-f");
+    ui(cx, &f, |w, _| w.find("find-bar").bounds()); // the bar is drawn
+                                                     // Typing in the find field: the query (it was seeded with "uno").
+    app(cx, &f, |a, w, cx| {
+        a.editor()
+            .clone()
+            .update(cx, |ed, cx| ed.replace_with_for_test("1", w, cx))
+    });
+    ui(cx, &f, |w, cx| w.click("replace-all", cx));
+    assert_eq!(editor_state(cx, &f).0, "1 due 1 tre 1");
+    app(cx, &f, |a, w, cx| {
+        a.editor().clone().update(cx, |ed, cx| ed.focus(w, cx))
+    });
+    press(cx, &f, "cmd-z");
+    assert_eq!(editor_state(cx, &f).0, "uno due uno tre uno");
+}

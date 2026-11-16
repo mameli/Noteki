@@ -18,6 +18,8 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 notify = "7"
 similar = "2"
+# Find in a Note (already built in through syntect).
+regex = "1"
 unicode-segmentation = "1"
 # Code blocks' colours: the same syntect and syntax set GPUI Kit's `syntect`
 # feature already builds in, so they add nothing to the binary.

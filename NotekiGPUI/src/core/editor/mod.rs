@@ -5,6 +5,7 @@
 pub mod buffer;
 pub mod code;
 pub mod display;
+pub mod find;
 pub mod format;
 pub mod history;
 pub mod lines;

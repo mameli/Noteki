@@ -942,6 +942,7 @@ impl IntoElement for EditorElement {
 pub(super) struct PrepaintState {
     layout: Layout,
     selection: Vec<Bounds<Pixels>>,
+    matches: Vec<Bounds<Pixels>>,
     caret: Option<Bounds<Pixels>>,
 }
 
@@ -1033,9 +1034,18 @@ impl Element for EditorElement {
         let caret = (ed.cursor_on && sel.is_empty() && ed.focus_handle.is_focused(window))
             .then(|| layout.caret(ed.buf.text(), ed.buf.cursor()))
             .flatten();
+        let matches = self.editor.update(cx, |ed, _| ed.find_matches());
+        let mut match_rects = Vec::new();
+        for m in &matches {
+            for i in layout.line_of(m.start)..=layout.line_of(m.end) {
+                match_rects.extend(layout.selection_rects(i, m));
+            }
+        }
+        let matches = match_rects;
         PrepaintState {
             layout,
             selection,
+            matches,
             caret,
         }
     }
@@ -1121,6 +1131,10 @@ impl Element for EditorElement {
                 window,
                 cx,
             );
+        }
+        // Find's matches, under the selection.
+        for r in state.matches.drain(..) {
+            window.paint_quad(fill(r, palette.highlight));
         }
         for r in state.selection.drain(..) {
             window.paint_quad(fill(r, palette.selection));
