@@ -1701,3 +1701,44 @@ fn a_right_click_on_a_file_and_on_a_tab_opens_a_menu(cx: &mut TestAppContext) {
         "a menu on the Tab"
     );
 }
+
+#[gpui_kit::test]
+fn the_mouse_side_buttons_and_cmd_alt_arrows_go_back_and_forward(cx: &mut TestAppContext) {
+    use gpui_kit::{Modifiers, MouseButton, MouseDownEvent, NavigationDirection, PlatformInput};
+    let f = fixture(cx);
+    app(cx, &f, |a, w, cx| {
+        a.open_path("Ideas.md", OpenIn::CurrentTab, w, cx)
+    });
+    app(cx, &f, |a, w, cx| {
+        a.open_path("Reading list.md", OpenIn::CurrentTab, w, cx)
+    });
+    frame(cx, &f);
+    let active =
+        |cx: &mut TestAppContext| app(cx, &f, |a, _, _| a.active_path().map(str::to_string));
+    let side = |cx: &mut TestAppContext, dir| {
+        let at = ui(cx, &f, |w, _| w.find("editor-pane").bounds().center());
+        ui(cx, &f, |window, cx| {
+            window.dispatch_event(
+                PlatformInput::MouseDown(MouseDownEvent {
+                    button: MouseButton::Navigate(dir),
+                    position: at,
+                    modifiers: Modifiers::default(),
+                    click_count: 1,
+                    first_mouse: false,
+                }),
+                cx,
+            );
+        });
+        frame(cx, &f);
+    };
+    side(cx, NavigationDirection::Back);
+    assert_eq!(active(cx), Some("Ideas.md".into()));
+    side(cx, NavigationDirection::Forward);
+    assert_eq!(active(cx), Some("Reading list.md".into()));
+    // From the editor too.
+    app(cx, &f, |a, w, cx| {
+        a.editor().clone().update(cx, |ed, cx| ed.focus(w, cx))
+    });
+    press(cx, &f, "cmd-alt-left");
+    assert_eq!(active(cx), Some("Ideas.md".into()));
+}

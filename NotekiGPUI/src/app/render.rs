@@ -27,7 +27,7 @@ use crate::core::markdown::{percent_decode, EMBED_SCHEME};
 use crate::core::vault::resolve_vault_path;
 use crate::core::wikilink::note_name;
 use gpui_kit::component::menu::{ContextMenuExt as _, PopupMenu, PopupMenuItem};
-use gpui_kit::MouseButton;
+use gpui_kit::{MouseButton, NavigationDirection};
 
 impl Render for NotekiApp {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
@@ -135,6 +135,15 @@ impl Render for NotekiApp {
             .on_action(cx.listener(|this, _: &NavigateBackAction, window, cx| {
                 this.navigate(true, window, cx)
             }))
+            // The mouse's side buttons go back and forward, anywhere in the window.
+            .on_mouse_down(
+                MouseButton::Navigate(NavigationDirection::Back),
+                cx.listener(|this, _, window, cx| this.navigate(true, window, cx)),
+            )
+            .on_mouse_down(
+                MouseButton::Navigate(NavigationDirection::Forward),
+                cx.listener(|this, _, window, cx| this.navigate(false, window, cx)),
+            )
             .on_action(cx.listener(|this, _: &NavigateForwardAction, window, cx| {
                 this.navigate(false, window, cx)
             }))
