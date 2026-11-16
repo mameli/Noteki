@@ -5,6 +5,7 @@
 pub mod buffer;
 pub mod code;
 pub mod display;
+pub mod history;
 pub mod lines;
 pub mod movement;
 pub mod styling;

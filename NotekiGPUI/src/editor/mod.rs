@@ -28,6 +28,7 @@ use gpui_kit::{
 
 use crate::core::editor::buffer::{range_from_utf16, range_to_utf16};
 use crate::core::editor::code;
+use crate::core::editor::history::History;
 use crate::core::editor::lines::edge_scroll;
 use crate::core::editor::movement::{line_range_at, word_range_at};
 use crate::core::editor::styling::{
@@ -87,6 +88,8 @@ actions!(
         SelectDocStart,
         SelectDocEnd,
         SelectAll,
+        Undo,
+        Redo,
         Copy,
         Cut,
         Paste,
@@ -139,6 +142,8 @@ pub fn register_keybindings(cx: &mut App) {
         KeyBinding::new("cmd-shift-up", SelectDocStart, c),
         KeyBinding::new("cmd-shift-down", SelectDocEnd, c),
         KeyBinding::new("cmd-a", SelectAll, c),
+        KeyBinding::new("cmd-z", Undo, c),
+        KeyBinding::new("cmd-shift-z", Redo, c),
         KeyBinding::new("cmd-c", Copy, c),
         KeyBinding::new("cmd-x", Cut, c),
         KeyBinding::new("cmd-v", Paste, c),
@@ -182,6 +187,9 @@ pub struct NoteEditor {
     reveal: bool,
     /// The pointer is over a link that a click would open.
     over_link: bool,
+    /// The Note shown, and the undo histories of the others.
+    note_key: Option<String>,
+    histories: HashMap<String, History>,
     /// Bumped at every change of the text, so the styles know when to recompute.
     revision: u64,
     /// The Note's path and the Vault's links, to tell resolved Wikilinks.
@@ -235,6 +243,8 @@ impl NoteEditor {
             cursor_on: true,
             reveal: false,
             over_link: false,
+            note_key: None,
+            histories: HashMap::new(),
             revision: 0,
             link_context: LinkContext::default(),
             images: HashMap::new(),
@@ -268,7 +278,23 @@ impl NoteEditor {
     /// Replaces the whole text (opening, reloading a Note), keeping the scroll;
     /// emits no event.
     pub fn set_text(&mut self, text: &str, cursor: usize, cx: &mut Context<Self>) {
-        self.buf.set_text(text, cursor);
+        // One undoable step: a reload, a Merge of another app's change.
+        self.buf.replace_all(text, cursor);
+        self.goal_x = None;
+        self.layout = None;
+        self.revision += 1;
+        cx.notify();
+    }
+
+    /// Shows another Note: its text, its cursor, and its own undo history
+    /// (SPEC › Tabs: each keeps its own), kept by `key` while others show.
+    pub fn open_note(&mut self, key: &str, text: &str, cursor: usize, cx: &mut Context<Self>) {
+        let leaving = self.buf.take_history();
+        if let Some(previous) = self.note_key.replace(key.to_string()) {
+            self.histories.insert(previous, leaving);
+        }
+        let history = self.histories.remove(key).unwrap_or_default();
+        self.buf.set_text(text, cursor, history);
         self.goal_x = None;
         self.layout = None;
         self.revision += 1;
@@ -324,6 +350,7 @@ impl NoteEditor {
     /// Replaces the selection with `text`, as typing would (format shortcuts,
     /// inserting a Wikilink).
     pub fn replace_selection(&mut self, text: &str, cx: &mut Context<Self>) {
+        self.buf.close_undo_step();
         let changed = self.buf.insert(text);
         self.edited(changed, cx);
     }
@@ -561,6 +588,7 @@ impl NoteEditor {
         // cursor where it was.
         if let Some((bracket, checked)) = layout.checkbox_at(ev.position) {
             let sel = self.buf.selection();
+            self.buf.close_undo_step();
             let changed = self
                 .buf
                 .replace(bracket + 1..bracket + 2, if checked { " " } else { "x" });
@@ -758,6 +786,8 @@ handlers! {
     SelectDocStart => |ed, cx| ed.motion(Motion::DocStart, true, cx);
     SelectDocEnd => |ed, cx| ed.motion(Motion::DocEnd, true, cx);
     SelectAll => |ed, cx| { ed.buf.select_all(); ed.wake(cx) };
+    Undo => |ed, cx| { let changed = ed.buf.undo(); ed.edited(changed, cx) };
+    Redo => |ed, cx| { let changed = ed.buf.redo(); ed.edited(changed, cx) };
     Copy => |ed, cx| {
         if !ed.buf.selection().is_empty() {
             cx.write_to_clipboard(ClipboardItem::new_string(ed.buf.selected_text().to_string()));

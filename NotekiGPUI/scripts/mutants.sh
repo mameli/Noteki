@@ -34,6 +34,7 @@ MUTANTS=(
   "src/editor/mod.rs|(!(range.start <= c \&\& c <= range.end)).then_some(link)|Some(link)|--test ui|a click in a link being edited opens it instead of moving the cursor"
   "src/editor/mod.rs|Some(Decoration::Image(_)) => style.decoration = slot.decoration.clone(),|Some(Decoration::Image(_)) => {}|--test ui|the image disappears when the cursor is on its line"
   "src/editor/element.rs|Align::Right => (room - shaped.width()).max(px(0.)),|Align::Right => px(0.),|--test ui|a right-aligned table column is drawn left-aligned"
+  "src/core/editor/buffer.rs|self.history.close(); // the cursor moved: what follows is a new undo step|// mutant|--lib --test ui|typing after a cursor move joins the run before it in one undo step"
   "src/editor/element.rs|end = prev_grapheme(text, end).max(start);|end = end.max(start);|--test ui|⌘→ lands after the space a row wraps at"
   "src/editor/element.rs|\&\& (Rc::ptr_eq(\&src.style, style) \|\| src.style == *style)|\&\& true|--test ui|a line whose style changed is drawn from the cache, as it was"
 )

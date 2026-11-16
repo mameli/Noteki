@@ -856,14 +856,14 @@ impl NotekiApp {
             Some((path, cursor)) if self.docs.contains_key(&path) => {
                 let text = self.docs[&path].text().to_string();
                 let other_note = self.editor_path.as_deref() != Some(path.as_str());
-                if other_note || self.editor_text(cx) != text {
+                if other_note {
+                    self.editor.update(cx, |ed, cx| {
+                        ed.open_note(&path, &text, cursor, cx);
+                        ed.scroll_to_top(cx);
+                        ed.reveal_cursor(cx);
+                    });
+                } else if self.editor_text(cx) != text {
                     self.set_editor_text(&text, cursor, window, cx);
-                    if other_note {
-                        self.editor.update(cx, |ed, cx| {
-                            ed.scroll_to_top(cx);
-                            ed.reveal_cursor(cx);
-                        });
-                    }
                 } else {
                     self.set_editor_cursor(cursor, cx);
                 }

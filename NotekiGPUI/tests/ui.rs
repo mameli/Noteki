@@ -1375,3 +1375,79 @@ fn a_table_is_drawn_as_a_grid_in_place(cx: &mut TestAppContext) {
     );
     assert_eq!(heights(cx, &f), h, "nothing changes height");
 }
+
+// ---- Undo ----
+
+#[gpui_kit::test]
+fn cmd_z_undoes_a_run_of_typing_and_shift_cmd_z_redoes_it(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    editor_with(cx, &f, "uno", 3);
+    type_in_editor(cx, &f, " due");
+    press(cx, &f, "left");
+    type_in_editor(cx, &f, "X");
+    assert_eq!(editor_state(cx, &f).0, "uno duXe");
+    press(cx, &f, "cmd-z");
+    assert_eq!(editor_state(cx, &f), ("uno due".into(), 6));
+    press(cx, &f, "cmd-z");
+    assert_eq!(editor_state(cx, &f), ("uno".into(), 3));
+    press(cx, &f, "cmd-shift-z");
+    assert_eq!(editor_state(cx, &f).0, "uno due");
+    assert_eq!(status(cx, &f), "Edited");
+}
+
+#[gpui_kit::test]
+fn each_tab_keeps_its_own_undo(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    app(cx, &f, |a, w, cx| {
+        a.open_path("Ideas.md", OpenIn::CurrentTab, w, cx)
+    });
+    let ideas = app(cx, &f, |a, _, cx| a.editor_text(cx));
+    type_in_editor(cx, &f, "Idea ");
+    app(cx, &f, |a, w, cx| {
+        a.open_path("Reading list.md", OpenIn::NewTab, w, cx)
+    });
+    type_in_editor(cx, &f, "Libro ");
+    app(cx, &f, |a, w, cx| a.activate_tab(0, w, cx));
+    app(cx, &f, |a, w, cx| {
+        a.editor().clone().update(cx, |ed, cx| ed.focus(w, cx))
+    });
+    press(cx, &f, "cmd-z");
+    assert_eq!(app(cx, &f, |a, _, cx| a.editor_text(cx)), ideas);
+    press(cx, &f, "cmd-z");
+    assert_eq!(
+        app(cx, &f, |a, _, cx| a.editor_text(cx)),
+        ideas,
+        "nothing else to undo here"
+    );
+}
+
+#[gpui_kit::test]
+fn a_checkbox_click_is_undone_on_its_own(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let text = "testo\n- [ ] da fare";
+    editor_with(cx, &f, text, 2);
+    type_in_editor(cx, &f, "X");
+    let left = caret_at(cx, &f, 0).0;
+    let b = {
+        frame(cx, &f);
+        app(cx, &f, |a, _, cx| {
+            a.editor()
+                .read(cx)
+                .caret_bounds(text.len() + 1 - 4)
+                .unwrap()
+        })
+    };
+    click(
+        cx,
+        &f,
+        (left + 9., f32::from(b.origin.y + b.size.height / 2.)),
+        1,
+    );
+    assert!(editor_state(cx, &f).0.ends_with("[x] da fare"));
+    press(cx, &f, "cmd-z");
+    assert_eq!(
+        editor_state(cx, &f).0,
+        "teXsto\n- [ ] da fare",
+        "only the tick undone"
+    );
+}

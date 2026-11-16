@@ -465,7 +465,8 @@ fn editor_edits_and_movements_keep_the_cursor_on_a_char_boundary() {
     ];
     let mut rng = Rng(0xED17_0001);
     for _ in 0..cases() / 4 {
-        let mut b = EditBuffer::new(gen_text(&mut rng, 30));
+        let original = gen_text(&mut rng, 30);
+        let mut b = EditBuffer::new(original.clone());
         b.move_to(rng.below(b.text().len() + 2), false);
         for _ in 0..40 {
             let motion = MOTIONS[rng.below(MOTIONS.len())];
@@ -500,6 +501,12 @@ fn editor_edits_and_movements_keep_the_cursor_on_a_char_boundary() {
                 assert_slice(t, l, "logical line");
             }
         }
+        // Undo all gives the text it started from; redo all, the last.
+        let last = b.text().to_string();
+        while b.undo() {}
+        assert_eq!(b.text(), original);
+        while b.redo() {}
+        assert_eq!(b.text(), last);
     }
 }
 

@@ -4,6 +4,7 @@
 
 use std::ops::Range;
 
+use super::history::{diff, Edit, History};
 use super::movement::{self, floor_boundary};
 
 /// A selection is where it was started (`anchor`) and where it is now (`head`,
@@ -53,6 +54,7 @@ pub enum Motion {
 pub struct EditBuffer {
     text: String,
     selection: Selection,
+    history: History,
     /// Text an input method is composing (dead key, press-and-hold, IME).
     marked: Option<Range<usize>>,
 }
@@ -85,11 +87,63 @@ impl EditBuffer {
         &self.text[self.selection.range()]
     }
 
-    /// Replaces the whole text, as when a Note is opened or reloaded.
-    pub fn set_text(&mut self, text: impl Into<String>, cursor: usize) {
+    /// Replaces the whole text and its history, as when a Note is opened.
+    pub fn set_text(&mut self, text: impl Into<String>, cursor: usize, history: History) {
         self.text = text.into();
         self.marked = None;
         self.selection = Selection::caret(self.clamp(cursor));
+        self.history = history;
+    }
+
+    /// Replaces the whole text with `text` as one undoable step (a reload or
+    /// a Merge of another app's change), the cursor at `cursor`.
+    pub fn replace_all(&mut self, text: &str, cursor: usize) {
+        if let Some(edit) = diff(&self.text, text) {
+            let before = self.selection;
+            self.text
+                .replace_range(edit.at..edit.at + edit.removed.len(), &edit.inserted);
+            self.marked = None;
+            self.selection = Selection::caret(self.clamp(cursor));
+            self.history.close();
+            self.history.record(edit, before, self.selection, false);
+            self.history.close();
+        } else {
+            self.selection = Selection::caret(self.clamp(cursor));
+        }
+    }
+
+    /// The history, taken away (left empty), to keep while another Note shows.
+    pub fn take_history(&mut self) -> History {
+        std::mem::take(&mut self.history)
+    }
+
+    /// ⌘Z: whether there was something to undo.
+    pub fn undo(&mut self) -> bool {
+        self.marked = None;
+        match self.history.undo(&mut self.text) {
+            Some(sel) => {
+                self.set_selection(sel.anchor, sel.head);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// ⇧⌘Z: whether there was something to redo.
+    pub fn redo(&mut self) -> bool {
+        self.marked = None;
+        match self.history.redo(&mut self.text) {
+            Some(sel) => {
+                self.set_selection(sel.anchor, sel.head);
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// The next edit is a step of its own (a click on a checkbox, a paste).
+    pub fn close_undo_step(&mut self) {
+        self.history.close();
     }
 
     fn clamp(&self, offset: usize) -> usize {
@@ -102,6 +156,7 @@ impl EditBuffer {
     }
 
     pub fn set_selection(&mut self, anchor: usize, head: usize) {
+        self.history.close();
         self.selection = Selection {
             anchor: self.clamp(anchor),
             head: self.clamp(head),
@@ -109,6 +164,7 @@ impl EditBuffer {
     }
 
     pub fn select_all(&mut self) {
+        self.history.close();
         self.selection = Selection {
             anchor: 0,
             head: self.text.len(),
@@ -117,6 +173,7 @@ impl EditBuffer {
 
     /// Puts the cursor at `offset`; with `extend`, keeps the anchor (⇧).
     pub fn move_to(&mut self, offset: usize, extend: bool) {
+        self.history.close(); // the cursor moved: what follows is a new undo step
         let head = self.clamp(offset);
         let anchor = if extend { self.selection.anchor } else { head };
         self.selection = Selection { anchor, head };
@@ -156,8 +213,19 @@ impl EditBuffer {
     pub fn replace(&mut self, range: Range<usize>, new: &str) -> bool {
         let r = self.clamp_range(range);
         let changed = &self.text[r.clone()] != new;
+        let before = self.selection;
+        let removed = self.text[r.clone()].to_string();
         self.text.replace_range(r.clone(), new);
         self.selection = Selection::caret(r.start + new.len());
+        if changed {
+            let edit = Edit {
+                at: r.start,
+                removed,
+                inserted: new.to_string(),
+            };
+            self.history
+                .record(edit, before, self.selection, self.marked.is_some());
+        }
         self.marked = None;
         changed
     }
@@ -183,6 +251,8 @@ impl EditBuffer {
             .map(|r| self.clamp_range(r))
             .or_else(|| self.marked.clone())
             .unwrap_or_else(|| self.selection.range());
+        // Composing from its first key: the whole composition is one step.
+        self.marked.get_or_insert(r.start..r.start);
         let changed = self.replace(r.clone(), new);
         self.marked = (!new.is_empty()).then(|| r.start..r.start + new.len());
         if let Some(s) = selected {
@@ -330,9 +400,9 @@ mod tests {
     #[test]
     fn set_text_clamps_the_cursor_to_a_char_boundary() {
         let mut b = EditBuffer::new("");
-        b.set_text("aè", 2);
+        b.set_text("aè", 2, History::default());
         assert_eq!(b.cursor(), 1);
-        b.set_text("ab", 99);
+        b.set_text("ab", 99, History::default());
         assert_eq!(b.cursor(), 2);
     }
 
