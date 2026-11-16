@@ -176,10 +176,7 @@ impl VaultIndex {
 
         near.sort_by_key(|c| c.lower_path.len());
         far.sort_by_key(|c| c.lower_path.len());
-        near.into_iter()
-            .chain(far)
-            .next()
-            .map(|c| c.item.clone())
+        near.into_iter().chain(far).next().map(|c| c.item.clone())
     }
 
     pub fn link_completions(&self, recent_paths: &[String]) -> LinkCompletions {
@@ -206,7 +203,11 @@ impl VaultIndex {
     fn completion(&self, name: &str, path: &str) -> LinkCompletion {
         let parts: Vec<&str> = path.split('/').collect();
         let file_lower = parts.last().copied().unwrap_or("").to_lowercase();
-        let candidates = self.by_name.get(&file_lower).map(|v| v.as_slice()).unwrap_or(&[]);
+        let candidates = self
+            .by_name
+            .get(&file_lower)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[]);
 
         let mut chosen = path.to_string();
         for count in 1..=parts.len() {
@@ -224,7 +225,11 @@ impl VaultIndex {
                     .count()
                     == 1;
             if unique {
-                if let Some(ResolvedItem::Note { path: resolved_path, .. }) = self.resolve(&link, None) {
+                if let Some(ResolvedItem::Note {
+                    path: resolved_path,
+                    ..
+                }) = self.resolve(&link, None)
+                {
                     if resolved_path == path {
                         chosen = link;
                         break;

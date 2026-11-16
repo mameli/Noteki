@@ -1,0 +1,1072 @@
+//! Markdown scanning shared by the live editor, the Reader, and the vault indexes.
+//!
+//! Everything here works on UTF-8 byte offsets and only ever advances by whole
+//! characters, so ranges are always valid `str` slice boundaries (the editor's
+//! decorations and the Reader's task toggles rely on that).
+
+use std::ops::Range;
+
+use crate::core::frontmatter::{frontmatter_end_line, is_valid_tag};
+use crate::core::vault::AttachmentKind;
+use crate::core::wikilink::{ResolvedItem, VaultIndex, Wikilink};
+
+// ---------------------------------------------------------------------------
+// Block level
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BlockKind {
+    /// A `---` line that opens or closes the frontmatter.
+    FrontmatterDelimiter,
+    /// A YAML line inside the frontmatter.
+    Frontmatter,
+    /// A ```` ``` ```` / `~~~` line that opens or closes a fenced code block.
+    FenceDelimiter,
+    /// A line inside a fenced code block.
+    Code,
+    /// Ordinary Markdown.
+    Text,
+}
+
+/// One source line. `start` is the byte offset of the line in the document;
+/// `text` excludes the `\n` (and a trailing `\r`, so CRLF files behave the same).
+#[derive(Debug, Clone, Copy)]
+pub struct Line<'a> {
+    pub index: usize,
+    pub start: usize,
+    pub text: &'a str,
+    pub kind: BlockKind,
+}
+
+impl Line<'_> {
+    pub fn range(&self) -> Range<usize> {
+        self.start..self.start + self.text.len()
+    }
+}
+
+/// Splits `text` into lines and classifies each one (frontmatter, code, text).
+pub fn lines(text: &str) -> Vec<Line<'_>> {
+    let fm_end = frontmatter_end_line(text).unwrap_or(0); // 1-based closing line
+    let mut out = Vec::new();
+    let mut fence: Option<(u8, usize)> = None;
+    let mut start = 0usize;
+    for (index, raw) in text.split('\n').enumerate() {
+        let line_text = raw.strip_suffix('\r').unwrap_or(raw);
+        let line_no = index + 1;
+        let kind = if line_no <= fm_end {
+            if line_no == 1 || line_no == fm_end {
+                BlockKind::FrontmatterDelimiter
+            } else {
+                BlockKind::Frontmatter
+            }
+        } else if let Some((ch, len)) = fence {
+            if is_closing_fence(line_text.trim_start(), ch, len) {
+                fence = None;
+                BlockKind::FenceDelimiter
+            } else {
+                BlockKind::Code
+            }
+        } else if let Some(open) = opening_fence(line_text.trim_start()) {
+            fence = Some(open);
+            BlockKind::FenceDelimiter
+        } else {
+            BlockKind::Text
+        };
+        out.push(Line {
+            index,
+            start,
+            text: line_text,
+            kind,
+        });
+        start += raw.len() + 1;
+    }
+    out
+}
+
+fn opening_fence(trimmed: &str) -> Option<(u8, usize)> {
+    let first = *trimmed.as_bytes().first()?;
+    if first != b'`' && first != b'~' {
+        return None;
+    }
+    let count = trimmed.bytes().take_while(|&b| b == first).count();
+    // A backtick fence's info string cannot contain backticks.
+    if count >= 3 && !(first == b'`' && trimmed[count..].contains('`')) {
+        Some((first, count))
+    } else {
+        None
+    }
+}
+
+fn is_closing_fence(trimmed: &str, ch: u8, min_len: usize) -> bool {
+    let count = trimmed.bytes().take_while(|&b| b == ch).count();
+    count >= min_len && trimmed[count..].trim().is_empty()
+}
+
+/// `# Title` → `(1, "Title")`. Accepts up to 6 hashes followed by a space or end of line.
+pub fn parse_atx_heading(trimmed: &str) -> Option<(u8, &str)> {
+    let hashes = trimmed.bytes().take_while(|&b| b == b'#').count();
+    if hashes == 0 || hashes > 6 {
+        return None;
+    }
+    let rest = &trimmed[hashes..];
+    if !rest.is_empty() && !rest.starts_with(' ') && !rest.starts_with('\t') {
+        return None;
+    }
+    let title = rest.trim();
+    // Optional closing sequence: `## Title ##`
+    let title = match title.trim_end_matches('#') {
+        t if t.len() < title.len() && (t.is_empty() || t.ends_with(' ')) => t.trim_end(),
+        _ => title,
+    };
+    Some((hashes as u8, title))
+}
+
+/// Byte length of the list/quote prefix of a task item (`- [ ] `), plus the
+/// offset of its `[` marker, if the line is a task.
+fn task_marker(line: &str) -> Option<(usize, bool)> {
+    let mut i = 0;
+    let bytes = line.as_bytes();
+    // Quote markers and indentation.
+    loop {
+        while i < bytes.len() && (bytes[i] == b' ' || bytes[i] == b'\t') {
+            i += 1;
+        }
+        if i < bytes.len() && bytes[i] == b'>' {
+            i += 1;
+            continue;
+        }
+        break;
+    }
+    // Bullet or ordered marker.
+    if i < bytes.len() && matches!(bytes[i], b'-' | b'*' | b'+') {
+        i += 1;
+    } else {
+        let digits = bytes[i..].iter().take_while(|b| b.is_ascii_digit()).count();
+        if digits == 0 || digits > 9 {
+            return None;
+        }
+        i += digits;
+        if i < bytes.len() && matches!(bytes[i], b'.' | b')') {
+            i += 1;
+        } else {
+            return None;
+        }
+    }
+    if i >= bytes.len() || bytes[i] != b' ' {
+        return None;
+    }
+    while i < bytes.len() && bytes[i] == b' ' {
+        i += 1;
+    }
+    if i + 3 > bytes.len() || bytes[i] != b'[' || bytes[i + 2] != b']' {
+        return None;
+    }
+    let checked = match bytes[i + 1] {
+        b' ' => false,
+        b'x' | b'X' => true,
+        _ => return None,
+    };
+    // `[ ]` must be followed by whitespace or end of line.
+    if i + 3 < bytes.len() && !bytes[i + 3].is_ascii_whitespace() {
+        return None;
+    }
+    Some((i, checked))
+}
+
+/// Whether a line is a task item, and whether it is done.
+pub fn task_state(line: &str) -> Option<bool> {
+    task_marker(line).map(|(_, checked)| checked)
+}
+
+/// Sets the checkbox on the 0-based line `line_index` to `checked`. Returns the
+/// new text, or `None` when that line is not a task (or already in that state).
+pub fn set_task_checked(text: &str, line_index: usize, checked: bool) -> Option<String> {
+    let line = lines(text).into_iter().find(|l| l.index == line_index)?;
+    if line.kind != BlockKind::Text {
+        return None;
+    }
+    let (marker, was_checked) = task_marker(line.text)?;
+    if was_checked == checked {
+        return None;
+    }
+    let at = line.start + marker + 1;
+    let mut out = String::with_capacity(text.len());
+    out.push_str(&text[..at]);
+    out.push(if checked { 'x' } else { ' ' });
+    out.push_str(&text[at + 1..]);
+    Some(out)
+}
+
+/// 0-based line containing byte `offset` (clamped to the text).
+pub fn line_of_offset(text: &str, offset: usize) -> usize {
+    let mut end = offset.min(text.len());
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    text[..end].bytes().filter(|&b| b == b'\n').count()
+}
+
+// ---------------------------------------------------------------------------
+// Inline level
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InlineKind {
+    /// `\x`: `range` covers the backslash and the escaped character.
+    Escape,
+    /// `` `code` ``
+    Code,
+    /// `%%comment%%`
+    Comment,
+    /// `[[target#heading|alias]]` or, with `embed`, `![[...]]`.
+    Wikilink {
+        embed: bool,
+    },
+    /// `[label](destination)`; `inner` is the label.
+    MarkdownLink,
+    Bold,
+    Italic,
+    Strikethrough,
+    Highlight,
+    /// `#tag`; `inner` excludes the `#`.
+    Tag,
+}
+
+/// An inline construct. `range` is the whole construct, `inner` its content;
+/// both are byte ranges relative to the scanned line.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Inline {
+    pub kind: InlineKind,
+    pub range: Range<usize>,
+    pub inner: Range<usize>,
+}
+
+/// Scans one line of Markdown into inline constructs, outermost first.
+/// Emphasis is scanned recursively, so `**[[link]]**` yields both.
+pub fn inline_tokens(line: &str) -> Vec<Inline> {
+    let mut out = Vec::new();
+    scan_inline(line, 0, line.len(), &mut out);
+    out
+}
+
+fn char_len_at(s: &str, i: usize) -> usize {
+    s[i..].chars().next().map_or(0, char::len_utf8)
+}
+
+/// Finds `pat` in `s[from..to]`, returning an absolute offset.
+fn find_in(s: &str, from: usize, to: usize, pat: &str) -> Option<usize> {
+    if from > to {
+        return None;
+    }
+    s[from..to].find(pat).map(|p| from + p)
+}
+
+fn scan_inline(s: &str, from: usize, to: usize, out: &mut Vec<Inline>) {
+    let b = s.as_bytes();
+    let starts = |i: usize, pat: &str| s[i..to].starts_with(pat);
+    let mut i = from;
+    while i < to {
+        match b[i] {
+            b'\\' => {
+                let next = if i + 1 < to { char_len_at(s, i + 1) } else { 0 };
+                if next > 0 {
+                    out.push(Inline {
+                        kind: InlineKind::Escape,
+                        range: i..i + 1 + next,
+                        inner: i + 1..i + 1 + next,
+                    });
+                }
+                i += 1 + next;
+                continue;
+            }
+            b'`' => {
+                let n = s[i..to].bytes().take_while(|&c| c == b'`').count();
+                let ticks = &s[i..i + n];
+                let mut search = i + n;
+                let mut closed = None;
+                while let Some(p) = find_in(s, search, to, ticks) {
+                    let run = s[p..to].bytes().take_while(|&c| c == b'`').count();
+                    if run == n {
+                        closed = Some(p);
+                        break;
+                    }
+                    search = p + run;
+                }
+                if let Some(close) = closed {
+                    out.push(Inline {
+                        kind: InlineKind::Code,
+                        range: i..close + n,
+                        inner: i + n..close,
+                    });
+                    i = close + n;
+                } else {
+                    i += n;
+                }
+                continue;
+            }
+            b'%' if starts(i, "%%") => {
+                if let Some(close) = find_in(s, i + 2, to, "%%") {
+                    out.push(Inline {
+                        kind: InlineKind::Comment,
+                        range: i..close + 2,
+                        inner: i + 2..close,
+                    });
+                    i = close + 2;
+                    continue;
+                }
+            }
+            b'!' if starts(i, "![[") => {
+                if let Some(close) = find_in(s, i + 3, to, "]]") {
+                    out.push(Inline {
+                        kind: InlineKind::Wikilink { embed: true },
+                        range: i..close + 2,
+                        inner: i + 3..close,
+                    });
+                    i = close + 2;
+                    continue;
+                }
+            }
+            b'[' if starts(i, "[[") => {
+                if let Some(close) = find_in(s, i + 2, to, "]]") {
+                    out.push(Inline {
+                        kind: InlineKind::Wikilink { embed: false },
+                        range: i..close + 2,
+                        inner: i + 2..close,
+                    });
+                    i = close + 2;
+                    continue;
+                }
+            }
+            b'[' => {
+                if let Some(close_br) = find_in(s, i + 1, to, "]") {
+                    if close_br + 1 < to && b[close_br + 1] == b'(' {
+                        if let Some(close_paren) = find_in(s, close_br + 2, to, ")") {
+                            out.push(Inline {
+                                kind: InlineKind::MarkdownLink,
+                                range: i..close_paren + 1,
+                                inner: i + 1..close_br,
+                            });
+                            scan_inline(s, i + 1, close_br, out);
+                            i = close_paren + 1;
+                            continue;
+                        }
+                    }
+                }
+            }
+            b'*' | b'~' | b'=' => {
+                let c = b[i];
+                let doubled = i + 1 < to && b[i + 1] == c;
+                let (kind, width) = match (c, doubled) {
+                    (b'*', true) => (Some(InlineKind::Bold), 2),
+                    (b'*', false) => (Some(InlineKind::Italic), 1),
+                    (b'~', true) => (Some(InlineKind::Strikethrough), 2),
+                    (b'=', true) => (Some(InlineKind::Highlight), 2),
+                    _ => (None, 1),
+                };
+                if let Some(kind) = kind {
+                    let marker = &s[i..i + width];
+                    let open_end = i + width;
+                    // Emphasis cannot start before whitespace (`* item`, `a * b`).
+                    let opens = open_end < to && !b[open_end].is_ascii_whitespace();
+                    if opens {
+                        if let Some(close) = find_closing(s, open_end, to, marker) {
+                            out.push(Inline {
+                                kind,
+                                range: i..close + width,
+                                inner: open_end..close,
+                            });
+                            scan_inline(s, open_end, close, out);
+                            i = close + width;
+                            continue;
+                        }
+                    }
+                    i += width;
+                    continue;
+                }
+            }
+            b'#' if i == 0 || b[i - 1].is_ascii_whitespace() => {
+                let tag_len = s[i + 1..to]
+                    .char_indices()
+                    .take_while(|(_, c)| c.is_alphanumeric() || matches!(c, '_' | '-' | '/'))
+                    .last()
+                    .map_or(0, |(idx, c)| idx + c.len_utf8());
+                if tag_len > 0 {
+                    let candidate = s[i + 1..i + 1 + tag_len].trim_end_matches('/');
+                    if is_valid_tag(candidate) {
+                        out.push(Inline {
+                            kind: InlineKind::Tag,
+                            range: i..i + 1 + candidate.len(),
+                            inner: i + 1..i + 1 + candidate.len(),
+                        });
+                    }
+                    i += 1 + tag_len;
+                    continue;
+                }
+            }
+            _ => {}
+        }
+        i += char_len_at(s, i).max(1);
+    }
+}
+
+/// Closing emphasis marker: not preceded by whitespace, and for single `*`
+/// not part of a `**`.
+fn find_closing(s: &str, from: usize, to: usize, marker: &str) -> Option<usize> {
+    let b = s.as_bytes();
+    let mut search = from;
+    while let Some(p) = find_in(s, search, to, marker) {
+        let after = p + marker.len();
+        let prev_ws = p == from || b[p - 1].is_ascii_whitespace();
+        let single_star_in_double =
+            marker == "*" && ((after < to && b[after] == b'*') || (p > from && b[p - 1] == b'*'));
+        if p > from && !prev_ws && !single_star_in_double {
+            return Some(p);
+        }
+        // Skip a following `*` of a `**` (ASCII, so `after + 1` stays a char boundary).
+        search = if after < to && b[after] == b'*' && single_star_in_double {
+            after + 1
+        } else {
+            after
+        };
+        if search > to {
+            return None;
+        }
+    }
+    None
+}
+
+/// All wikilinks (and embeds) of the text that are real Markdown: outside code,
+/// comments and frontmatter. Ranges are absolute byte offsets.
+pub fn wikilinks(text: &str) -> Vec<(usize, Inline)> {
+    let mut out = Vec::new();
+    for line in lines(text) {
+        if line.kind != BlockKind::Text {
+            continue;
+        }
+        for tok in inline_tokens(line.text) {
+            if matches!(tok.kind, InlineKind::Wikilink { .. }) {
+                out.push((
+                    line.index,
+                    Inline {
+                        kind: tok.kind,
+                        range: line.start + tok.range.start..line.start + tok.range.end,
+                        inner: line.start + tok.inner.start..line.start + tok.inner.end,
+                    },
+                ));
+            }
+        }
+    }
+    out
+}
+
+/// The wikilink whose source contains the byte `offset`, if any.
+pub fn wikilink_at(text: &str, offset: usize) -> Option<Wikilink> {
+    wikilinks(text)
+        .into_iter()
+        .find(|(_, tok)| tok.range.start <= offset && offset <= tok.range.end)
+        .map(|(_, tok)| Wikilink::parse(&text[tok.inner]))
+}
+
+/// Inline `#tags` (outside code and frontmatter), in order.
+pub fn inline_tags(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for line in lines(text) {
+        if line.kind != BlockKind::Text {
+            continue;
+        }
+        for tok in inline_tokens(line.text) {
+            if tok.kind == InlineKind::Tag {
+                out.push(line.text[tok.inner].to_string());
+            }
+        }
+    }
+    out
+}
+
+// ---------------------------------------------------------------------------
+// Live preview spans
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MdSpanKind {
+    SyntaxMarker,
+    FrontmatterDelimiter,
+    FrontmatterKey,
+    Heading(u8),
+    Bold,
+    Italic,
+    Strikethrough,
+    Highlight,
+    InlineCode,
+    CodeBlock,
+    WikilinkResolved,
+    WikilinkUnresolved,
+    MarkdownLink,
+    Tag,
+    Comment,
+    Quote,
+    CalloutHeader,
+    TaskDone,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MdSpan {
+    pub range: Range<usize>,
+    pub kind: MdSpanKind,
+}
+
+/// Decorations for the live editor. Syntax marks (`**`, `[[`, `# `…) are dimmed
+/// except on `cursor_line` (0-based), where the user is editing them.
+pub fn compute_markdown_spans(
+    text: &str,
+    cursor_line: usize,
+    source_path: Option<&str>,
+    index: &VaultIndex,
+) -> Vec<MdSpan> {
+    let mut spans = Vec::new();
+    let mut push = |range: Range<usize>, kind: MdSpanKind| {
+        if range.start < range.end {
+            spans.push(MdSpan { range, kind });
+        }
+    };
+
+    for line in lines(text) {
+        let s = line.start;
+        let on_cursor = line.index == cursor_line;
+        match line.kind {
+            BlockKind::FrontmatterDelimiter => push(line.range(), MdSpanKind::FrontmatterDelimiter),
+            BlockKind::Frontmatter => {
+                if let Some(colon) = line.text.find(':') {
+                    if !line.text.starts_with(char::is_whitespace) && !line.text.starts_with('-') {
+                        push(s..s + colon + 1, MdSpanKind::FrontmatterKey);
+                    }
+                }
+            }
+            BlockKind::FenceDelimiter | BlockKind::Code => {
+                push(line.range(), MdSpanKind::CodeBlock)
+            }
+            BlockKind::Text => {
+                let trimmed = line.text.trim_start();
+                let leading = line.text.len() - trimmed.len();
+                if let Some((level, _)) = parse_atx_heading(trimmed) {
+                    let marker_end = (leading + level as usize + 1).min(line.text.len());
+                    if !on_cursor {
+                        push(s + leading..s + marker_end, MdSpanKind::SyntaxMarker);
+                    }
+                    push(
+                        s + marker_end..s + line.text.len(),
+                        MdSpanKind::Heading(level),
+                    );
+                } else if let Some(after_gt) = trimmed.strip_prefix('>') {
+                    let kind = if after_gt.trim_start().starts_with("[!") {
+                        MdSpanKind::CalloutHeader
+                    } else {
+                        MdSpanKind::Quote
+                    };
+                    push(s + leading..s + line.text.len(), kind);
+                } else if task_state(line.text) == Some(true) {
+                    push(s + leading..s + line.text.len(), MdSpanKind::TaskDone);
+                }
+
+                for tok in inline_tokens(line.text) {
+                    let r = |r: Range<usize>| s + r.start..s + r.end;
+                    let (open, close) = (
+                        tok.range.start..tok.inner.start,
+                        tok.inner.end..tok.range.end,
+                    );
+                    let markers = |push: &mut dyn FnMut(Range<usize>, MdSpanKind)| {
+                        if !on_cursor {
+                            push(r(open.clone()), MdSpanKind::SyntaxMarker);
+                            push(r(close.clone()), MdSpanKind::SyntaxMarker);
+                        }
+                    };
+                    match tok.kind {
+                        InlineKind::Escape => {
+                            if !on_cursor {
+                                push(
+                                    r(tok.range.start..tok.inner.start),
+                                    MdSpanKind::SyntaxMarker,
+                                );
+                            }
+                        }
+                        InlineKind::Code => {
+                            markers(&mut push);
+                            push(r(tok.inner.clone()), MdSpanKind::InlineCode);
+                        }
+                        InlineKind::Comment => push(r(tok.range.clone()), MdSpanKind::Comment),
+                        InlineKind::Wikilink { .. } => {
+                            markers(&mut push);
+                            let inner = &line.text[tok.inner.clone()];
+                            let link = Wikilink::parse(inner);
+                            let resolved = link.target.is_empty()
+                                || index.resolve(&link.target, source_path).is_some();
+                            // With an alias, only the alias is read: dim `target|`.
+                            let mut shown = tok.inner.clone();
+                            if let Some(bar) = inner.find('|') {
+                                if !on_cursor {
+                                    push(
+                                        r(tok.inner.start..tok.inner.start + bar + 1),
+                                        MdSpanKind::SyntaxMarker,
+                                    );
+                                }
+                                shown.start += bar + 1;
+                            }
+                            push(
+                                r(shown),
+                                if resolved {
+                                    MdSpanKind::WikilinkResolved
+                                } else {
+                                    MdSpanKind::WikilinkUnresolved
+                                },
+                            );
+                        }
+                        InlineKind::MarkdownLink => {
+                            markers(&mut push);
+                            push(r(tok.inner.clone()), MdSpanKind::MarkdownLink);
+                        }
+                        InlineKind::Bold => {
+                            markers(&mut push);
+                            push(r(tok.inner.clone()), MdSpanKind::Bold);
+                        }
+                        InlineKind::Italic => {
+                            markers(&mut push);
+                            push(r(tok.inner.clone()), MdSpanKind::Italic);
+                        }
+                        InlineKind::Strikethrough => {
+                            markers(&mut push);
+                            push(r(tok.inner.clone()), MdSpanKind::Strikethrough);
+                        }
+                        InlineKind::Highlight => {
+                            markers(&mut push);
+                            push(r(tok.inner.clone()), MdSpanKind::Highlight);
+                        }
+                        InlineKind::Tag => push(r(tok.range.clone()), MdSpanKind::Tag),
+                    }
+                }
+            }
+        }
+    }
+    spans
+}
+
+// ---------------------------------------------------------------------------
+// Reader
+// ---------------------------------------------------------------------------
+
+/// URL scheme for wikilinks in the Reader: `noteki-link:<target>#<heading>`.
+pub const LINK_SCHEME: &str = "noteki-link:";
+/// URL scheme for embedded vault images: `noteki-embed:<vault path>`.
+pub const EMBED_SCHEME: &str = "noteki-embed:";
+
+/// Percent-encodes everything but unreserved characters and `/`, so any note
+/// name (spaces, parentheses, `#`, emoji) is a valid CommonMark destination.
+pub fn percent_encode(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for &b in s.as_bytes() {
+        if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~' | b'/') {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    out
+}
+
+pub fn percent_decode(s: &str) -> String {
+    let b = s.as_bytes();
+    let mut out = Vec::with_capacity(b.len());
+    let mut i = 0;
+    while i < b.len() {
+        if b[i] == b'%' && i + 2 < b.len() {
+            let hex = |c: u8| (c as char).to_digit(16);
+            if let (Some(h), Some(l)) = (hex(b[i + 1]), hex(b[i + 2])) {
+                out.push((h * 16 + l) as u8);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(b[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+/// A link clicked in the Reader.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ReaderLink {
+    /// A note or attachment of the vault (`heading` for `[[Note#Heading]]`).
+    Vault {
+        target: String,
+        heading: Option<String>,
+    },
+    /// Anything with another scheme (`https:`, `mailto:`…).
+    External(String),
+}
+
+/// Interprets a URL from the Reader: our own wikilinks, relative Markdown links
+/// to vault files (`[x](Other%20note.md)`), or external URLs.
+pub fn parse_reader_link(url: &str) -> ReaderLink {
+    let body = match url.strip_prefix(LINK_SCHEME) {
+        Some(rest) => rest,
+        None if url.contains(':') => return ReaderLink::External(url.to_string()),
+        None => url,
+    };
+    let (target, heading) = match body.split_once('#') {
+        Some((t, h)) => (
+            percent_decode(t),
+            Some(percent_decode(h)).filter(|h| !h.is_empty()),
+        ),
+        None => (percent_decode(body), None),
+    };
+    let target = target.trim_start_matches("./").to_string();
+    ReaderLink::Vault { target, heading }
+}
+
+/// The parse options GPUI Kit's `TextView` uses for
+/// `MarkdownExtensions::default().frontmatter()` (gpui-base 0.10, `markdown_ext.rs`).
+fn reader_parse_options() -> ::markdown::ParseOptions {
+    let mut o = ::markdown::ParseOptions::gfm();
+    o.constructs.frontmatter = true;
+    o.constructs.math_text = true;
+    o.constructs.math_flow = true;
+    o
+}
+
+/// Whether the Reader's parser (markdown-rs 1.0.0) survives `md`.
+///
+/// markdown-rs panics on some valid input (for example ``"1. ```\n-"``), and
+/// GPUI Kit does not guard its `TextView`: such a note would crash the app the
+/// moment it is shown in the Reader.
+pub fn reader_can_parse(md: &str) -> bool {
+    let md = md.to_string();
+    let previous = std::panic::take_hook();
+    std::panic::set_hook(Box::new(|_| {}));
+    let ok = std::panic::catch_unwind(move || {
+        ::markdown::to_mdast(&md, &reader_parse_options()).is_ok()
+    })
+    .unwrap_or(false);
+    std::panic::set_hook(previous);
+    ok
+}
+
+/// Reader Markdown that is safe to render: `md` itself, or the note's source
+/// shown as code with a warning when the parser would crash on it.
+pub fn reader_guard(md: String, source: &str) -> (String, bool) {
+    if reader_can_parse(&md) {
+        return (md, true);
+    }
+    let longest = source.split(|c| c != '`').map(str::len).max().unwrap_or(0);
+    let fence = "`".repeat((longest + 1).max(3));
+    let fallback = format!(
+        "> **This note cannot be shown in the Reader** (a parser limitation); its source is below. Edit it in Live mode.\n\n{fence}\n{source}\n{fence}\n"
+    );
+    if reader_can_parse(&fallback) {
+        (fallback, false)
+    } else {
+        (
+            "> **This note cannot be shown in the Reader.** Edit it in Live mode.".to_string(),
+            false,
+        )
+    }
+}
+
+fn escape_label(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for c in s.chars() {
+        if matches!(
+            c,
+            '[' | ']' | '*' | '_' | '`' | '\\' | '<' | '>' | '!' | '#' | '|'
+        ) {
+            out.push('\\');
+        }
+        out.push(c);
+    }
+    out
+}
+
+/// Converts Obsidian-flavoured Markdown (wikilinks, embeds, `==highlight==`,
+/// `%%comments%%`, callouts) to the CommonMark/GFM the Reader renders.
+///
+/// The output has exactly the same lines as the input, so a position in the
+/// Reader (a task checkbox) maps back to the same line of the note.
+pub fn preprocess_for_reader(text: &str, source_path: Option<&str>, index: &VaultIndex) -> String {
+    let mut out = String::with_capacity(text.len() + 64);
+    for (n, line) in lines(text).into_iter().enumerate() {
+        if n > 0 {
+            out.push('\n');
+        }
+        if line.kind != BlockKind::Text {
+            out.push_str(line.text);
+            continue;
+        }
+        if let Some(callout) = rewrite_callout_line(line.text) {
+            out.push_str(&callout);
+            continue;
+        }
+        out.push_str(&rewrite_inline(line.text, source_path, index));
+    }
+    out
+}
+
+fn rewrite_callout_line(line: &str) -> Option<String> {
+    let gt = line.find('>')?;
+    if !line[..gt].trim().is_empty() {
+        return None;
+    }
+    let after = line[gt + 1..].trim_start();
+    let rest = after.strip_prefix("[!")?;
+    let close = rest.find(']')?;
+    let kind = rest[..close].trim().trim_end_matches(['-', '+']);
+    if kind.is_empty() {
+        return None;
+    }
+    let title = rest[close + 1..].trim_start_matches(['-', '+']).trim();
+    let title = if title.is_empty() {
+        let mut c = kind.chars();
+        c.next().map_or(String::new(), |f| {
+            f.to_uppercase()
+                .chain(c.flat_map(|c| c.to_lowercase()))
+                .collect()
+        })
+    } else {
+        rewrite_inline_plain(title)
+    };
+    Some(format!("{}> **{}**", &line[..gt], title))
+}
+
+fn rewrite_inline_plain(s: &str) -> String {
+    rewrite_inline(s, None, &VaultIndex::default())
+}
+
+fn rewrite_inline(line: &str, source_path: Option<&str>, index: &VaultIndex) -> String {
+    // Replacements for the constructs CommonMark does not know; everything else
+    // is copied verbatim. Tokens never overlap except emphasis nesting, and the
+    // ones replaced here (comments, wikilinks, highlight marks) are leaves.
+    let mut edits: Vec<(Range<usize>, String)> = Vec::new();
+    for tok in inline_tokens(line) {
+        match tok.kind {
+            InlineKind::Comment => edits.push((tok.range, String::new())),
+            InlineKind::Highlight => {
+                edits.push((tok.range.start..tok.inner.start, "**".into()));
+                edits.push((tok.inner.end..tok.range.end, "**".into()));
+            }
+            InlineKind::Wikilink { embed } => {
+                let link = Wikilink::parse(&line[tok.inner.clone()]);
+                edits.push((tok.range, render_wikilink(&link, embed, source_path, index)));
+            }
+            _ => {}
+        }
+    }
+    edits.sort_by_key(|(r, _)| r.start);
+    let mut out = String::with_capacity(line.len());
+    let mut at = 0;
+    for (range, replacement) in edits {
+        if range.start < at {
+            continue; // nested inside something already replaced
+        }
+        out.push_str(&line[at..range.start]);
+        out.push_str(&replacement);
+        at = range.end;
+    }
+    out.push_str(&line[at..]);
+    out
+}
+
+fn render_wikilink(
+    link: &Wikilink,
+    embed: bool,
+    source_path: Option<&str>,
+    index: &VaultIndex,
+) -> String {
+    let resolved = if link.target.is_empty() {
+        None
+    } else {
+        index.resolve(&link.target, source_path)
+    };
+    if embed {
+        if let Some(ResolvedItem::Attachment {
+            path,
+            attachment_kind: AttachmentKind::Image,
+            ..
+        }) = &resolved
+        {
+            // `![[img.png|120]]`: a number is a width in Obsidian, not alt text.
+            let alt = link
+                .alias
+                .as_deref()
+                .filter(|a| !a.chars().all(|c| c.is_ascii_digit() || c == 'x'))
+                .unwrap_or(&link.target);
+            return format!(
+                "![{}]({EMBED_SCHEME}{})",
+                escape_label(alt),
+                percent_encode(path)
+            );
+        }
+    }
+    let mut url = String::from(LINK_SCHEME);
+    url.push_str(&percent_encode(&link.target));
+    if let Some(h) = &link.heading {
+        url.push('#');
+        url.push_str(&percent_encode(h));
+    }
+    let label = link.display_text();
+    let label = if embed && resolved.is_none() {
+        format!("{label} (missing)")
+    } else {
+        label
+    };
+    format!("[{}]({url})", escape_label(&label))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn kinds(line: &str) -> Vec<(InlineKind, &str)> {
+        inline_tokens(line)
+            .into_iter()
+            .map(|t| (t.kind, &line[t.range]))
+            .collect()
+    }
+
+    #[test]
+    fn classifies_frontmatter_and_fences() {
+        let text = "---\ntags: [a]\n---\n# H\n```rust\n# not\n```\ntext";
+        let k: Vec<_> = lines(text).iter().map(|l| l.kind).collect();
+        use BlockKind::*;
+        assert_eq!(
+            k,
+            vec![
+                FrontmatterDelimiter,
+                Frontmatter,
+                FrontmatterDelimiter,
+                Text,
+                FenceDelimiter,
+                Code,
+                FenceDelimiter,
+                Text
+            ]
+        );
+    }
+
+    #[test]
+    fn crlf_lines_drop_carriage_return() {
+        let l = lines("a\r\nb");
+        assert_eq!(l[0].text, "a");
+        assert_eq!(l[1].start, 3);
+    }
+
+    #[test]
+    fn tokens_basic() {
+        assert_eq!(
+            kinds("**bold [[Note|alias]]** and `code [[no]]` #tag"),
+            vec![
+                (InlineKind::Bold, "**bold [[Note|alias]]**"),
+                (InlineKind::Wikilink { embed: false }, "[[Note|alias]]"),
+                (InlineKind::Code, "`code [[no]]`"),
+                (InlineKind::Tag, "#tag"),
+            ]
+        );
+    }
+
+    #[test]
+    fn escapes_and_multibyte_are_safe() {
+        assert_eq!(
+            kinds("\\è #perché"),
+            vec![(InlineKind::Escape, "\\è"), (InlineKind::Tag, "#perché")]
+        );
+        assert_eq!(kinds("\\"), vec![]);
+        assert_eq!(kinds("\\#nottag"), vec![(InlineKind::Escape, "\\#")]);
+    }
+
+    #[test]
+    fn bullets_are_not_italic() {
+        assert_eq!(kinds("* item and a * b"), vec![]);
+        assert_eq!(kinds("*it*"), vec![(InlineKind::Italic, "*it*")]);
+        assert_eq!(
+            kinds("**b** *i*"),
+            vec![(InlineKind::Bold, "**b**"), (InlineKind::Italic, "*i*")]
+        );
+    }
+
+    #[test]
+    fn headings_need_space() {
+        assert_eq!(parse_atx_heading("# A"), Some((1, "A")));
+        assert_eq!(parse_atx_heading("#tag"), None);
+        assert_eq!(parse_atx_heading("## B ##"), Some((2, "B")));
+        assert_eq!(parse_atx_heading("# C#"), Some((1, "C#")));
+    }
+
+    #[test]
+    fn task_toggle_by_line() {
+        let text = "intro\n- [ ] one\n  > 2. [x] two\n- [link](x)";
+        assert_eq!(
+            set_task_checked(text, 1, true).as_deref(),
+            Some("intro\n- [x] one\n  > 2. [x] two\n- [link](x)")
+        );
+        assert_eq!(
+            set_task_checked(text, 2, false).as_deref(),
+            Some("intro\n- [ ] one\n  > 2. [ ] two\n- [link](x)")
+        );
+        assert_eq!(set_task_checked(text, 3, true), None);
+        assert_eq!(set_task_checked(text, 1, false), None);
+    }
+
+    #[test]
+    fn percent_roundtrip() {
+        for s in [
+            "Launch plan",
+            "Maxwell's equations",
+            "a/b (c)#d",
+            "perché 🚀",
+            "100%",
+        ] {
+            assert_eq!(percent_decode(&percent_encode(s)), s);
+        }
+        assert_eq!(percent_decode("bad%zz%"), "bad%zz%");
+    }
+
+    #[test]
+    fn reader_link_parsing() {
+        assert_eq!(
+            parse_reader_link("noteki-link:Launch%20plan#Goals%20%26%20risks"),
+            ReaderLink::Vault {
+                target: "Launch plan".into(),
+                heading: Some("Goals & risks".into())
+            }
+        );
+        assert_eq!(
+            parse_reader_link("Other%20note.md"),
+            ReaderLink::Vault {
+                target: "Other note.md".into(),
+                heading: None
+            }
+        );
+        assert_eq!(
+            parse_reader_link("https://x.y/z"),
+            ReaderLink::External("https://x.y/z".into())
+        );
+    }
+
+    #[test]
+    fn reader_guard_catches_parser_panics() {
+        // Minimal input found by the robustness fuzzer: markdown-rs 1.0.0 panics on it.
+        let bad = "1. ```\n-";
+        assert!(!reader_can_parse(bad));
+        let (md, ok) = reader_guard(bad.to_string(), bad);
+        assert!(!ok);
+        assert!(reader_can_parse(&md));
+        let (md, ok) = reader_guard("# fine".into(), "# fine");
+        assert!(ok && md == "# fine");
+    }
+
+    #[test]
+    fn reader_keeps_line_count() {
+        let text = "---\na: 1\n---\n> [!tip] Hi [[x]]\n%%gone%% [[A|b]] ==hi==\n```\n[[code]]\n```";
+        let out = preprocess_for_reader(text, None, &VaultIndex::default());
+        assert_eq!(out.split('\n').count(), text.split('\n').count());
+        assert!(out.contains("> **Hi [x](noteki-link:x)**"), "{out}");
+        assert!(out.contains(" [b](noteki-link:A) **hi**"), "{out}");
+        assert!(out.contains("\n[[code]]\n"), "{out}");
+    }
+}

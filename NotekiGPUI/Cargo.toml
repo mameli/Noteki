@@ -4,6 +4,14 @@ version = "0.1.0"
 edition = "2021"
 description = "Noteki GPUI prototype using gpui-kit"
 
+[lib]
+name = "noteki_gpui"
+path = "src/lib.rs"
+
+[[bin]]
+name = "noteki-gpui"
+path = "src/main.rs"
+
 [dependencies]
 gpui-kit = { version = "0.10.0", features = ["syntect"] }
 serde = { version = "1", features = ["derive"] }
@@ -13,3 +21,8 @@ similar = "2"
 imagesize = "0.13"
 dirs = "6"
 chrono = "0.4"
+# Same version GPUI Kit's TextView parses with: used to pre-flight the Reader (see core::markdown::reader_guard).
+markdown = "=1.0.0"
+
+[dev-dependencies]
+gpui-kit = { version = "0.10.0", features = ["syntect", "test-support"] }

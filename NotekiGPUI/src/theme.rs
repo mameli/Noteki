@@ -4,16 +4,12 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
+#[derive(Default)]
 pub enum NotekiThemeName {
+    #[default]
     Ayu,
     Everforest,
     OneDarkPro,
-}
-
-impl Default for NotekiThemeName {
-    fn default() -> Self {
-        Self::Ayu
-    }
 }
 
 impl NotekiThemeName {
@@ -36,16 +32,12 @@ impl NotekiThemeName {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(Default)]
 pub enum AppearanceMode {
+    #[default]
     System,
     Light,
     Dark,
-}
-
-impl Default for AppearanceMode {
-    fn default() -> Self {
-        Self::System
-    }
 }
 
 impl AppearanceMode {

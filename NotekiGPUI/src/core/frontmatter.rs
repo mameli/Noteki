@@ -47,7 +47,19 @@ const BACKSLASH: u16 = b'\\' as u16;
 fn is_indicator(u: u16) -> bool {
     matches!(
         u as u8,
-        b'[' | b']' | b'{' | b'}' | b'>' | b'|' | b'*' | b'&' | b'!' | b'%' | b'@' | b'`' | b',' | b'?'
+        b'[' | b']'
+            | b'{'
+            | b'}'
+            | b'>'
+            | b'|'
+            | b'*'
+            | b'&'
+            | b'!'
+            | b'%'
+            | b'@'
+            | b'`'
+            | b','
+            | b'?'
     )
 }
 
@@ -59,7 +71,7 @@ pub fn frontmatter_end_line(text: &str) -> Option<usize> {
     if !is_delimiter(first, false) {
         return None;
     }
-    let end = (1..lines.len()).find(|&idx| is_delimiter(&lines[idx], true))?;
+    let end = (1..lines.len()).find(|&idx| is_delimiter(lines[idx], true))?;
     Some(end + 1)
 }
 
@@ -71,7 +83,7 @@ pub fn parse_frontmatter(text: &str) -> Option<FrontmatterReading> {
     if !is_delimiter(first, false) {
         return None;
     }
-    let end = (1..lines.len()).find(|&idx| is_delimiter(&lines[idx], true))?;
+    let end = (1..lines.len()).find(|&idx| is_delimiter(lines[idx], true))?;
     Some(read_lines(&lines[1..end]))
 }
 
@@ -84,7 +96,7 @@ pub fn extract_frontmatter_tags(text: &str) -> Vec<String> {
     if !is_delimiter(first, false) {
         return Vec::new();
     }
-    let Some(end) = (1..lines.len()).find(|&idx| is_delimiter(&lines[idx], true)) else {
+    let Some(end) = (1..lines.len()).find(|&idx| is_delimiter(lines[idx], true)) else {
         return Vec::new();
     };
     let FrontmatterReading::Properties { properties } = read_lines(&lines[1..end]) else {
@@ -196,7 +208,10 @@ fn read_lines(lines: &[&[u16]]) -> FrontmatterReading {
 
     for (idx, &units) in lines.iter().enumerate() {
         let number = idx + 2;
-        let indent_len = units.iter().take_while(|&&u| u == SPACE || u == TAB).count();
+        let indent_len = units
+            .iter()
+            .take_while(|&&u| u == SPACE || u == TAB)
+            .count();
         let content = &units[indent_len..];
         if content.iter().all(|&u| u == SPACE || u == TAB) || content.first() == Some(&HASH) {
             continue;
@@ -460,7 +475,9 @@ mod tests {
                 assert_eq!(properties[1].key, "tags");
                 assert_eq!(properties[2].key, "participants");
             }
-            FrontmatterReading::Unreadable { unreadable } => panic!("Unexpected unreadable at {unreadable}"),
+            FrontmatterReading::Unreadable { unreadable } => {
+                panic!("Unexpected unreadable at {unreadable}")
+            }
         }
         assert_eq!(
             extract_frontmatter_tags(yaml),

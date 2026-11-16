@@ -1,0 +1,101 @@
+//! Live-preview styles: how each Markdown span is drawn in the editor.
+
+use gpui_kit::{
+    hsla, px, FontStyle, FontWeight, HighlightStyle, StrikethroughStyle, UnderlineStyle,
+};
+
+use crate::core::markdown::MdSpanKind;
+use crate::theme::NotekiPalette;
+
+pub fn span_style(kind: MdSpanKind, p: &NotekiPalette) -> HighlightStyle {
+    let underline = |color, wavy| {
+        Some(UnderlineStyle {
+            thickness: px(1.),
+            color: Some(color),
+            wavy,
+        })
+    };
+    match kind {
+        MdSpanKind::SyntaxMarker => HighlightStyle {
+            color: Some(p.syntax),
+            fade_out: Some(0.6),
+            ..Default::default()
+        },
+        MdSpanKind::FrontmatterDelimiter => HighlightStyle {
+            color: Some(p.syntax),
+            ..Default::default()
+        },
+        MdSpanKind::FrontmatterKey => HighlightStyle {
+            color: Some(p.keyword),
+            font_weight: Some(FontWeight::MEDIUM),
+            ..Default::default()
+        },
+        MdSpanKind::Heading(level) => HighlightStyle {
+            color: Some(p.heading),
+            font_weight: Some(if level <= 2 {
+                FontWeight::BOLD
+            } else {
+                FontWeight::SEMIBOLD
+            }),
+            ..Default::default()
+        },
+        MdSpanKind::Bold => HighlightStyle {
+            font_weight: Some(FontWeight::BOLD),
+            ..Default::default()
+        },
+        MdSpanKind::Italic => HighlightStyle {
+            font_style: Some(FontStyle::Italic),
+            ..Default::default()
+        },
+        MdSpanKind::Strikethrough | MdSpanKind::TaskDone => HighlightStyle {
+            color: Some(p.syntax),
+            strikethrough: Some(StrikethroughStyle {
+                thickness: px(1.),
+                color: Some(p.syntax),
+            }),
+            ..Default::default()
+        },
+        MdSpanKind::Highlight => HighlightStyle {
+            background_color: Some(p.highlight),
+            ..Default::default()
+        },
+        MdSpanKind::InlineCode | MdSpanKind::CodeBlock => HighlightStyle {
+            background_color: Some(p.code_bg),
+            ..Default::default()
+        },
+        MdSpanKind::WikilinkResolved | MdSpanKind::MarkdownLink => HighlightStyle {
+            color: Some(p.link),
+            underline: underline(p.link, false),
+            ..Default::default()
+        },
+        // SPEC: an Unresolved link is drawn faded, as in Obsidian.
+        MdSpanKind::WikilinkUnresolved => HighlightStyle {
+            color: Some(p.link),
+            fade_out: Some(0.45),
+            underline: underline(p.link, false),
+            ..Default::default()
+        },
+        MdSpanKind::Tag => HighlightStyle {
+            color: Some(p.accent),
+            font_weight: Some(FontWeight::MEDIUM),
+            ..Default::default()
+        },
+        MdSpanKind::Comment => HighlightStyle {
+            color: Some(p.syntax),
+            font_style: Some(FontStyle::Italic),
+            fade_out: Some(0.3),
+            ..Default::default()
+        },
+        MdSpanKind::Quote => HighlightStyle {
+            color: Some(p.quote),
+            font_style: Some(FontStyle::Italic),
+            ..Default::default()
+        },
+        MdSpanKind::CalloutHeader => HighlightStyle {
+            color: Some(p.link),
+            font_weight: Some(FontWeight::SEMIBOLD),
+            background_color: Some(hsla(p.link.h, p.link.s, p.link.l, 0.1)),
+            ..Default::default()
+        },
+    }
+}
