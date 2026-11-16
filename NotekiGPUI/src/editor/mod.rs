@@ -103,6 +103,8 @@ actions!(
         Undo,
         Redo,
         OpenFind,
+        SelectNextOccurrence,
+        SingleSelection,
         FindNext,
         FindPrevious,
         Copy,
@@ -167,6 +169,8 @@ pub fn register_keybindings(cx: &mut App) {
         KeyBinding::new("cmd-]", Indent, c),
         KeyBinding::new("cmd-[", Outdent, c),
         KeyBinding::new("cmd-f", OpenFind, c),
+        KeyBinding::new("cmd-d", SelectNextOccurrence, c),
+        KeyBinding::new("escape", SingleSelection, c),
         KeyBinding::new("cmd-g", FindNext, c),
         KeyBinding::new("cmd-shift-g", FindPrevious, c),
         KeyBinding::new("cmd-g", FindNext, Some(find_bar::FIND_CONTEXT)),
@@ -849,6 +853,12 @@ handlers! {
     ToggleTask => |ed, cx| ed.format(Format::Lines(LineFormat::Task), cx);
     Indent => |ed, cx| ed.format(Format::Lines(LineFormat::Indent), cx);
     Outdent => |ed, cx| ed.format(Format::Lines(LineFormat::Outdent), cx);
+    SelectNextOccurrence => |ed, cx| { ed.buf.select_next_occurrence(); ed.wake(cx) };
+    SingleSelection => |ed, cx| {
+        let main = ed.buf.selection();
+        ed.buf.set_selection(main.anchor, main.head);
+        ed.wake(cx)
+    };
     Undo => |ed, cx| { let changed = ed.buf.undo(); ed.edited(changed, cx) };
     Redo => |ed, cx| { let changed = ed.buf.redo(); ed.edited(changed, cx) };
     Copy => |ed, cx| {

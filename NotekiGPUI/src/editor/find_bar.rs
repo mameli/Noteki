@@ -193,6 +193,19 @@ impl NoteEditor {
         self.find_step(true, false, window, cx);
     }
 
+    /// "All": every match selected, to type over them at once.
+    pub(super) fn select_every(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let matches = self.refresh_matches().to_vec();
+        if matches.is_empty() {
+            return;
+        }
+        let sel = self.buf.selection().range();
+        let main = matches.iter().position(|m| *m == sel).unwrap_or(0);
+        self.buf.set_selections(&matches, main);
+        window.focus(&self.focus_handle, cx);
+        self.wake(cx);
+    }
+
     /// Replaces every match: one undo step.
     pub(super) fn replace_every(&mut self, cx: &mut Context<Self>) {
         let Some(bar) = &self.find else {
@@ -328,6 +341,14 @@ impl NoteEditor {
                                 .on_click(
                                     cx.listener(|ed, _, w, cx| ed.find_step(true, false, w, cx)),
                                 ),
+                        )
+                        .child(
+                            Button::new("find-all")
+                                .label("All")
+                                .xsmall()
+                                .ghost()
+                                .tooltip("Select every match")
+                                .on_click(cx.listener(|ed, _, w, cx| ed.select_every(w, cx))),
                         )
                         .child(
                             div()

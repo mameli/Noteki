@@ -362,7 +362,7 @@ fn note_doc_invariants_under_random_events() {
         let mut doc = NoteDoc::new(rng.pick(&texts));
         let mut disk: Option<String> = Some(doc.text().to_string());
         for _ in 0..12 {
-            match rng.below(7) {
+            match rng.below(8) {
                 0 | 1 => {
                     doc.edit(rng.pick(&texts));
                 }
@@ -486,11 +486,16 @@ fn editor_edits_and_movements_keep_the_cursor_on_a_char_boundary() {
                     let n = b.text().len() + 3;
                     b.set_selection(rng.below(n), rng.below(n));
                 }
+                4 => {
+                    b.select_next_occurrence();
+                }
                 _ => b.apply_motion(motion, rng.below(2) == 0),
             }
-            let (t, s) = (b.text(), b.selection());
-            for o in [s.anchor, s.head] {
-                assert!(o <= t.len() && t.is_char_boundary(o), "{o} in {t:?}");
+            let t = b.text();
+            for s in b.selections() {
+                for o in [s.anchor, s.head] {
+                    assert!(o <= t.len() && t.is_char_boundary(o), "{o} in {t:?}");
+                }
             }
             if let Some(m) = b.marked() {
                 assert_slice(t, &m, "marked range");

@@ -943,7 +943,7 @@ pub(super) struct PrepaintState {
     layout: Layout,
     selection: Vec<Bounds<Pixels>>,
     matches: Vec<Bounds<Pixels>>,
-    caret: Option<Bounds<Pixels>>,
+    carets: Vec<Bounds<Pixels>>,
 }
 
 impl Element for EditorElement {
@@ -1022,18 +1022,22 @@ impl Element for EditorElement {
             tops,
         };
         let ed = self.editor.read(cx);
-        let sel = ed.buf.selection().range();
-        let selection = if sel.is_empty() {
-            Vec::new()
-        } else {
-            let (first, last) = (layout.line_of(sel.start), layout.line_of(sel.end));
-            (first..=last)
-                .flat_map(|i| layout.selection_rects(i, &sel))
-                .collect()
-        };
-        let caret = (ed.cursor_on && sel.is_empty() && ed.focus_handle.is_focused(window))
-            .then(|| layout.caret(ed.buf.text(), ed.buf.cursor()))
-            .flatten();
+        // Every selection (⌘D makes several), and a caret in each empty one.
+        let mut selection = Vec::new();
+        let mut carets = Vec::new();
+        let show_caret = ed.cursor_on && ed.focus_handle.is_focused(window);
+        for s in ed.buf.selections() {
+            let sel = s.range();
+            if sel.is_empty() {
+                if show_caret {
+                    carets.extend(layout.caret(ed.buf.text(), s.head));
+                }
+                continue;
+            }
+            for i in layout.line_of(sel.start)..=layout.line_of(sel.end) {
+                selection.extend(layout.selection_rects(i, &sel));
+            }
+        }
         let matches = self.editor.update(cx, |ed, _| ed.find_matches());
         let mut match_rects = Vec::new();
         for m in &matches {
@@ -1046,7 +1050,7 @@ impl Element for EditorElement {
             layout,
             selection,
             matches,
-            caret,
+            carets,
         }
     }
 
@@ -1162,7 +1166,7 @@ impl Element for EditorElement {
                 cx,
             );
         }
-        if let Some(c) = state.caret {
+        for c in state.carets.drain(..) {
             window.paint_quad(fill(c, palette.caret));
         }
         let layout = state.layout.clone();

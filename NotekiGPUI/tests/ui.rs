@@ -1543,7 +1543,7 @@ fn replace_all_is_one_undo_step(cx: &mut TestAppContext) {
     editor_with(cx, &f, "uno due uno tre uno", 0);
     press(cx, &f, "cmd-f");
     ui(cx, &f, |w, _| w.find("find-bar").bounds()); // the bar is drawn
-                                                     // Typing in the find field: the query (it was seeded with "uno").
+                                                    // Typing in the find field: the query (it was seeded with "uno").
     app(cx, &f, |a, w, cx| {
         a.editor()
             .clone()
@@ -1556,4 +1556,31 @@ fn replace_all_is_one_undo_step(cx: &mut TestAppContext) {
     });
     press(cx, &f, "cmd-z");
     assert_eq!(editor_state(cx, &f).0, "uno due uno tre uno");
+}
+
+#[gpui_kit::test]
+fn cmd_d_selects_the_occurrences_and_typing_changes_them_all(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    editor_with(cx, &f, "uno due uno tre uno", 1);
+    press(cx, &f, "cmd-d cmd-d cmd-d");
+    type_in_editor(cx, &f, "1");
+    assert_eq!(editor_state(cx, &f).0, "1 due 1 tre 1");
+    press(cx, &f, "cmd-z");
+    assert_eq!(
+        editor_state(cx, &f).0,
+        "uno due uno tre uno",
+        "one undo step"
+    );
+    // Find's "All" does the same from the find bar.
+    press(cx, &f, "cmd-f");
+    ui(cx, &f, |w, cx| w.click("find-all", cx));
+    type_in_editor(cx, &f, "U");
+    assert_eq!(editor_state(cx, &f).0, "U due U tre U");
+    press(cx, &f, "escape");
+    type_in_editor(cx, &f, "!");
+    assert_eq!(
+        editor_state(cx, &f).0.matches('!').count(),
+        1,
+        "Esc: one selection again"
+    );
 }

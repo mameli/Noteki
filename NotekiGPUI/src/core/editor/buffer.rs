@@ -57,6 +57,8 @@ pub struct EditBuffer {
     history: History,
     /// Text an input method is composing (dead key, press-and-hold, IME).
     marked: Option<Range<usize>>,
+    /// More selections than the main one, from ⌘D: an edit acts on all.
+    extra: Vec<Selection>,
 }
 
 impl EditBuffer {
@@ -157,6 +159,7 @@ impl EditBuffer {
 
     pub fn set_selection(&mut self, anchor: usize, head: usize) {
         self.history.close();
+        self.extra.clear();
         self.selection = Selection {
             anchor: self.clamp(anchor),
             head: self.clamp(head),
@@ -165,6 +168,7 @@ impl EditBuffer {
 
     pub fn select_all(&mut self) {
         self.history.close();
+        self.extra.clear();
         self.selection = Selection {
             anchor: 0,
             head: self.text.len(),
@@ -174,6 +178,7 @@ impl EditBuffer {
     /// Puts the cursor at `offset`; with `extend`, keeps the anchor (⇧).
     pub fn move_to(&mut self, offset: usize, extend: bool) {
         self.history.close(); // the cursor moved: what follows is a new undo step
+        self.extra.clear();
         let head = self.clamp(offset);
         let anchor = if extend { self.selection.anchor } else { head };
         self.selection = Selection { anchor, head };
@@ -181,7 +186,11 @@ impl EditBuffer {
 
     /// Where `motion` takes the cursor from where it is now.
     pub fn target(&self, motion: Motion) -> usize {
-        let (t, h) = (&self.text[..], self.selection.head);
+        self.target_from(motion, self.selection.head)
+    }
+
+    fn target_from(&self, motion: Motion, h: usize) -> usize {
+        let t = &self.text[..];
         match motion {
             Motion::Left => movement::prev_grapheme(t, h),
             Motion::Right => movement::next_grapheme(t, h),
@@ -211,6 +220,7 @@ impl EditBuffer {
     /// Replaces `range` with `new`, leaving the cursor after it. Returns whether
     /// the text changed.
     pub fn replace(&mut self, range: Range<usize>, new: &str) -> bool {
+        self.extra.clear();
         let r = self.clamp_range(range);
         let changed = &self.text[r.clone()] != new;
         let before = self.selection;
@@ -230,8 +240,99 @@ impl EditBuffer {
         changed
     }
 
+    /// Every selection, the main one first.
+    pub fn selections(&self) -> Vec<Selection> {
+        std::iter::once(self.selection)
+            .chain(self.extra.iter().copied())
+            .collect()
+    }
+
+    /// Selections at `ranges`, the main one the `main`-th.
+    pub fn set_selections(&mut self, ranges: &[Range<usize>], main: usize) {
+        let Some(m) = ranges.get(main) else {
+            return;
+        };
+        self.set_selection(m.start, m.end);
+        self.extra = ranges
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| *i != main)
+            .map(|(_, r)| Selection {
+                anchor: self.clamp(r.start),
+                head: self.clamp(r.end),
+            })
+            .collect();
+    }
+
+    /// ⌘D: with nothing selected, selects the word at the cursor; then adds
+    /// the next occurrence of the selected text as the main selection,
+    /// wrapping at the end. Whether a selection was made or added.
+    pub fn select_next_occurrence(&mut self) -> bool {
+        if self.selection.is_empty() {
+            let w = movement::word_range_at(&self.text, self.selection.head);
+            if w.is_empty() {
+                return false;
+            }
+            self.set_selection(w.start, w.end);
+            return true;
+        }
+        let needle = self.selected_text().to_string();
+        let all = self.selections();
+        let taken = |at: usize| all.iter().any(|s| s.range().start == at);
+        let after = all.iter().map(|s| s.range().end).max().unwrap_or(0);
+        let found = self.text[after..]
+            .match_indices(&needle)
+            .map(|(i, _)| after + i)
+            .chain(self.text[..after].match_indices(&needle).map(|(i, _)| i))
+            .find(|&at| !taken(at));
+        let Some(at) = found else {
+            return false;
+        };
+        let mut extra = std::mem::take(&mut self.extra);
+        extra.push(self.selection);
+        self.set_selection(at, at + needle.len());
+        self.extra = extra;
+        true
+    }
+
+    /// Applies an edit to every selection at once, as one replacement (one
+    /// undo step): `edit` gives, for a selection, what to replace and with
+    /// what. The selections end as carets after their new text.
+    fn edit_all(&mut self, edit: impl Fn(&Self, Selection) -> (Range<usize>, String)) -> bool {
+        let main_at = self.selection.range().start;
+        let mut edits: Vec<(Range<usize>, String)> = self
+            .selections()
+            .into_iter()
+            .map(|s| edit(self, s))
+            .collect();
+        edits.sort_by_key(|(r, _)| r.start);
+        let (start, end) = (
+            edits[0].0.start,
+            edits.iter().map(|(r, _)| r.end).max().unwrap_or(0),
+        );
+        let mut middle = String::new();
+        let mut carets = Vec::new();
+        let mut at = start;
+        for (r, new) in &edits {
+            let r = r.start.max(at)..r.end.max(at);
+            middle.push_str(&self.text[at..r.start]);
+            middle.push_str(new);
+            carets.push((r.start, start + middle.len()));
+            at = r.end;
+        }
+        middle.push_str(&self.text[at..end]);
+        let changed = self.replace(start..end, &middle);
+        let ranges: Vec<Range<usize>> = carets.iter().map(|&(_, c)| c..c).collect();
+        let main = carets.iter().position(|&(s, _)| s == main_at).unwrap_or(0);
+        self.set_selections(&ranges, main);
+        changed
+    }
+
     /// Typing: replaces what is being composed, else the selection.
     pub fn insert(&mut self, new: &str) -> bool {
+        if !self.extra.is_empty() && self.marked.is_none() {
+            return self.edit_all(|_, s| (s.range(), new.to_string()));
+        }
         let r = self
             .marked
             .clone()
@@ -270,6 +371,17 @@ impl EditBuffer {
     /// ⌫ and ⌦: deletes the selection, or from the cursor to where `motion`
     /// goes (`Left` for ⌫, `Right` for ⌦, `WordLeft` for ⌥⌫...).
     pub fn delete(&mut self, motion: Motion) -> bool {
+        if !self.extra.is_empty() {
+            return self.edit_all(|b, s| {
+                let r = if s.is_empty() {
+                    let t = b.target_from(motion, s.head);
+                    s.head.min(t)..s.head.max(t)
+                } else {
+                    s.range()
+                };
+                (r, String::new())
+            });
+        }
         self.delete_to(self.target(motion))
     }
 
@@ -416,5 +528,37 @@ mod tests {
         assert_eq!(offset_from_utf16(t, 2), 1); // inside the surrogate pair
         assert_eq!(offset_from_utf16(t, 99), t.len());
         assert_eq!(range_from_utf16(t, &(1..3)), 1..5);
+    }
+
+    #[test]
+    fn cmd_d_selects_the_word_then_its_next_occurrences() {
+        let mut b = buf("uno due uno tre uno", 1);
+        assert!(b.select_next_occurrence());
+        assert_eq!(b.selection().range(), 0..3);
+        assert!(b.select_next_occurrence());
+        assert!(b.select_next_occurrence());
+        let mut all: Vec<_> = b.selections().iter().map(|s| s.range()).collect();
+        all.sort_by_key(|r| r.start);
+        assert_eq!(all, vec![0..3, 8..11, 16..19]);
+        assert!(!b.select_next_occurrence(), "none left");
+    }
+
+    #[test]
+    fn typing_and_deleting_act_on_every_selection_as_one_undo_step() {
+        let mut b = buf("uno due uno tre uno", 1);
+        for _ in 0..3 {
+            b.select_next_occurrence();
+        }
+        b.insert("1");
+        assert_eq!(b.text(), "1 due 1 tre 1");
+        b.insert("!");
+        assert_eq!(b.text(), "1! due 1! tre 1!");
+        b.delete(Motion::Left);
+        assert_eq!(b.text(), "1 due 1 tre 1");
+        assert_eq!(b.selections().len(), 3);
+        b.undo();
+        assert_eq!(b.text(), "1! due 1! tre 1!");
+        b.move_to(0, false);
+        assert_eq!(b.selections().len(), 1, "moving keeps one selection");
     }
 }
