@@ -27,6 +27,7 @@ MUTANTS=(
   "src/core/markdown.rs|cursor.is_some_and(\|c\| tok.range.start <= c \&\& c <= tok.range.end)|cursor.is_some()|--lib --test ui --test robustness|every mark of the cursor's line shows, not only its element's"
   "src/editor/mod.rs|                    if **slot != style {|                    if false {|--test ui|the cursor's line is never restyled: marks never show"
   "src/editor/element.rs|if self.editor.read(cx).drag.is_some() {|if false {|--test ui|a drag stops following the pointer once it leaves the editor"
+  "src/core/editor/styling.rs|BlockKind::Rule if merged.first() == Some(\&(0..line.text.len())) =>|BlockKind::Rule =>|--lib|a rule is drawn over its marks on the cursor's line"
   "src/editor/element.rs|end = prev_grapheme(text, end).max(start);|end = end.max(start);|--test ui|⌘→ lands after the space a row wraps at"
   "src/editor/element.rs|\&\& (Rc::ptr_eq(\&src.style, style) \|\| src.style == *style)|\&\& true|--test ui|a line whose style changed is drawn from the cache, as it was"
 )

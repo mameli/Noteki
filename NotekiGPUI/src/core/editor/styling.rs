@@ -3,7 +3,9 @@
 
 use std::ops::Range;
 
-use crate::core::markdown::{lines, parse_atx_heading, BlockKind, Line, MdSpan, MdSpanKind};
+use crate::core::markdown::{
+    lines, parse_atx_heading, quote_prefix, BlockKind, Line, MdSpan, MdSpanKind,
+};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct LineStyle {
@@ -16,6 +18,16 @@ pub struct LineStyle {
     /// Ranges of the line (relative to its start, sorted, disjoint) that Live
     /// preview hides: the scanner's syntax marks.
     pub hidden: Vec<Range<usize>>,
+    /// What the editor paints around the line's text, never changing its height.
+    pub decoration: Option<Decoration>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Decoration {
+    /// A thematic break, drawn as a rule while its marks are hidden.
+    Rule,
+    /// A quote's bars on the left, one per level, the text indented after them.
+    Quote { depth: u8 },
 }
 
 /// One [`LineStyle`] per logical line of `text` (as `lines` splits it).
@@ -77,10 +89,17 @@ fn style_of(line: &Line, spans: Vec<(Range<usize>, MdSpanKind)>) -> LineStyle {
             _ => merged.push(r),
         }
     }
+    let decoration = match line.kind {
+        // A rule shows as a rule only while its marks are hidden.
+        BlockKind::Rule if merged.first() == Some(&(0..line.text.len())) => Some(Decoration::Rule),
+        BlockKind::Text => quote_prefix(line.text).map(|(depth, _)| Decoration::Quote { depth }),
+        _ => None,
+    };
     LineStyle {
         heading,
         segments: segments(spans),
         hidden: merged,
+        decoration,
     }
 }
 
@@ -226,6 +245,33 @@ mod tests {
             vec![2..7, 8..10],
             "an escaped bar in a table still shows the alias"
         );
+    }
+
+    #[test]
+    fn rules_and_quotes_are_decorations() {
+        let text = "testo\n\n---\nTitolo\n---\n> uno\n> > due\n>\n* * *";
+        let s = styles(text, None);
+        let deco: Vec<_> = s.iter().map(|l| l.decoration).collect();
+        use Decoration::*;
+        assert_eq!(
+            deco,
+            vec![
+                None,
+                None,
+                Some(Rule),
+                None, // a setext Heading's text
+                None, // and its underline
+                Some(Quote { depth: 1 }),
+                Some(Quote { depth: 2 }),
+                Some(Quote { depth: 1 }),
+                Some(Rule),
+            ]
+        );
+        assert_eq!(s[6].hidden, vec![0..4], "both `> ` hidden");
+        // On the cursor's line: the rule's marks show, so no rule is drawn.
+        let on = styles(text, Some(text.find("---").unwrap()));
+        assert_eq!(on[2].decoration, None);
+        assert!(on[2].hidden.is_empty());
     }
 
     #[test]

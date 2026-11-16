@@ -24,6 +24,9 @@ pub enum BlockKind {
     FenceDelimiter,
     /// A line inside a fenced code block.
     Code,
+    /// A thematic break (`---`, `***`, `___`), drawn as a rule. Not a setext
+    /// Heading's underline, which stays `Text`.
+    Rule,
     /// Ordinary Markdown.
     Text,
 }
@@ -69,6 +72,13 @@ pub fn lines(text: &str) -> Vec<Line<'_>> {
         } else if let Some(open) = opening_fence(line_text.trim_start()) {
             fence = Some(open);
             BlockKind::FenceDelimiter
+        } else if is_thematic_break(line_text)
+            && !(line_text.trim().starts_with('-')
+                && out.last().is_some_and(|prev: &Line| {
+                    prev.kind == BlockKind::Text && is_setext_candidate(prev.text.trim_start())
+                }))
+        {
+            BlockKind::Rule
         } else {
             BlockKind::Text
         };
@@ -81,6 +91,60 @@ pub fn lines(text: &str) -> Vec<Line<'_>> {
         start += raw.len() + 1;
     }
     out
+}
+
+/// Three or more `-`, `*` or `_` (the same), spaces allowed between, indented
+/// at most three spaces.
+fn is_thematic_break(line: &str) -> bool {
+    let trimmed = line.trim_start_matches(' ');
+    if line.len() - trimmed.len() > 3 {
+        return false;
+    }
+    let mut marks = trimmed.chars().filter(|c| *c != ' ' && *c != '\t');
+    let Some(first) = marks.next().filter(|c| matches!(c, '-' | '*' | '_')) else {
+        return false;
+    };
+    let mut count = 1;
+    for c in marks {
+        if c != first {
+            return false;
+        }
+        count += 1;
+    }
+    count >= 3
+}
+
+/// A paragraph line that a `---` or `===` under it makes a setext Heading:
+/// not a quote, a list item, an ATX Heading or a rule.
+pub fn is_setext_candidate(trimmed: &str) -> bool {
+    !trimmed.is_empty()
+        && !trimmed.starts_with('>')
+        && !trimmed.starts_with("- ")
+        && !trimmed.starts_with("* ")
+        && !trimmed.starts_with("+ ")
+        && !trimmed.starts_with('#')
+        && !trimmed
+            .chars()
+            .all(|c| matches!(c, '-' | '*' | '_' | '=' | ' '))
+}
+
+/// A quote's marks: its depth (the number of `>`) and the length of its prefix
+/// (indent, `>`s and the spaces after each), in a line.
+pub fn quote_prefix(line: &str) -> Option<(u8, usize)> {
+    let b = line.as_bytes();
+    let mut i = 0;
+    while i < b.len() && i < 3 && b[i] == b' ' {
+        i += 1;
+    }
+    let mut depth = 0u8;
+    while i < b.len() && b[i] == b'>' {
+        depth = depth.saturating_add(1);
+        i += 1;
+        if i < b.len() && b[i] == b' ' {
+            i += 1;
+        }
+    }
+    (depth > 0).then_some((depth, i))
 }
 
 fn opening_fence(trimmed: &str) -> Option<(u8, usize)> {
@@ -587,6 +651,11 @@ pub fn line_spans(
             BlockKind::FenceDelimiter | BlockKind::Code => {
                 push(line.range(), MdSpanKind::CodeBlock)
             }
+            BlockKind::Rule => {
+                if !on_cursor {
+                    push(line.range(), MdSpanKind::SyntaxMarker);
+                }
+            }
             BlockKind::Text => {
                 let trimmed = line.text.trim_start();
                 let leading = line.text.len() - trimmed.len();
@@ -599,13 +668,17 @@ pub fn line_spans(
                         s + marker_end..s + line.text.len(),
                         MdSpanKind::Heading(level),
                     );
-                } else if let Some(after_gt) = trimmed.strip_prefix('>') {
-                    let kind = if after_gt.trim_start().starts_with("[!") {
+                } else if let Some((_, prefix)) = quote_prefix(line.text) {
+                    let kind = if line.text[prefix..].starts_with("[!") {
                         MdSpanKind::CalloutHeader
                     } else {
                         MdSpanKind::Quote
                     };
-                    push(s + leading..s + line.text.len(), kind);
+                    // SPEC: a quote's `>`s show only on the cursor's line.
+                    if !on_cursor {
+                        push(s..s + prefix, MdSpanKind::SyntaxMarker);
+                    }
+                    push(s + prefix..s + line.text.len(), kind);
                 } else if task_state(line.text) == Some(true) {
                     push(s + leading..s + line.text.len(), MdSpanKind::TaskDone);
                 }

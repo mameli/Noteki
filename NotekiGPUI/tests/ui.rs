@@ -1100,3 +1100,45 @@ fn emphasis_marks_are_hidden_off_the_element_and_shown_in_it(cx: &mut TestAppCon
     });
     assert!(caret_at(cx, &f, open + 2).0 > caret_at(cx, &f, open).0);
 }
+
+#[gpui_kit::test]
+fn a_rule_keeps_its_height_with_the_cursor_on_it_or_not(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let text = "sopra\n\n---\n\nsotto";
+    editor_with(cx, &f, text, 0);
+    let off = heights(cx, &f);
+    let rule = text.find("---").unwrap();
+    app(cx, &f, |a, _, cx| {
+        a.editor()
+            .clone()
+            .update(cx, |ed, cx| ed.set_selected_range(rule..rule, cx))
+    });
+    assert_eq!(heights(cx, &f), off);
+}
+
+#[gpui_kit::test]
+fn a_quote_hides_its_marks_and_indents_by_its_depth(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let text = "testo\n> uno\n> > due";
+    editor_with(cx, &f, text, 0);
+    let left = caret_at(cx, &f, 0).0;
+    let one = caret_at(cx, &f, text.find("uno").unwrap()).0;
+    let two = caret_at(cx, &f, text.find("due").unwrap()).0;
+    assert!(
+        one > left && two > one,
+        "indented by depth: {left} {one} {two}"
+    );
+    // On its line the `> ` shows, after the bar's indent.
+    let start = text.find("> uno").unwrap();
+    app(cx, &f, |a, _, cx| {
+        a.editor()
+            .clone()
+            .update(cx, |ed, cx| ed.set_selected_range(start..start, cx))
+    });
+    assert!(caret_at(cx, &f, start + 2).0 > caret_at(cx, &f, start).0);
+    assert_eq!(
+        caret_at(cx, &f, start).0,
+        one,
+        "the text keeps the bar's indent"
+    );
+}

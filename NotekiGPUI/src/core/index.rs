@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::Path;
 
 use crate::core::frontmatter::extract_frontmatter_tags;
-use crate::core::markdown::{self, parse_atx_heading, BlockKind};
+use crate::core::markdown::{self, is_setext_candidate, parse_atx_heading, BlockKind};
 use crate::core::vault::read_note;
 use crate::core::wikilink::{folder_of, ResolvedItem, VaultIndex, Wikilink};
 
@@ -196,18 +196,6 @@ pub fn extract_outline(text: &str) -> Vec<HeadingItem> {
         }
     }
     headings
-}
-
-fn is_setext_candidate(trimmed: &str) -> bool {
-    !trimmed.is_empty()
-        && !trimmed.starts_with('>')
-        && !trimmed.starts_with("- ")
-        && !trimmed.starts_with("* ")
-        && !trimmed.starts_with("+ ")
-        && !trimmed.starts_with('#')
-        && !trimmed
-            .chars()
-            .all(|c| matches!(c, '-' | '*' | '_' | '=' | ' '))
 }
 
 /// Heading text as read: wikilinks show their display text, link labels stay,

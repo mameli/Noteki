@@ -16,7 +16,7 @@ use gpui_kit::{
 use crate::core::editor::display::{shown_text, to_buffer, to_display};
 use crate::core::editor::lines::{logical_lines, scroll_to_reveal, LineTops};
 use crate::core::editor::movement::prev_grapheme;
-use crate::core::editor::styling::LineStyle;
+use crate::core::editor::styling::{Decoration, LineStyle};
 use crate::theme::NotekiPalette;
 
 use super::style::span_style;
@@ -30,6 +30,9 @@ const HEADING_SCALE: [f32; 6] = [1.802, 1.602, 1.424, 1.266, 1.125, 1.0];
 /// A Heading's line height as a multiple of its own font size: tighter than text.
 const HEADING_LINE_HEIGHT: f32 = 1.35;
 const CARET_WIDTH: Pixels = px(2.);
+/// How far a quote's text is indented per level, its bar at the start of it.
+const QUOTE_INDENT: Pixels = px(16.);
+const QUOTE_BAR: Pixels = px(3.);
 
 #[derive(Clone)]
 pub(super) struct LaidLine {
@@ -40,6 +43,9 @@ pub(super) struct LaidLine {
     hidden: Rc<[Range<usize>]>,
     /// The line as shown: without its hidden ranges.
     shaped: Rc<WrappedLine>,
+    /// How far the text starts from the left edge (a quote's bars).
+    indent: Pixels,
+    decoration: Option<Decoration>,
 }
 
 impl LaidLine {
@@ -50,9 +56,11 @@ impl LaidLine {
     /// The position of `offset` (clamped to the line) relative to the line's top-left.
     fn position(&self, offset: usize) -> Point<Pixels> {
         let local = offset.clamp(self.range.start, self.range.end) - self.range.start;
-        self.shaped
+        let p = self
+            .shaped
             .position_for_index(to_display(&self.hidden, local), self.line_height)
-            .unwrap_or_else(|| point(self.shaped.width(), px(0.)))
+            .unwrap_or_else(|| point(self.shaped.width(), px(0.)));
+        point(p.x + self.indent, p.y)
     }
 }
 
@@ -121,10 +129,10 @@ impl Layout {
         let i = self.tops.line_at(f32::from(rel.y));
         let line = &self.lines[i];
         let y = (rel.y - self.top_of(i)).clamp(px(0.), line.height() - px(0.5));
-        let shown = match line
-            .shaped
-            .closest_index_for_position(point(rel.x.max(px(0.)), y), line.line_height)
-        {
+        let shown = match line.shaped.closest_index_for_position(
+            point((rel.x - line.indent).max(px(0.)), y),
+            line.line_height,
+        ) {
             Ok(i) | Err(i) => i,
         };
         let local = to_buffer(&line.hidden, shown);
@@ -172,10 +180,10 @@ impl Layout {
         let mut rects = vec![rect(pa.y, pa.x, self.width)];
         let mut y = pa.y + lh;
         while y < pb.y {
-            rects.push(rect(y, px(0.), self.width));
+            rects.push(rect(y, line.indent, self.width));
             y += lh;
         }
-        rects.push(rect(pb.y, px(0.), right));
+        rects.push(rect(pb.y, line.indent, right));
         rects
     }
 }
@@ -314,6 +322,36 @@ fn shape(
     (lines, tops)
 }
 
+/// What is painted around a line's text: under it, never changing its height.
+fn paint_decoration(
+    line: &LaidLine,
+    left: Pixels,
+    top: Pixels,
+    width: Pixels,
+    palette: &NotekiPalette,
+    window: &mut Window,
+) {
+    match line.decoration {
+        Some(Decoration::Rule) => {
+            let y = top + line.height() / 2.;
+            window.paint_quad(fill(
+                Bounds::new(point(left, y), size(width, px(1.))),
+                palette.separator,
+            ));
+        }
+        Some(Decoration::Quote { depth }) => {
+            for d in 0..depth {
+                let x = left + QUOTE_INDENT * f32::from(d);
+                window.paint_quad(fill(
+                    Bounds::new(point(x, top), size(QUOTE_BAR, line.height())),
+                    palette.accent,
+                ));
+            }
+        }
+        None => {}
+    }
+}
+
 fn shape_line(
     input: &ShapeInput,
     range: Range<usize>,
@@ -328,13 +366,17 @@ fn shape_line(
         }
         None => (input.font_size, input.font_size * LINE_HEIGHT),
     };
+    let indent = match style.decoration {
+        Some(Decoration::Quote { depth }) => QUOTE_INDENT * f32::from(depth),
+        _ => px(0.),
+    };
     let runs = runs_for(input, &range, style);
     let shaped = ts
         .shape_text(
             SharedString::from(shown_text(&input.text[range.clone()], &style.hidden)),
             font_size,
             &runs,
-            Some(width),
+            Some((width - indent).max(px(1.))),
             None,
         )
         .ok()
@@ -345,6 +387,8 @@ fn shape_line(
         line_height,
         hidden: style.hidden.clone().into(),
         shaped: Rc::new(shaped),
+        indent,
+        decoration: style.decoration,
     }
 }
 
@@ -602,8 +646,9 @@ impl Element for EditorElement {
             if top + line.height() < visible.top() {
                 continue;
             }
+            paint_decoration(line, layout.origin.x, top, layout.width, &palette, window);
             let _ = line.shaped.paint(
-                point(layout.origin.x, top),
+                point(layout.origin.x + line.indent, top),
                 line.line_height,
                 TextAlign::Left,
                 None,
