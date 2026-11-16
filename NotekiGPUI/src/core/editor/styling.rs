@@ -4,7 +4,8 @@
 use std::ops::Range;
 
 use crate::core::markdown::{
-    lines, parse_atx_heading, quote_prefix, BlockKind, Line, MdSpan, MdSpanKind,
+    lines, list_item, parse_atx_heading, quote_prefix, BlockKind, Line, ListKind, MdSpan,
+    MdSpanKind,
 };
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -28,6 +29,9 @@ pub enum Decoration {
     Rule,
     /// A quote's bars on the left, one per level, the text indented after them.
     Quote { depth: u8 },
+    /// A list item's bullet, number or checkbox, drawn before its text while
+    /// its marks are hidden; the text indented by its level.
+    List { level: u8, kind: ListKind },
 }
 
 /// One [`LineStyle`] per logical line of `text` (as `lines` splits it).
@@ -92,7 +96,16 @@ fn style_of(line: &Line, spans: Vec<(Range<usize>, MdSpanKind)>) -> LineStyle {
     let decoration = match line.kind {
         // A rule shows as a rule only while its marks are hidden.
         BlockKind::Rule if merged.first() == Some(&(0..line.text.len())) => Some(Decoration::Rule),
-        BlockKind::Text => quote_prefix(line.text).map(|(depth, _)| Decoration::Quote { depth }),
+        BlockKind::Text => match (quote_prefix(line.text), list_item(line.text)) {
+            (Some((depth, _)), _) => Some(Decoration::Quote { depth }),
+            (None, Some(item)) if merged.first() == Some(&(0..item.text_start)) => {
+                Some(Decoration::List {
+                    level: item.level,
+                    kind: item.kind,
+                })
+            }
+            _ => None,
+        },
         _ => None,
     };
     LineStyle {
@@ -272,6 +285,48 @@ mod tests {
         let on = styles(text, Some(text.find("---").unwrap()));
         assert_eq!(on[2].decoration, None);
         assert!(on[2].hidden.is_empty());
+    }
+
+    #[test]
+    fn list_items_hide_their_marks_until_the_cursor_touches_them() {
+        let text = "- uno\n  - sotto\n3. tre\n- [ ] da fare\n- [x] fatto\n1. [ ] numero";
+        let s = styles(text, None);
+        let deco: Vec<_> = s.iter().map(|l| l.decoration).collect();
+        use ListKind::*;
+        let list = |level, kind| Some(Decoration::List { level, kind });
+        assert_eq!(
+            deco,
+            vec![
+                list(0, Bullet),
+                list(1, Bullet),
+                list(0, Number { n: 3, delim: b'.' }),
+                list(
+                    0,
+                    Task {
+                        checked: false,
+                        bracket: 2
+                    }
+                ),
+                list(
+                    0,
+                    Task {
+                        checked: true,
+                        bracket: 2
+                    }
+                ),
+                list(0, Number { n: 1, delim: b'.' }),
+            ]
+        );
+        assert_eq!(s[1].hidden, vec![0..4]);
+        assert_eq!(s[3].hidden, vec![0..6], "`- [ ] ` hidden");
+        assert!(s[4]
+            .segments
+            .iter()
+            .any(|(_, k)| k.contains(&MdSpanKind::TaskDone)));
+        // The cursor touching the marks shows them; further in the text, not.
+        let at = |c| styles(text, Some(c))[0].clone();
+        assert!(at(1).hidden.is_empty() && at(1).decoration.is_none());
+        assert_eq!(at(4).hidden, vec![0..2]);
     }
 
     #[test]

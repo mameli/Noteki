@@ -1142,3 +1142,70 @@ fn a_quote_hides_its_marks_and_indents_by_its_depth(cx: &mut TestAppContext) {
         "the text keeps the bar's indent"
     );
 }
+
+#[gpui_kit::test]
+fn list_items_are_indented_and_wrap_under_their_text(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let long = "parola ".repeat(60);
+    let text = format!("testo\n- uno\n  - sotto\n- {long}");
+    editor_with(cx, &f, &text, 0);
+    let left = caret_at(cx, &f, 0).0;
+    let uno = caret_at(cx, &f, text.find("uno").unwrap()).0;
+    let sotto = caret_at(cx, &f, text.find("sotto").unwrap()).0;
+    assert!(uno > left && sotto > uno, "{left} {uno} {sotto}");
+    // The long item's second row starts under its text, not under the bullet.
+    let item = text.rfind("- ").unwrap() + 2;
+    let (x0, y0) = caret_at(cx, &f, item);
+    frame(cx, &f);
+    let carets: Vec<(f32, f32)> = app(cx, &f, |a, _, cx| {
+        let ed = a.editor().read(cx);
+        (item..=text.len())
+            .filter(|&o| text.is_char_boundary(o))
+            .map(|o| {
+                let b = ed.caret_bounds(o).unwrap();
+                (f32::from(b.origin.x), f32::from(b.origin.y))
+            })
+            .collect()
+    });
+    let y1 = carets
+        .iter()
+        .map(|c| c.1)
+        .find(|&y| y > y0)
+        .expect("the item wraps");
+    let row_left = carets
+        .iter()
+        .filter(|c| c.1 == y1)
+        .map(|c| c.0)
+        .fold(f32::MAX, f32::min);
+    assert!(
+        (row_left - x0).abs() < 1.,
+        "second row at {row_left}, text at {x0}"
+    );
+}
+
+#[gpui_kit::test]
+fn a_click_on_a_checkbox_toggles_the_task_and_keeps_the_cursor(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let text = "testo\n- [ ] da fare\n- [x] fatto";
+    editor_with(cx, &f, text, 2);
+    let left = caret_at(cx, &f, 0).0;
+    let checkbox = |cx: &mut TestAppContext, line_start: usize| {
+        frame(cx, &f);
+        let b = app(cx, &f, |a, _, cx| {
+            a.editor().read(cx).caret_bounds(line_start + 6).unwrap()
+        });
+        (left + 9., f32::from(b.origin.y + b.size.height / 2.))
+    };
+    let first = text.find("- [ ]").unwrap();
+    let at = checkbox(cx, first);
+    click(cx, &f, at, 1);
+    assert_eq!(
+        editor_state(cx, &f),
+        (text.replace("- [ ] da", "- [x] da"), 2)
+    );
+    assert_eq!(status(cx, &f), "Edited");
+    let second = text.find("- [x] fatto").unwrap();
+    let at = checkbox(cx, second);
+    click(cx, &f, at, 1);
+    assert!(editor_state(cx, &f).0.ends_with("- [ ] fatto"));
+}

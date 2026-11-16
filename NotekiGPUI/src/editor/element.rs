@@ -17,6 +17,7 @@ use crate::core::editor::display::{shown_text, to_buffer, to_display};
 use crate::core::editor::lines::{logical_lines, scroll_to_reveal, LineTops};
 use crate::core::editor::movement::prev_grapheme;
 use crate::core::editor::styling::{Decoration, LineStyle};
+use crate::core::markdown::ListKind;
 use crate::theme::NotekiPalette;
 
 use super::style::span_style;
@@ -33,6 +34,10 @@ const CARET_WIDTH: Pixels = px(2.);
 /// How far a quote's text is indented per level, its bar at the start of it.
 const QUOTE_INDENT: Pixels = px(16.);
 const QUOTE_BAR: Pixels = px(3.);
+/// A list item's text is indented by its level, plus room for its marker.
+const LIST_INDENT: Pixels = px(20.);
+const LIST_MARKER: Pixels = px(24.);
+const CHECKBOX: Pixels = px(14.);
 
 #[derive(Clone)]
 pub(super) struct LaidLine {
@@ -56,10 +61,21 @@ impl LaidLine {
     /// The position of `offset` (clamped to the line) relative to the line's top-left.
     fn position(&self, offset: usize) -> Point<Pixels> {
         let local = offset.clamp(self.range.start, self.range.end) - self.range.start;
-        let p = self
+        let shown = to_display(&self.hidden, local);
+        // Where a line wraps, the caret is at the start of the next row (GPUI
+        // gives the end of the row before), as in every macOS text view.
+        let wrapped_at = self
             .shaped
-            .position_for_index(to_display(&self.hidden, local), self.line_height)
-            .unwrap_or_else(|| point(self.shaped.width(), px(0.)));
+            .wrap_boundaries()
+            .iter()
+            .position(|b| self.shaped.runs()[b.run_ix].glyphs[b.glyph_ix].index == shown);
+        let p = match wrapped_at {
+            Some(row) => point(px(0.), self.line_height * (row + 1) as f32),
+            None => self
+                .shaped
+                .position_for_index(shown, self.line_height)
+                .unwrap_or_else(|| point(self.shaped.width(), px(0.))),
+        };
         point(p.x + self.indent, p.y)
     }
 }
@@ -137,6 +153,30 @@ impl Layout {
         };
         let local = to_buffer(&line.hidden, shown);
         (line.range.start + local).min(line.range.end)
+    }
+
+    /// The task whose checkbox is under `p`: the offset of its `[` and whether
+    /// it is checked.
+    pub(super) fn checkbox_at(&self, p: Point<Pixels>) -> Option<(usize, bool)> {
+        let rel_y = f32::from(p.y - self.origin.y);
+        if rel_y < 0. || rel_y >= self.tops.total() {
+            return None;
+        }
+        let i = self.tops.line_at(rel_y);
+        let line = &self.lines[i];
+        let Some(Decoration::List {
+            level,
+            kind: ListKind::Task { checked, bracket },
+        }) = line.decoration
+        else {
+            return None;
+        };
+        let x = self.origin.x + LIST_INDENT * f32::from(level);
+        let mid = self.origin.y + self.top_of(i) + line.line_height / 2.;
+        // A little room around the box, as small targets are hard to hit.
+        let hit = checkbox_bounds(x, mid).dilate(px(3.));
+        hit.contains(&p)
+            .then_some((line.range.start + bracket, checked))
     }
 
     /// The wrapped row holding `offset`: from its first character to its end,
@@ -325,12 +365,12 @@ fn shape(
 /// What is painted around a line's text: under it, never changing its height.
 fn paint_decoration(
     line: &LaidLine,
-    left: Pixels,
-    top: Pixels,
-    width: Pixels,
-    palette: &NotekiPalette,
+    (left, top, width): (Pixels, Pixels, Pixels),
+    input: &ShapeInput,
     window: &mut Window,
+    cx: &mut App,
 ) {
+    let palette = &input.palette;
     match line.decoration {
         Some(Decoration::Rule) => {
             let y = top + line.height() / 2.;
@@ -348,8 +388,80 @@ fn paint_decoration(
                 ));
             }
         }
+        Some(Decoration::List { level, kind }) => {
+            let x = left + LIST_INDENT * f32::from(level);
+            // Centred on the first row.
+            let mid = top + line.line_height / 2.;
+            match kind {
+                ListKind::Bullet => {
+                    let d = px(5.);
+                    window.paint_quad(
+                        fill(
+                            Bounds::new(point(x + px(8.), mid - d / 2.), size(d, d)),
+                            palette.syntax,
+                        )
+                        .corner_radii(d / 2.),
+                    );
+                }
+                ListKind::Number { n, delim } => {
+                    let label = format!("{n}{}", delim as char);
+                    let run =
+                        text_run(label.len(), &input.font, palette.syntax, Default::default());
+                    let shaped = window.text_system().shape_line(
+                        label.into(),
+                        input.font_size,
+                        &[run],
+                        None,
+                    );
+                    let at = point(x + LIST_MARKER - shaped.width() - px(6.), top);
+                    let _ = shaped.paint(at, line.line_height, TextAlign::Left, None, window, cx);
+                }
+                ListKind::Task { checked, .. } => {
+                    let b = checkbox_bounds(x, mid);
+                    let (bg, border) = if checked {
+                        (palette.accent, palette.accent)
+                    } else {
+                        (palette.background, palette.syntax)
+                    };
+                    window.paint_quad(
+                        fill(b, bg)
+                            .corner_radii(px(3.))
+                            .border_widths(px(1.5))
+                            .border_color(border),
+                    );
+                    if checked {
+                        let run = text_run(
+                            "✓".len(),
+                            &input.font,
+                            palette.background,
+                            Default::default(),
+                        );
+                        let shaped = window.text_system().shape_line(
+                            "✓".into(),
+                            CHECKBOX - px(2.),
+                            &[run],
+                            None,
+                        );
+                        let at = point(
+                            b.left() + (CHECKBOX - shaped.width()) / 2.,
+                            b.top() - px(1.),
+                        );
+                        let _ = shaped.paint(at, CHECKBOX, TextAlign::Left, None, window, cx);
+                    }
+                }
+            }
+        }
         None => {}
     }
+}
+
+/// Where a task's checkbox is drawn, for a list item at `x` whose first row's
+/// middle is at `mid`.
+fn checkbox_bounds(x: Pixels, mid: Pixels) -> Bounds<Pixels> {
+    Bounds::new(
+        point(x + px(2.), mid - CHECKBOX / 2.),
+        size(CHECKBOX, CHECKBOX),
+    )
 }
 
 fn shape_line(
@@ -368,6 +480,7 @@ fn shape_line(
     };
     let indent = match style.decoration {
         Some(Decoration::Quote { depth }) => QUOTE_INDENT * f32::from(depth),
+        Some(Decoration::List { level, .. }) => LIST_INDENT * f32::from(level) + LIST_MARKER,
         _ => px(0.),
     };
     let runs = runs_for(input, &range, style);
@@ -603,7 +716,7 @@ impl Element for EditorElement {
         _: Option<&GlobalElementId>,
         _: Option<&InspectorElementId>,
         bounds: Bounds<Pixels>,
-        _: &mut Self::RequestLayoutState,
+        input: &mut Self::RequestLayoutState,
         state: &mut PrepaintState,
         window: &mut Window,
         cx: &mut App,
@@ -646,7 +759,13 @@ impl Element for EditorElement {
             if top + line.height() < visible.top() {
                 continue;
             }
-            paint_decoration(line, layout.origin.x, top, layout.width, &palette, window);
+            paint_decoration(
+                line,
+                (layout.origin.x, top, layout.width),
+                input,
+                window,
+                cx,
+            );
             let _ = line.shaped.paint(
                 point(layout.origin.x + line.indent, top),
                 line.line_height,

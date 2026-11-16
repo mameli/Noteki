@@ -461,6 +461,18 @@ impl NoteEditor {
         let Some(layout) = &self.layout else {
             return;
         };
+        // SPEC: a click on a checkbox writes `[x]` or `[ ]` and leaves the
+        // cursor where it was.
+        if let Some((bracket, checked)) = layout.checkbox_at(ev.position) {
+            let sel = self.buf.selection();
+            let changed = self
+                .buf
+                .replace(bracket + 1..bracket + 2, if checked { " " } else { "x" });
+            self.buf.set_selection(sel.anchor, sel.head);
+            self.edited(changed, cx);
+            self.reveal = false;
+            return;
+        }
         let offset = layout.offset_for_point(self.buf.text(), ev.position);
         let unit = match ev.click_count {
             0 | 1 => ClickUnit::Char,

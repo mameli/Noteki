@@ -238,6 +238,88 @@ fn task_marker(line: &str) -> Option<(usize, bool)> {
 }
 
 /// Whether a line is a task item, and whether it is done.
+/// A list item's marks, in a line (not in a quote).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ListItem {
+    /// How deep it is nested: a tab or two spaces of indent per level.
+    pub level: u8,
+    pub kind: ListKind,
+    /// Where its text starts: after the indent, the marker, its spaces and,
+    /// for a task, its `[ ]` and the space after.
+    pub text_start: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ListKind {
+    Bullet,
+    /// `12.` or `12)`.
+    Number {
+        n: u32,
+        delim: u8,
+    },
+    /// `- [ ]` or `- [x]`; `bracket` is the offset of its `[`. A numbered item
+    /// keeps its number and its brackets as written.
+    Task {
+        checked: bool,
+        bracket: usize,
+    },
+}
+
+pub fn list_item(line: &str) -> Option<ListItem> {
+    let b = line.as_bytes();
+    let mut i = 0;
+    let mut cols = 0usize;
+    while i < b.len() && matches!(b[i], b' ' | b'\t') {
+        cols += if b[i] == b'\t' { 2 } else { 1 };
+        i += 1;
+    }
+    let level = u8::try_from(cols / 2).unwrap_or(u8::MAX);
+    let mut kind = if i < b.len() && matches!(b[i], b'-' | b'*' | b'+') {
+        i += 1;
+        ListKind::Bullet
+    } else {
+        let digits = b[i..].iter().take_while(|c| c.is_ascii_digit()).count();
+        if digits == 0
+            || digits > 9
+            || i + digits >= b.len()
+            || !matches!(b[i + digits], b'.' | b')')
+        {
+            return None;
+        }
+        let n = line[i..i + digits].parse().ok()?;
+        let delim = b[i + digits];
+        i += digits + 1;
+        ListKind::Number { n, delim }
+    };
+    // The marker is followed by a space, or ends the line (an empty item).
+    if i < b.len() && b[i] != b' ' {
+        return None;
+    }
+    while i < b.len() && b[i] == b' ' {
+        i += 1;
+    }
+    if kind == ListKind::Bullet && i + 3 <= b.len() && b[i] == b'[' && b[i + 2] == b']' {
+        let checked = match b[i + 1] {
+            b' ' => Some(false),
+            b'x' | b'X' => Some(true),
+            _ => None,
+        };
+        let after = b.get(i + 3);
+        if let (Some(checked), None | Some(b' ')) = (checked, after) {
+            kind = ListKind::Task {
+                checked,
+                bracket: i,
+            };
+            i = (i + 4).min(b.len());
+        }
+    }
+    Some(ListItem {
+        level,
+        kind,
+        text_start: i,
+    })
+}
+
 pub fn task_state(line: &str) -> Option<bool> {
     task_marker(line).map(|(_, checked)| checked)
 }
@@ -679,6 +761,17 @@ pub fn line_spans(
                         push(s..s + prefix, MdSpanKind::SyntaxMarker);
                     }
                     push(s + prefix..s + line.text.len(), kind);
+                } else if let Some(item) = list_item(line.text) {
+                    // SPEC: the bullet and brackets show while the cursor touches them.
+                    if !cursor.is_some_and(|c| c <= item.text_start) {
+                        push(s..s + item.text_start, MdSpanKind::SyntaxMarker);
+                    }
+                    if task_state(line.text) == Some(true) {
+                        push(
+                            s + item.text_start..s + line.text.len(),
+                            MdSpanKind::TaskDone,
+                        );
+                    }
                 } else if task_state(line.text) == Some(true) {
                     push(s + leading..s + line.text.len(), MdSpanKind::TaskDone);
                 }
