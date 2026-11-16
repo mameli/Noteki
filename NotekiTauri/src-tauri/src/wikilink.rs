@@ -5,6 +5,7 @@ use std::collections::{HashMap, HashSet};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Wikilink {
     pub target: String,
+    pub heading: Option<String>,
     pub alias: Option<String>,
 }
 
@@ -15,14 +16,31 @@ impl Wikilink {
             Some((left, right)) => (left, Some(right.trim().to_string())),
             None => (unescaped.as_str(), None),
         };
-        let dest = match dest_and_heading.split_once('#') {
-            Some((left, _)) => left,
-            None => dest_and_heading,
+        let (dest, heading) = match dest_and_heading.split_once('#') {
+            Some((left, right)) => (left, Some(right.trim().to_string())),
+            None => (dest_and_heading, None),
         };
         Self {
             target: dest.trim().to_string(),
-            alias,
+            heading: heading.filter(|h| !h.is_empty()),
+            alias: alias.filter(|a| !a.is_empty()),
         }
+    }
+
+    pub fn display_text(&self) -> String {
+        if let Some(alias) = &self.alias {
+            return alias.clone();
+        }
+        if self.target.is_empty() {
+            if let Some(h) = &self.heading {
+                return format!("#{h}");
+            }
+        }
+        let name = self.target.rsplit('/').next().unwrap_or(&self.target);
+        name.strip_suffix(".md")
+            .or_else(|| name.strip_suffix(".MD"))
+            .unwrap_or(name)
+            .to_string()
     }
 }
 
@@ -154,10 +172,7 @@ impl VaultIndex {
 
         near.sort_by_key(|c| c.lower_path.len());
         far.sort_by_key(|c| c.lower_path.len());
-        near.into_iter()
-            .chain(far)
-            .next()
-            .map(|c| c.item.clone())
+        near.into_iter().chain(far).next().map(|c| c.item.clone())
     }
 
     pub fn link_completions(&self, recent_paths: &[String]) -> LinkCompletions {
@@ -184,7 +199,11 @@ impl VaultIndex {
     fn completion(&self, name: &str, path: &str) -> LinkCompletion {
         let parts: Vec<&str> = path.split('/').collect();
         let file_lower = parts.last().copied().unwrap_or("").to_lowercase();
-        let candidates = self.by_name.get(&file_lower).map(|v| v.as_slice()).unwrap_or(&[]);
+        let candidates = self
+            .by_name
+            .get(&file_lower)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[]);
 
         let mut chosen = path.to_string();
         for count in 1..=parts.len() {
@@ -202,7 +221,11 @@ impl VaultIndex {
                     .count()
                     == 1;
             if unique {
-                if let Some(ResolvedItem::Note { path: resolved_path, .. }) = self.resolve(&link, None) {
+                if let Some(ResolvedItem::Note {
+                    path: resolved_path,
+                    ..
+                }) = self.resolve(&link, None)
+                {
                     if resolved_path == path {
                         chosen = link;
                         break;
@@ -267,11 +290,11 @@ fn after_last_slash(path: &str) -> &str {
     path.rsplit_once('/').map(|(_, tail)| tail).unwrap_or(path)
 }
 
-fn folder_of(path: &str) -> &str {
+pub fn folder_of(path: &str) -> &str {
     path.rsplit_once('/').map(|(dir, _)| dir).unwrap_or("")
 }
 
-fn note_name(path: &str) -> String {
+pub fn note_name(path: &str) -> String {
     let last = after_last_slash(path);
     last.strip_suffix(".md").unwrap_or(last).to_string()
 }

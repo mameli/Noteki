@@ -286,3 +286,129 @@ button:disabled {
   height: 100%;
   border: none;
 }
+
+/* Sidebar panes: Files, Search, Tags */
+.pane-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--separator);
+}
+
+.pane-tab {
+  flex: 1;
+  font: inherit;
+  font-size: 12px;
+  padding: 3px 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: none;
+  color: var(--syntax);
+  cursor: pointer;
+}
+
+.pane-tab.active {
+  color: var(--text);
+  border-color: var(--separator);
+  background: var(--background);
+}
+
+.pane {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+#search-pane {
+  display: flex;
+  flex-direction: column;
+}
+
+#search-pane.hidden {
+  display: none;
+}
+
+.search-input {
+  margin: 8px;
+  padding: 5px 8px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--background);
+  border: 1px solid var(--separator);
+  border-radius: 6px;
+}
+
+.pane-list {
+  padding: 4px 6px 8px;
+  font-size: 13px;
+}
+
+.list-row {
+  padding: 3px 8px;
+  border-radius: 5px;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.list-row:hover {
+  background: rgba(var(--accent-rgb), 0.1);
+}
+
+.list-row .count,
+.list-row .line-no {
+  color: var(--syntax);
+  font-size: 11px;
+  margin-left: 6px;
+}
+
+.list-row.sub {
+  padding-left: 18px;
+  font-size: 12px;
+  color: var(--syntax);
+}
+
+.list-row.title {
+  font-weight: 600;
+}
+
+.list-empty {
+  padding: 8px;
+  color: var(--syntax);
+  font-size: 12px;
+}
+
+/* Backlinks under the editor */
+.backlinks {
+  border-top: 1px solid var(--separator);
+  background: var(--panel);
+  max-height: 30%;
+  display: flex;
+  flex-direction: column;
+}
+
+.backlinks.hidden {
+  display: none;
+}
+
+.backlinks-header {
+  text-align: left;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 14px;
+  background: none;
+  border: none;
+  color: var(--syntax);
+  cursor: pointer;
+}
+
+.backlinks.collapsed #backlinks-list {
+  display: none;
+}
+
+#backlinks-list {
+  overflow-y: auto;
+}

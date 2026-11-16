@@ -39,7 +39,11 @@ pub fn merge_three_way(base: &str, mine: &str, theirs: &str) -> Option<String> {
     Some(merged.join("\n"))
 }
 
-fn resolve<'a>(base: &[&'a str], mine: &'a [&'a str], theirs: &'a [&'a str]) -> Option<&'a [&'a str]> {
+fn resolve<'a>(
+    base: &[&'a str],
+    mine: &'a [&'a str],
+    theirs: &'a [&'a str],
+) -> Option<&'a [&'a str]> {
     if mine == base {
         Some(theirs)
     } else if theirs == base || theirs == mine {
@@ -96,6 +100,9 @@ mod tests {
         let base = "A\nB\nC";
         let mine = "A\nX\nC";
         let theirs = "A\nX\nC";
-        assert_eq!(merge_three_way(base, mine, theirs).as_deref(), Some("A\nX\nC"));
+        assert_eq!(
+            merge_three_way(base, mine, theirs).as_deref(),
+            Some("A\nX\nC")
+        );
     }
 }

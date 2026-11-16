@@ -71,7 +71,11 @@ pub fn normalize_excluded(excluded: &[String]) -> HashSet<String> {
         .collect()
 }
 
-pub fn is_excluded_folder(folder_path_on_disk: &Path, rel_path: &str, excluded: &HashSet<String>) -> bool {
+pub fn is_excluded_folder(
+    folder_path_on_disk: &Path,
+    rel_path: &str,
+    excluded: &HashSet<String>,
+) -> bool {
     let name = folder_path_on_disk
         .file_name()
         .and_then(|n| n.to_str())
@@ -112,14 +116,20 @@ pub fn is_in_excluded_folder(root: &Path, rel_path: &str, excluded: &HashSet<Str
 }
 
 fn compare_names(a: &str, b: &str) -> std::cmp::Ordering {
-    a.to_lowercase().cmp(&b.to_lowercase()).then_with(|| a.cmp(b))
+    a.to_lowercase()
+        .cmp(&b.to_lowercase())
+        .then_with(|| a.cmp(b))
 }
 
 pub fn scan_vault(root: &Path, excluded: &HashSet<String>) -> Result<Vec<VaultItem>, String> {
     scan_dir(root, "", excluded)
 }
 
-fn scan_dir(dir: &Path, rel_prefix: &str, excluded: &HashSet<String>) -> Result<Vec<VaultItem>, String> {
+fn scan_dir(
+    dir: &Path,
+    rel_prefix: &str,
+    excluded: &HashSet<String>,
+) -> Result<Vec<VaultItem>, String> {
     let entries = fs::read_dir(dir).map_err(|e| format!("Failed to read vault folder: {e}"))?;
     let mut folders = Vec::new();
     let mut files = Vec::new();
@@ -281,7 +291,11 @@ pub fn new_note_path_for_link(
     }
 
     let mut path = comps.join("/");
-    if let Some(stripped) = path.strip_suffix(".MD").or_else(|| path.strip_suffix(".Md")).or_else(|| path.strip_suffix(".mD")) {
+    if let Some(stripped) = path
+        .strip_suffix(".MD")
+        .or_else(|| path.strip_suffix(".Md"))
+        .or_else(|| path.strip_suffix(".mD"))
+    {
         path = format!("{stripped}.md");
     } else if !path.ends_with(".md") {
         path.push_str(".md");
@@ -329,7 +343,11 @@ pub fn next_untitled_path(root: &Path, folder_rel: &str) -> String {
     }
 }
 
-pub fn relative_path_from_disk(root: &Path, abs_path: &Path, excluded: &HashSet<String>) -> Option<String> {
+pub fn relative_path_from_disk(
+    root: &Path,
+    abs_path: &Path,
+    excluded: &HashSet<String>,
+) -> Option<String> {
     let root_canon = fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
     let abs_canon = if abs_path.exists() {
         fs::canonicalize(abs_path).unwrap_or_else(|_| abs_path.to_path_buf())
@@ -365,7 +383,10 @@ mod tests {
     fn scans_notes_and_ignores_excluded() {
         let dir = std::env::temp_dir().join(format!(
             "noteki-vault-test-{}",
-            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
         ));
         fs::create_dir_all(dir.join(".obsidian")).unwrap();
         fs::create_dir_all(dir.join("node_modules/pkg")).unwrap();
@@ -394,11 +415,17 @@ mod tests {
     fn atomic_write_roundtrip() {
         let dir = std::env::temp_dir().join(format!(
             "noteki-write-test-{}",
-            SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos()
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
         ));
         fs::create_dir_all(&dir).unwrap();
         write_note_atomic(&dir, "Folder/Note.md", "Line 1\nLine 2\n").unwrap();
-        assert_eq!(read_note(&dir, "Folder/Note.md").unwrap(), "Line 1\nLine 2\n");
+        assert_eq!(
+            read_note(&dir, "Folder/Note.md").unwrap(),
+            "Line 1\nLine 2\n"
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 }

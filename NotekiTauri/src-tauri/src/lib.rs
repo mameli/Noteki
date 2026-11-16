@@ -1,202 +1,106 @@
-mod embeds;
-mod frontmatter;
-mod merge;
-mod vault;
-mod wikilink;
+//! Tauri shell: commands over [`session::Session`], the file watcher, the
+//! `noteki-file://` protocol and saving on quit. The behaviour lives in
+//! `session` and below, where it is tested without Tauri.
 
-use embeds::{resolve_embed, EmbeddedFile};
-use frontmatter::{parse_frontmatter, FrontmatterReading};
-use merge::merge_three_way;
-use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
-use serde::{Deserialize, Serialize};
-use std::collections::{HashMap, HashSet};
-use std::fs;
+pub mod document;
+pub mod embeds;
+pub mod frontmatter;
+pub mod index;
+pub mod markdown;
+pub mod merge;
+pub mod session;
+pub mod vault;
+pub mod wikilink;
+
 use std::path::{Path, PathBuf};
-use std::sync::{mpsc, Arc, Mutex};
-use std::time::{Duration, Instant};
-use tauri::{AppHandle, Emitter, Manager};
-use vault::{
-    create_empty_note, is_in_excluded_folder, new_note_path_for_link, next_untitled_path,
-    normalize_excluded, read_note, relative_path_from_disk, resolve_vault_path, scan_vault,
-    write_note_atomic, AttachmentKind, VaultItem,
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{mpsc, Arc, Mutex, MutexGuard, PoisonError};
+use std::time::Duration;
+
+use notify::{EventKind, RecommendedWatcher, RecursiveMode, Watcher};
+use tauri::{AppHandle, Emitter, Manager, RunEvent};
+
+use frontmatter::{parse_frontmatter, FrontmatterReading};
+use index::{BacklinkMatch, SearchResult, TagNode};
+use session::{
+    AppSettings, CheckLinksResult, Event, FollowLinkResult, OpenNoteResponse, Session,
+    VaultSnapshot,
 };
-use wikilink::{LinkCompletions, ResolvedItem, VaultIndex, Wikilink};
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AppSettings {
-    pub vault_path: Option<String>,
-    pub theme: String,
-    pub appearance: String,
-    pub source_mode: bool,
-    pub recent_notes: Vec<String>,
-}
-
-impl Default for AppSettings {
-    fn default() -> Self {
-        Self {
-            vault_path: None,
-            theme: "ayu".to_string(),
-            appearance: "system".to_string(),
-            source_mode: false,
-            recent_notes: Vec::new(),
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-struct OpenNoteState {
-    base: String,
-    buffer: String,
-    revision: u64,
-    conflict: bool,
-    deleted: bool,
-    last_self_write: Option<Instant>,
-}
+use wikilink::LinkCompletions;
 
 struct WatcherHandle {
     _watcher: RecommendedWatcher,
     stop_tx: mpsc::Sender<()>,
 }
 
-struct InnerState {
-    config_path: PathBuf,
-    settings: AppSettings,
-    vault_root: Option<PathBuf>,
-    excluded: HashSet<String>,
-    tree: Vec<VaultItem>,
-    index: VaultIndex,
-    open_notes: HashMap<String, OpenNoteState>,
-    watcher: Option<WatcherHandle>,
+struct Shared {
+    session: Mutex<Session>,
+    watcher: Mutex<Option<WatcherHandle>>,
+    quitting: AtomicBool,
 }
 
-type SharedState = Arc<Mutex<InnerState>>;
+type State<'a> = tauri::State<'a, Arc<Shared>>;
 
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct VaultSnapshot {
-    pub root: String,
-    pub tree: Vec<VaultItem>,
-    pub note_count: usize,
+/// A panic in one command must not poison the session for all the others.
+fn lock<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct OpenNoteResponse {
-    pub path: String,
-    pub text: String,
-    pub conflict: bool,
-    pub deleted: bool,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CheckLinksResult {
-    pub unresolved: Vec<String>,
-    pub embeds: HashMap<String, EmbeddedFile>,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
-pub enum FollowLinkResult {
-    Note { path: String, created: bool },
-    Attachment { path: String, attachment_kind: AttachmentKind },
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct NoteReloadedPayload {
-    path: String,
-    revision: u64,
-    text: String,
-    merged: bool,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct NoteConflictPayload {
-    path: String,
-    disk_text: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct NoteDeletedPayload {
-    path: String,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct VaultTreeChangedPayload {
-    tree: Vec<VaultItem>,
-    note_count: usize,
-}
-
-fn load_settings_from_disk(config_path: &Path) -> AppSettings {
-    fs::read_to_string(config_path)
-        .ok()
-        .and_then(|s| serde_json::from_str::<AppSettings>(&s).ok())
-        .unwrap_or_default()
-}
-
-fn persist_settings(config_path: &Path, settings: &AppSettings) {
-    if let Some(parent) = config_path.parent() {
-        let _ = fs::create_dir_all(parent);
-    }
-    if let Ok(json) = serde_json::to_string_pretty(settings) {
-        let _ = fs::write(config_path, json);
+fn emit_all(app: &AppHandle, events: Vec<Event>) {
+    for event in events {
+        if let Event::SaveFailed { path, error } = &event {
+            eprintln!("Noteki: could not save {path}: {error}");
+        }
+        let _ = app.emit(event.name(), &event);
     }
 }
 
-fn count_notes(tree: &[VaultItem]) -> usize {
-    tree.iter()
-        .map(|item| match item {
-            VaultItem::Folder { children, .. } => count_notes(children),
-            VaultItem::Note { .. } => 1,
-            VaultItem::Attachment { .. } => 0,
-        })
-        .sum()
-}
-
-fn start_watcher(app: AppHandle, shared: SharedState, root: PathBuf) -> Result<WatcherHandle, String> {
-    let (fs_tx, fs_rx) = mpsc::channel();
+fn start_watcher(
+    app: AppHandle,
+    shared: Arc<Shared>,
+    root: PathBuf,
+) -> Result<WatcherHandle, String> {
+    let (fs_tx, fs_rx) = mpsc::channel::<notify::Event>();
     let (stop_tx, stop_rx) = mpsc::channel::<()>();
-
-    let mut watcher = notify::recommended_watcher(move |res| {
+    let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
         if let Ok(event) = res {
             let _ = fs_tx.send(event);
         }
     })
     .map_err(|e| format!("Failed to start file watcher: {e}"))?;
-
     watcher
         .watch(&root, RecursiveMode::Recursive)
         .map_err(|e| format!("Failed to watch vault: {e}"))?;
 
-    std::thread::spawn(move || {
-        loop {
-            if stop_rx.try_recv().is_ok() {
-                break;
-            }
-            let first = match fs_rx.recv_timeout(Duration::from_millis(250)) {
-                Ok(ev) => ev,
-                Err(mpsc::RecvTimeoutError::Timeout) => continue,
-                Err(mpsc::RecvTimeoutError::Disconnected) => break,
-            };
-
-            // Coalesce burst events from atomic saves / external editors.
-            let mut batch = vec![first];
-            std::thread::sleep(Duration::from_millis(80));
-            while let Ok(ev) = fs_rx.try_recv() {
-                batch.push(ev);
-            }
-
-            if stop_rx.try_recv().is_ok() {
-                break;
-            }
-
-            process_fs_batch(&app, &shared, &root, &batch);
+    std::thread::spawn(move || loop {
+        if stop_rx.try_recv().is_ok() {
+            break;
         }
+        let first = match fs_rx.recv_timeout(Duration::from_millis(250)) {
+            Ok(ev) => ev,
+            Err(mpsc::RecvTimeoutError::Timeout) => continue,
+            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+        };
+        // Coalesce a burst (an atomic save is several events) into one batch.
+        let mut batch = vec![first];
+        std::thread::sleep(Duration::from_millis(120));
+        batch.extend(fs_rx.try_iter());
+        if stop_rx.try_recv().is_ok() {
+            break;
+        }
+        let paths: Vec<PathBuf> = batch
+            .into_iter()
+            .filter(|e| !matches!(e.kind, EventKind::Access(_)))
+            .flat_map(|e| e.paths)
+            .collect();
+        let events = {
+            let mut session = lock(&shared.session);
+            if session.vault().map(|v| v.root.as_path()) != Some(root.as_path()) {
+                break;
+            }
+            session.fs_changed(&paths)
+        };
+        emit_all(&app, events);
     });
 
     Ok(WatcherHandle {
@@ -205,435 +109,112 @@ fn start_watcher(app: AppHandle, shared: SharedState, root: PathBuf) -> Result<W
     })
 }
 
-fn process_fs_batch(
-    app: &AppHandle,
-    shared: &SharedState,
-    root: &Path,
-    batch: &[notify::Event],
-) {
-    let mut touched_paths: HashSet<String> = HashSet::new();
-    let mut tree_dirty = false;
-
-    let excluded = {
-        let state = shared.lock().unwrap();
-        if state.vault_root.as_deref() != Some(root) {
-            return;
-        }
-        state.excluded.clone()
-    };
-
-    for event in batch {
-        if matches!(event.kind, EventKind::Access(_)) {
-            continue;
-        }
-        for path in &event.paths {
-            // Skip temporary write files created by Noteki itself.
-            if path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .is_some_and(|n| n.ends_with(".noteki.tmp"))
-            {
-                continue;
-            }
-            if let Some(rel) = relative_path_from_disk(root, path, &excluded) {
-                if !matches!(event.kind, EventKind::Modify(notify::event::ModifyKind::Data(_))) {
-                    tree_dirty = true;
-                }
-                if rel.ends_with(".md") {
-                    touched_paths.insert(rel);
-                }
-            }
-        }
-    }
-
-    let mut reloaded_events = Vec::new();
-    let mut conflict_events = Vec::new();
-    let mut deleted_events = Vec::new();
-    let mut tree_event: Option<VaultTreeChangedPayload> = None;
-
-    {
-        let mut state = shared.lock().unwrap();
-        if state.vault_root.as_deref() != Some(root) {
-            return;
-        }
-
-        if tree_dirty {
-            if let Ok(new_tree) = scan_vault(root, &state.excluded) {
-                if new_tree != state.tree {
-                    state.index = VaultIndex::from_tree(&new_tree);
-                    let note_count = count_notes(&new_tree);
-                    state.tree = new_tree.clone();
-                    tree_event = Some(VaultTreeChangedPayload {
-                        tree: new_tree,
-                        note_count,
-                    });
-                }
-            }
-        }
-
-        let watched_open: Vec<String> = touched_paths
-            .iter()
-            .filter(|p| state.open_notes.contains_key(*p))
-            .cloned()
-            .collect();
-
-        for rel in watched_open {
-            let abs = root.join(&rel);
-            let exists = abs.exists();
-            let note = state.open_notes.get_mut(&rel).unwrap();
-
-            if !exists {
-                if !note.deleted {
-                    note.deleted = true;
-                    deleted_events.push(NoteDeletedPayload { path: rel });
-                }
-                continue;
-            }
-
-            let Ok(disk_text) = fs::read_to_string(&abs) else {
-                continue;
-            };
-
-            if note.last_self_write.is_some_and(|t| t.elapsed() < Duration::from_secs(2))
-                && disk_text == note.base
-            {
-                continue;
-            }
-
-            if disk_text == note.base && !note.deleted {
-                continue;
-            }
-            note.deleted = false;
-
-            if note.conflict {
-                continue;
-            }
-
-            if note.buffer == note.base {
-                note.base = disk_text.clone();
-                note.buffer = disk_text.clone();
-                reloaded_events.push(NoteReloadedPayload {
-                    path: rel,
-                    revision: note.revision,
-                    text: disk_text,
-                    merged: false,
-                });
-            } else if let Some(merged) = merge_three_way(&note.base, &note.buffer, &disk_text) {
-                if write_note_atomic(root, &rel, &merged).is_ok() {
-                    note.base = merged.clone();
-                    note.buffer = merged.clone();
-                    note.last_self_write = Some(Instant::now());
-                    reloaded_events.push(NoteReloadedPayload {
-                        path: rel,
-                        revision: note.revision,
-                        text: merged,
-                        merged: true,
-                    });
-                }
-            } else {
-                note.conflict = true;
-                conflict_events.push(NoteConflictPayload {
-                    path: rel,
-                    disk_text,
-                });
-            }
-        }
-    }
-
-    if let Some(payload) = tree_event {
-        let _ = app.emit("vault-tree-changed", payload);
-    }
-    for payload in reloaded_events {
-        let _ = app.emit("note-reloaded", payload);
-    }
-    for payload in conflict_events {
-        let _ = app.emit("note-conflict", payload);
-    }
-    for payload in deleted_events {
-        let _ = app.emit("note-deleted", payload);
-    }
+#[tauri::command]
+fn get_settings(state: State) -> AppSettings {
+    lock(&state.session).settings.clone()
 }
 
 #[tauri::command]
-fn get_settings(state: tauri::State<SharedState>) -> AppSettings {
-    state.lock().unwrap().settings.clone()
+fn save_settings(state: State, settings: AppSettings) -> Result<(), String> {
+    lock(&state.session).save_settings(settings)
 }
 
 #[tauri::command]
-fn save_settings(state: tauri::State<SharedState>, settings: AppSettings) {
-    let mut inner = state.lock().unwrap();
-    inner.settings = settings.clone();
-    persist_settings(&inner.config_path, &settings);
-}
-
-#[tauri::command]
-fn open_vault(
-    app: AppHandle,
-    state: tauri::State<SharedState>,
-    path: String,
-) -> Result<VaultSnapshot, String> {
-    let root = PathBuf::from(&path);
-    if !root.is_dir() {
-        return Err(format!("Vault folder does not exist: {path}"));
+fn open_vault(app: AppHandle, state: State, path: String) -> Result<VaultSnapshot, String> {
+    let (snapshot, events) = lock(&state.session).open_vault(Path::new(&path))?;
+    emit_all(&app, events);
+    if let Some(old) = lock(&state.watcher).take() {
+        let _ = old.stop_tx.send(());
     }
-    let root = fs::canonicalize(&root).unwrap_or(root);
-    let excluded = normalize_excluded(&[]);
-    let tree = scan_vault(&root, &excluded)?;
-    let note_count = count_notes(&tree);
-    let index = VaultIndex::from_tree(&tree);
-
-    {
-        let mut inner = state.lock().unwrap();
-        if let Some(old_watcher) = inner.watcher.take() {
-            let _ = old_watcher.stop_tx.send(());
-        }
-        inner.vault_root = Some(root.clone());
-        inner.excluded = excluded;
-        inner.tree = tree.clone();
-        inner.index = index;
-        inner.open_notes.clear();
-        inner.settings.vault_path = Some(root.to_string_lossy().to_string());
-        persist_settings(&inner.config_path, &inner.settings);
-    }
-
-    let watcher = start_watcher(app, state.inner().clone(), root.clone())?;
-    state.lock().unwrap().watcher = Some(watcher);
-
-    Ok(VaultSnapshot {
-        root: root.to_string_lossy().to_string(),
-        tree,
-        note_count,
-    })
+    let watcher = start_watcher(app, state.inner().clone(), PathBuf::from(&snapshot.root))?;
+    *lock(&state.watcher) = Some(watcher);
+    Ok(snapshot)
 }
 
 #[tauri::command]
-fn open_note(state: tauri::State<SharedState>, path: String) -> Result<OpenNoteResponse, String> {
-    let mut inner = state.lock().unwrap();
-    let root = inner
-        .vault_root
-        .clone()
-        .ok_or_else(|| "No vault is open".to_string())?;
-    let text = read_note(&root, &path)?;
-
-    let existing = inner.open_notes.get(&path).cloned();
-    let (conflict, deleted) = match existing {
-        Some(n) if n.conflict => (true, n.deleted),
-        _ => {
-            inner.open_notes.insert(
-                path.clone(),
-                OpenNoteState {
-                    base: text.clone(),
-                    buffer: text.clone(),
-                    revision: 0,
-                    conflict: false,
-                    deleted: false,
-                    last_self_write: None,
-                },
-            );
-            (false, false)
-        }
-    };
-
-    inner.settings.recent_notes.retain(|p| p != &path);
-    inner.settings.recent_notes.insert(0, path.clone());
-    inner.settings.recent_notes.truncate(30);
-    persist_settings(&inner.config_path, &inner.settings);
-
-    Ok(OpenNoteResponse {
-        path,
-        text,
-        conflict,
-        deleted,
-    })
+fn open_note(state: State, path: String) -> Result<OpenNoteResponse, String> {
+    lock(&state.session).open_note(&path)
 }
 
 #[tauri::command]
-fn update_note_buffer(
-    state: tauri::State<SharedState>,
-    path: String,
-    revision: u64,
-    text: String,
-) {
-    let mut inner = state.lock().unwrap();
-    if let Some(note) = inner.open_notes.get_mut(&path) {
-        note.revision = revision;
-        note.buffer = text;
-    }
+fn update_note_buffer(state: State, path: String, revision: u64, text: String) {
+    lock(&state.session).update_buffer(&path, revision, &text);
+}
+
+/// Saves the text last reported with `update_note_buffer`.
+#[tauri::command]
+fn save_note(state: State, path: String) -> Result<bool, String> {
+    lock(&state.session).save_note(&path)
 }
 
 #[tauri::command]
-fn save_note(
-    state: tauri::State<SharedState>,
-    path: String,
-    text: String,
-) -> Result<bool, String> {
-    let mut inner = state.lock().unwrap();
-    let root = inner
-        .vault_root
-        .clone()
-        .ok_or_else(|| "No vault is open".to_string())?;
-
-    if let Some(note) = inner.open_notes.get(&path) {
-        if note.conflict {
-            return Ok(false);
-        }
-        if note.base == text && !note.deleted && resolve_vault_path(&root, &path).is_ok_and(|p| p.exists()) {
-            return Ok(true);
-        }
-    }
-
-    write_note_atomic(&root, &path, &text)?;
-    let entry = inner.open_notes.entry(path).or_insert_with(|| OpenNoteState {
-        base: text.clone(),
-        buffer: text.clone(),
-        revision: 0,
-        conflict: false,
-        deleted: false,
-        last_self_write: None,
-    });
-    entry.base = text.clone();
-    entry.buffer = text;
-    entry.deleted = false;
-    entry.last_self_write = Some(Instant::now());
-    Ok(true)
+fn resolve_conflict(state: State, path: String, choice: String) -> Result<String, String> {
+    lock(&state.session).resolve_conflict(&path, &choice)
 }
 
 #[tauri::command]
-fn resolve_conflict(
-    state: tauri::State<SharedState>,
-    path: String,
-    choice: String,
-    current_text: String,
-) -> Result<String, String> {
-    let mut inner = state.lock().unwrap();
-    let root = inner
-        .vault_root
-        .clone()
-        .ok_or_else(|| "No vault is open".to_string())?;
+fn save_again(state: State, path: String) -> Result<(), String> {
+    lock(&state.session).save_again(&path)
+}
 
-    let final_text = match choice.as_str() {
-        "keep_mine" => {
-            write_note_atomic(&root, &path, &current_text)?;
-            current_text
-        }
-        "take_theirs" => read_note(&root, &path)?,
-        _ => return Err("Unknown conflict choice".to_string()),
-    };
-
-    if let Some(note) = inner.open_notes.get_mut(&path) {
-        note.base = final_text.clone();
-        note.buffer = final_text.clone();
-        note.conflict = false;
-        note.deleted = false;
-        note.last_self_write = Some(Instant::now());
-    }
-    Ok(final_text)
+/// The editor refused a `note-reloaded` because the user typed meanwhile.
+#[tauri::command]
+fn reload_rejected(app: AppHandle, state: State, path: String) {
+    let events = lock(&state.session).reload_rejected(&path);
+    emit_all(&app, events);
 }
 
 #[tauri::command]
-fn create_new_note(
-    state: tauri::State<SharedState>,
-    folder_rel: String,
-) -> Result<(String, VaultSnapshot), String> {
-    let mut inner = state.lock().unwrap();
-    let root = inner
-        .vault_root
-        .clone()
-        .ok_or_else(|| "No vault is open".to_string())?;
-    let rel_path = next_untitled_path(&root, &folder_rel);
-    create_empty_note(&root, &rel_path)?;
-
-    let tree = scan_vault(&root, &inner.excluded)?;
-    let note_count = count_notes(&tree);
-    inner.index = VaultIndex::from_tree(&tree);
-    inner.tree = tree.clone();
-    Ok((
-        rel_path,
-        VaultSnapshot {
-            root: root.to_string_lossy().to_string(),
-            tree,
-            note_count,
-        },
-    ))
+fn create_new_note(state: State, folder_rel: String) -> Result<(String, VaultSnapshot), String> {
+    lock(&state.session).create_new_note(&folder_rel)
 }
 
 #[tauri::command]
-fn check_links(
-    state: tauri::State<SharedState>,
-    note_path: String,
-    inners: Vec<String>,
-) -> CheckLinksResult {
-    let inner = state.lock().unwrap();
-    let Some(root) = inner.vault_root.as_deref() else {
-        return CheckLinksResult {
-            unresolved: Vec::new(),
-            embeds: HashMap::new(),
-        };
-    };
-
-    let mut unresolved = Vec::new();
-    let mut embeds = HashMap::new();
-    for raw in inners {
-        let link = Wikilink::parse(&raw);
-        if inner.index.resolve(&link.target, Some(&note_path)).is_none() {
-            unresolved.push(raw.clone());
-        } else if let Some(file) = resolve_embed(root, &raw, Some(&note_path), &inner.index) {
-            embeds.insert(raw, file);
-        }
-    }
-    CheckLinksResult { unresolved, embeds }
+fn check_links(state: State, note_path: String, inners: Vec<String>) -> CheckLinksResult {
+    lock(&state.session).check_links(&note_path, inners)
 }
 
 #[tauri::command]
 fn follow_link(
-    state: tauri::State<SharedState>,
+    state: State,
     source_path: String,
     inner_text: String,
 ) -> Result<FollowLinkResult, String> {
-    let mut inner = state.lock().unwrap();
-    let root = inner
-        .vault_root
-        .clone()
-        .ok_or_else(|| "No vault is open".to_string())?;
-    let parsed = Wikilink::parse(&inner_text);
-
-    if let Some(resolved) = inner.index.resolve(&parsed.target, Some(&source_path)) {
-        return Ok(match resolved {
-            ResolvedItem::Note { path, .. } => FollowLinkResult::Note {
-                path,
-                created: false,
-            },
-            ResolvedItem::Attachment {
-                path,
-                attachment_kind,
-                ..
-            } => FollowLinkResult::Attachment {
-                path,
-                attachment_kind,
-            },
-        });
-    }
-
-    let new_path = new_note_path_for_link(&root, &parsed.target, Some(&source_path), &inner.excluded)?;
-    create_empty_note(&root, &new_path)?;
-    let tree = scan_vault(&root, &inner.excluded)?;
-    inner.index = VaultIndex::from_tree(&tree);
-    inner.tree = tree;
-    Ok(FollowLinkResult::Note {
-        path: new_path,
-        created: true,
-    })
+    lock(&state.session).follow_link(&source_path, &inner_text)
 }
 
 #[tauri::command]
-fn complete_link(state: tauri::State<SharedState>) -> LinkCompletions {
-    let inner = state.lock().unwrap();
-    inner.index.link_completions(&inner.settings.recent_notes)
+fn complete_link(state: State) -> LinkCompletions {
+    lock(&state.session).complete_link()
 }
 
 #[tauri::command]
 fn read_frontmatter(text: String) -> Option<FrontmatterReading> {
     parse_frontmatter(&text)
+}
+
+#[tauri::command]
+fn search(state: State, query: String) -> Vec<SearchResult> {
+    lock(&state.session).search(&query)
+}
+
+#[tauri::command]
+fn backlinks(state: State, path: String) -> Vec<BacklinkMatch> {
+    lock(&state.session).backlinks(&path)
+}
+
+#[tauri::command]
+fn tags(state: State) -> Vec<TagNode> {
+    lock(&state.session).tags()
+}
+
+/// The window flushed the editor after `app-will-quit`: save and leave.
+#[tauri::command]
+fn quit_app(app: AppHandle, state: State) {
+    let events = lock(&state.session).flush_all();
+    emit_all(&app, events);
+    state.quitting.store(true, Ordering::SeqCst);
+    app.exit(0);
 }
 
 fn mime_for_path(path: &Path) -> &'static str {
@@ -654,69 +235,58 @@ fn mime_for_path(path: &Path) -> &'static str {
     }
 }
 
+/// Preferences file: `NOTEKI_SETTINGS` (smoke tests) or the app's config folder.
+fn settings_path(app: &tauri::App) -> PathBuf {
+    if let Some(p) = std::env::var_os("NOTEKI_SETTINGS") {
+        return PathBuf::from(p);
+    }
+    app.path()
+        .app_config_dir()
+        .unwrap_or_else(|_| std::env::temp_dir().join("noteki-tauri"))
+        .join("settings.json")
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .register_uri_scheme_protocol("noteki-file", |ctx, request| {
-            let empty_404 = || {
+            let not_found = || {
                 tauri::http::Response::builder()
                     .status(404)
                     .body(Vec::new())
                     .unwrap()
             };
-
-            let state = ctx.app_handle().state::<SharedState>();
-            let (root, excluded) = {
-                let inner = state.lock().unwrap();
-                let Some(root) = inner.vault_root.clone() else {
-                    return empty_404();
-                };
-                (root, inner.excluded.clone())
-            };
-
-            let raw_path = request.uri().path().trim_start_matches('/');
-            let raw_path = raw_path.strip_prefix("vault/").unwrap_or(raw_path);
-            let decoded = urlencoding::decode(raw_path)
+            let shared = ctx.app_handle().state::<Arc<Shared>>();
+            let raw = request.uri().path().trim_start_matches('/');
+            let raw = raw.strip_prefix("vault/").unwrap_or(raw);
+            let rel = urlencoding::decode(raw)
                 .map(|c| c.into_owned())
-                .unwrap_or_else(|_| raw_path.to_string());
-
-            if is_in_excluded_folder(&root, &decoded, &excluded) {
-                return empty_404();
+                .unwrap_or_else(|_| raw.to_string());
+            let abs = lock(&shared.session)
+                .vault()
+                .and_then(|v| v.file_path(&rel));
+            match abs.and_then(|abs| std::fs::read(&abs).ok().map(|bytes| (abs, bytes))) {
+                Some((abs, bytes)) => tauri::http::Response::builder()
+                    .status(200)
+                    .header("Content-Type", mime_for_path(&abs))
+                    .body(bytes)
+                    .unwrap(),
+                None => not_found(),
             }
-            let Ok(abs) = resolve_vault_path(&root, &decoded) else {
-                return empty_404();
-            };
-            let Ok(bytes) = fs::read(&abs) else {
-                return empty_404();
-            };
-            tauri::http::Response::builder()
-                .status(200)
-                .header("Content-Type", mime_for_path(&abs))
-                .body(bytes)
-                .unwrap()
         })
         .setup(|app| {
-            let config_dir = app
-                .path()
-                .app_config_dir()
-                .unwrap_or_else(|_| std::env::temp_dir().join("noteki-tauri"));
-            let config_path = config_dir.join("settings.json");
-            let settings = load_settings_from_disk(&config_path);
-
-            let shared: SharedState = Arc::new(Mutex::new(InnerState {
-                config_path,
-                settings,
-                vault_root: None,
-                excluded: HashSet::new(),
-                tree: Vec::new(),
-                index: VaultIndex::default(),
-                open_notes: HashMap::new(),
-                watcher: None,
+            let mut session = Session::new(Some(settings_path(app)));
+            if let Some(vault) = std::env::var_os("NOTEKI_VAULT") {
+                session.settings.vault_path =
+                    Some(PathBuf::from(vault).to_string_lossy().to_string());
+            }
+            app.manage(Arc::new(Shared {
+                session: Mutex::new(session),
+                watcher: Mutex::new(None),
+                quitting: AtomicBool::new(false),
             }));
-
-            app.manage(shared);
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -727,12 +297,59 @@ pub fn run() {
             update_note_buffer,
             save_note,
             resolve_conflict,
+            save_again,
+            reload_rejected,
             create_new_note,
             check_links,
             follow_link,
             complete_link,
             read_frontmatter,
+            search,
+            backlinks,
+            tags,
+            quit_app,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building the Noteki app");
+
+    app.run(|app, event| {
+        if let RunEvent::ExitRequested { api, code, .. } = event {
+            let shared = app.state::<Arc<Shared>>();
+            let window_open = !app.webview_windows().is_empty();
+            if code.is_none() && window_open && !shared.quitting.swap(true, Ordering::SeqCst) {
+                // ⌘Q with the window open: the editor may hold up to 250 ms of
+                // unreported typing. Let the window flush it, then `quit_app`.
+                api.prevent_exit();
+                let _ = app.emit("app-will-quit", ());
+                let app = app.clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(Duration::from_secs(2));
+                    let shared = app.state::<Arc<Shared>>();
+                    let _ = lock(&shared.session).flush_all();
+                    app.exit(0);
+                });
+            } else {
+                // Whatever the window did not flush is in the session already.
+                let _ = lock(&shared.session).flush_all();
+            }
+        }
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_panic_while_holding_the_session_does_not_lock_the_app_out() {
+        let m = Arc::new(Mutex::new(Session::new(None)));
+        let m2 = m.clone();
+        let _ = std::thread::spawn(move || {
+            let _guard = m2.lock().unwrap();
+            panic!("a command panicked");
+        })
+        .join();
+        assert!(m.is_poisoned());
+        assert!(lock(&m).search("x").is_empty(), "later commands still work");
+    }
 }

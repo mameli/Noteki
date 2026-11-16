@@ -18,7 +18,17 @@
           <button id="btn-new-note" class="action-btn" title="New Note (Cmd/Ctrl+N)" disabled>+ New Note</button>
         </div>
       </div>
-      <div id="file-tree" class="file-tree" role="tree"></div>
+      <div class="pane-tabs" role="tablist">
+        <button id="tab-files" class="pane-tab active" role="tab" data-pane="files">Files</button>
+        <button id="tab-search" class="pane-tab" role="tab" data-pane="search" title="Search (Cmd/Ctrl+Shift+F)">Search</button>
+        <button id="tab-tags" class="pane-tab" role="tab" data-pane="tags">Tags</button>
+      </div>
+      <div id="file-tree" class="file-tree pane" role="tree"></div>
+      <div id="search-pane" class="pane hidden">
+        <input id="search-input" class="search-input" type="search" placeholder="Words, &quot;a phrase&quot;, tag:work, path:Daily" />
+        <div id="search-results" class="pane-list"></div>
+      </div>
+      <div id="tags-pane" class="pane pane-list hidden"></div>
       <div id="sidebar-footer" class="sidebar-footer">0 notes</div>
     </aside>
 
@@ -60,6 +70,10 @@
         <div id="attachment-view" class="attachment-view hidden"></div>
         <div id="editor" class="editor-host hidden"></div>
       </main>
+      <section id="backlinks" class="backlinks hidden">
+        <button id="backlinks-toggle" class="backlinks-header">Backlinks</button>
+        <div id="backlinks-list" class="pane-list"></div>
+      </section>
     </div>
   </div>
   <script type="module" src="app.js"></script>

@@ -44,6 +44,29 @@ interface CheckLinksResult {
   embeds: Record<string, EmbeddedFile>;
 }
 
+interface SearchResult {
+  path: string;
+  name: string;
+  nameMatched: boolean;
+  lines: { line: number; text: string }[];
+  totalLineMatches: number;
+}
+
+interface TagNode {
+  fullLower: string;
+  label: string;
+  count: number;
+  notePaths: string[];
+  children: TagNode[];
+}
+
+interface BacklinkMatch {
+  sourcePath: string;
+  sourceName: string;
+  line: number;
+  snippet: string;
+}
+
 type FollowLinkResult =
   | { kind: "note"; path: string; created: boolean }
   | { kind: "attachment"; path: string; attachmentKind: "image" | "pdf" };
@@ -60,6 +83,14 @@ const bannerActionsEl = document.getElementById("banner-actions")!;
 const emptyStateEl = document.getElementById("empty-state")!;
 const attachmentViewEl = document.getElementById("attachment-view")!;
 const editorEl = document.getElementById("editor")!;
+const searchPaneEl = document.getElementById("search-pane")!;
+const searchInputEl = document.getElementById("search-input") as HTMLInputElement;
+const searchResultsEl = document.getElementById("search-results")!;
+const tagsPaneEl = document.getElementById("tags-pane")!;
+const backlinksEl = document.getElementById("backlinks")!;
+const backlinksToggleEl = document.getElementById("backlinks-toggle") as HTMLButtonElement;
+const backlinksListEl = document.getElementById("backlinks-list")!;
+const paneTabs = Array.from(document.querySelectorAll<HTMLButtonElement>(".pane-tab"));
 
 const btnOpenVault = document.getElementById("btn-open-vault") as HTMLButtonElement;
 const btnEmptyOpen = document.getElementById("btn-empty-open") as HTMLButtonElement;
@@ -87,6 +118,8 @@ let activeText = "";
 let conflictNotes = new Set<string>();
 let deletedNotes = new Set<string>();
 let saveTimer: ReturnType<typeof setTimeout> | undefined;
+let searchTimer: ReturnType<typeof setTimeout> | undefined;
+let activePane: "files" | "search" | "tags" = "files";
 let editorReady = false;
 
 function sendToEditor(cmd: EditorCommand) {
@@ -206,11 +239,7 @@ function updateBanner() {
     keepMine.textContent = "Keep mine";
     keepMine.addEventListener("click", async () => {
       await flushEditor();
-      const resolved = await invoke<string>("resolve_conflict", {
-        path: notePath,
-        choice: "keep_mine",
-        currentText: activeText,
-      });
+      const resolved = await invoke<string>("resolve_conflict", { path: notePath, choice: "keep_mine" });
       conflictNotes.delete(notePath);
       activeText = resolved;
       saveStatusEl.textContent = "Saved";
@@ -221,11 +250,8 @@ function updateBanner() {
     takeTheirs.className = "icon-btn";
     takeTheirs.textContent = "Take theirs";
     takeTheirs.addEventListener("click", async () => {
-      const resolved = await invoke<string>("resolve_conflict", {
-        path: notePath,
-        choice: "take_theirs",
-        currentText: activeText,
-      });
+      await flushEditor();
+      const resolved = await invoke<string>("resolve_conflict", { path: notePath, choice: "take_theirs" });
       conflictNotes.delete(notePath);
       activeText = resolved;
       sendToEditor({ type: "load", noteID: notePath, text: resolved });
@@ -246,9 +272,9 @@ function updateBanner() {
     saveAgain.className = "icon-btn";
     saveAgain.textContent = "Save again";
     saveAgain.addEventListener("click", async () => {
-      await flushEditor();
-      await invoke("save_note", { path: notePath, text: activeText });
       deletedNotes.delete(notePath);
+      await flushEditor();
+      await invoke("save_again", { path: notePath });
       saveStatusEl.textContent = "Saved";
       updateBanner();
     });
@@ -273,18 +299,22 @@ async function flushEditor() {
     const msg = JSON.parse(raw) as Extract<EditorMessage, { type: "changed" }>;
     if (msg.noteID === activePath) activeText = msg.text;
     await invoke("update_note_buffer", { path: msg.noteID, revision: msg.revision, text: msg.text });
-    await saveNow(msg.noteID, msg.text);
-  } else if (activePath && activeKind === "note" && !conflictNotes.has(activePath) && !deletedNotes.has(activePath)) {
-    await saveNow(activePath, activeText);
+    await saveNow(msg.noteID);
+  } else if (activePath && activeKind === "note") {
+    await saveNow(activePath);
   }
 }
 
-async function saveNow(path: string, text: string) {
+/** Saves the text last reported to the backend (it refuses during a conflict or a deletion). */
+async function saveNow(path: string) {
   if (conflictNotes.has(path) || deletedNotes.has(path)) return;
   try {
-    const saved = await invoke<boolean>("save_note", { path, text });
+    const saved = await invoke<boolean>("save_note", { path });
     if (path === activePath && saved) {
       saveStatusEl.textContent = "Saved";
+      void refreshBacklinks();
+      if (activePane === "tags") void renderTags();
+      if (activePane === "search") void runSearch();
     }
   } catch (err) {
     if (path === activePath) saveStatusEl.textContent = "Save failed";
@@ -312,6 +342,8 @@ async function openVault(path: string) {
   sendToEditor({ type: "clear" });
   renderTree();
   updateBanner();
+  backlinksEl.classList.add("hidden");
+  if (activePane === "tags") void renderTags();
 
   const first = firstNote(tree);
   if (first) await openNote(first);
@@ -351,6 +383,7 @@ async function openNote(path: string, line?: number) {
   if (editorReady) {
     sendToEditor({ type: "load", noteID: resp.path, text: resp.text, line });
   }
+  void refreshBacklinks();
 }
 
 async function openAttachment(path: string, kind: "image" | "pdf") {
@@ -363,6 +396,7 @@ async function openAttachment(path: string, kind: "image" | "pdf") {
   activeNotePathEl.textContent = path;
   saveStatusEl.textContent = "";
   showPane("attachment");
+  backlinksEl.classList.add("hidden");
   renderTree();
   updateBanner();
 
@@ -416,7 +450,7 @@ setEditorMessageHandler((msg) => {
       void invoke("update_note_buffer", { path: msg.noteID, revision: msg.revision, text: msg.text });
       clearTimeout(saveTimer);
       saveTimer = setTimeout(() => {
-        void saveNow(msg.noteID, msg.text);
+        void saveNow(msg.noteID);
       }, 900);
       break;
     }
@@ -505,36 +539,190 @@ window.addEventListener("keydown", (event) => {
   } else if (mod && event.key.toLowerCase() === "n" && !event.shiftKey) {
     event.preventDefault();
     void createNote();
+  } else if (mod && event.shiftKey && event.key.toLowerCase() === "f") {
+    event.preventDefault();
+    showSidebarPane("search");
   } else if (mod && event.shiftKey && event.key.toLowerCase() === "s") {
     event.preventDefault();
     sidebarEl.classList.toggle("collapsed");
   }
 });
 
-window.addEventListener("beforeunload", () => {
-  void flushEditor();
+// ---- Search, Tags, Backlinks ----
+
+function showSidebarPane(pane: "files" | "search" | "tags") {
+  activePane = pane;
+  for (const tab of paneTabs) tab.classList.toggle("active", tab.dataset.pane === pane);
+  fileTreeEl.classList.toggle("hidden", pane !== "files");
+  searchPaneEl.classList.toggle("hidden", pane !== "search");
+  tagsPaneEl.classList.toggle("hidden", pane !== "tags");
+  sidebarEl.classList.remove("collapsed");
+  if (pane === "search") {
+    searchInputEl.focus();
+    searchInputEl.select();
+  }
+  if (pane === "tags") void renderTags();
+}
+
+function row(className: string, text: string, onClick: () => void, extra?: string): HTMLElement {
+  const el = document.createElement("div");
+  el.className = `list-row ${className}`;
+  el.textContent = text;
+  if (extra) {
+    const span = document.createElement("span");
+    span.className = className === "sub" ? "line-no" : "count";
+    span.textContent = extra;
+    className === "sub" ? el.prepend(span) : el.append(span);
+  }
+  el.addEventListener("click", onClick);
+  return el;
+}
+
+function empty(text: string): HTMLElement {
+  const el = document.createElement("div");
+  el.className = "list-empty";
+  el.textContent = text;
+  return el;
+}
+
+async function runSearch() {
+  const query = searchInputEl.value;
+  if (!vaultRoot || !query.trim()) {
+    searchResultsEl.replaceChildren(empty("Words, \"a phrase\", tag:work, path:Daily"));
+    return;
+  }
+  const results = await invoke<SearchResult[]>("search", { query });
+  if (query !== searchInputEl.value) return; // typed on meanwhile
+  const items: HTMLElement[] = [];
+  for (const r of results) {
+    items.push(row("title", r.name, () => void openNote(r.path), String(r.totalLineMatches || "")));
+    for (const l of r.lines) items.push(row("sub", l.text, () => void openNote(r.path, l.line), String(l.line)));
+  }
+  searchResultsEl.replaceChildren(...(items.length ? items : [empty("No results")]));
+}
+
+async function renderTags() {
+  if (!vaultRoot) {
+    tagsPaneEl.replaceChildren(empty("No vault"));
+    return;
+  }
+  const tags = await invoke<TagNode[]>("tags");
+  const items: HTMLElement[] = [];
+  const add = (nodes: TagNode[], depth: number) => {
+    for (const t of nodes) {
+      const el = row("", `#${t.label}`, () => {
+        searchInputEl.value = `tag:${t.fullLower}`;
+        showSidebarPane("search");
+        void runSearch();
+      }, String(t.count));
+      el.style.paddingLeft = `${8 + depth * 14}px`;
+      items.push(el);
+      add(t.children, depth + 1);
+    }
+  };
+  add(tags, 0);
+  tagsPaneEl.replaceChildren(...(items.length ? items : [empty("No tags")]));
+}
+
+async function refreshBacklinks() {
+  if (!activePath || activeKind !== "note") {
+    backlinksEl.classList.add("hidden");
+    return;
+  }
+  const path = activePath;
+  const links = await invoke<BacklinkMatch[]>("backlinks", { path });
+  if (path !== activePath) return;
+  backlinksEl.classList.remove("hidden");
+  backlinksToggleEl.textContent = links.length ? `Backlinks (${links.length})` : "No backlinks";
+  backlinksListEl.replaceChildren(
+    ...links.map((b) => {
+      const el = row("", b.sourceName, () => void openNote(b.sourcePath, b.line));
+      el.title = b.snippet;
+      const snippet = document.createElement("span");
+      snippet.className = "count";
+      snippet.textContent = b.snippet;
+      el.append(snippet);
+      return el;
+    }),
+  );
+}
+
+for (const tab of paneTabs) {
+  tab.addEventListener("click", () => showSidebarPane(tab.dataset.pane as "files" | "search" | "tags"));
+}
+searchInputEl.addEventListener("input", () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => void runSearch(), 150);
 });
+backlinksToggleEl.addEventListener("click", () => backlinksEl.classList.toggle("collapsed"));
 
 async function init() {
   await listen<{ tree: VaultItem[]; noteCount: number }>("vault-tree-changed", (ev) => {
     tree = ev.payload.tree;
     footerEl.textContent = `${ev.payload.noteCount} notes`;
     renderTree();
+    if (activePane === "tags") void renderTags();
+    if (activePane === "search") void runSearch();
   });
 
   await listen<{ path: string; revision: number; text: string; merged: boolean }>("note-reloaded", (ev) => {
     if (ev.payload.path === activePath && activeKind === "note") {
-      activeText = ev.payload.text;
       deletedNotes.delete(ev.payload.path);
-      sendToEditor({
+      const applied = sendToEditor({
         type: "reload",
         noteID: ev.payload.path,
         revision: ev.payload.revision,
         text: ev.payload.text,
       });
-      saveStatusEl.textContent = ev.payload.merged ? "Merged" : "Reloaded";
+      if (applied === "applied") {
+        activeText = ev.payload.text;
+        saveStatusEl.textContent = ev.payload.merged ? "Merged" : "Reloaded";
+      } else {
+        // The user typed meanwhile: the backend merges the disk change into that text.
+        void invoke("reload_rejected", { path: ev.payload.path });
+      }
       updateBanner();
     }
+    void refreshBacklinks();
+  });
+
+  await listen<{ from: string; to: string }>("note-renamed", async (ev) => {
+    const { from, to } = ev.payload;
+    conflictNotes.delete(from);
+    deletedNotes.delete(from);
+    if (from === activePath && activeKind === "note") {
+      // What the editor has not reported yet goes to the note under its new path.
+      clearTimeout(saveTimer);
+      const raw = sendToEditor({ type: "flush" });
+      sendToEditor({ type: "drop", noteIDs: [from] });
+      activePath = null;
+      await openNote(to);
+      if (typeof raw === "string") {
+        const msg = JSON.parse(raw) as Extract<EditorMessage, { type: "changed" }>;
+        sendToEditor({ type: "reload", noteID: to, revision: 0, text: msg.text });
+        await invoke("update_note_buffer", { path: to, revision: 0, text: msg.text });
+        await saveNow(to);
+      }
+      saveStatusEl.textContent = "Moved by another app";
+    }
+  });
+
+  await listen<{ path: string; error: string }>("save-failed", (ev) => {
+    if (ev.payload.path === activePath) saveStatusEl.textContent = "Save failed";
+    console.error("Save failed", ev.payload);
+  });
+
+  await listen("app-will-quit", async () => {
+    try {
+      await flushEditor();
+    } finally {
+      await invoke("quit_app");
+    }
+  });
+
+  await getCurrentWindow().onCloseRequested(async () => {
+    // Up to 250 ms of typing may be unreported: save it before the window goes.
+    await flushEditor();
   });
 
   await listen<{ path: string }>("note-conflict", (ev) => {

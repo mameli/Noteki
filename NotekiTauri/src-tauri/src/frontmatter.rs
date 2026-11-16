@@ -47,8 +47,32 @@ const BACKSLASH: u16 = b'\\' as u16;
 fn is_indicator(u: u16) -> bool {
     matches!(
         u as u8,
-        b'[' | b']' | b'{' | b'}' | b'>' | b'|' | b'*' | b'&' | b'!' | b'%' | b'@' | b'`' | b',' | b'?'
+        b'[' | b']'
+            | b'{'
+            | b'}'
+            | b'>'
+            | b'|'
+            | b'*'
+            | b'&'
+            | b'!'
+            | b'%'
+            | b'@'
+            | b'`'
+            | b','
+            | b'?'
     )
+}
+
+/// Returns the 1-based line number of the closing `---` (or `...`) if frontmatter is present.
+pub fn frontmatter_end_line(text: &str) -> Option<usize> {
+    let units: Vec<u16> = text.encode_utf16().collect();
+    let lines = split_utf16_lines(&units);
+    let first = lines.first()?;
+    if !is_delimiter(first, false) {
+        return None;
+    }
+    let end = (1..lines.len()).find(|&idx| is_delimiter(lines[idx], true))?;
+    Some(end + 1)
 }
 
 /// Parses the YAML Frontmatter subset matching NotekiCore's `Frontmatter.swift`.
@@ -59,8 +83,85 @@ pub fn parse_frontmatter(text: &str) -> Option<FrontmatterReading> {
     if !is_delimiter(first, false) {
         return None;
     }
-    let end = (1..lines.len()).find(|&idx| is_delimiter(&lines[idx], true))?;
+    let end = (1..lines.len()).find(|&idx| is_delimiter(lines[idx], true))?;
     Some(read_lines(&lines[1..end]))
+}
+
+pub fn extract_frontmatter_tags(text: &str) -> Vec<String> {
+    let units: Vec<u16> = text.encode_utf16().collect();
+    let lines = split_utf16_lines(&units);
+    let Some(first) = lines.first() else {
+        return Vec::new();
+    };
+    if !is_delimiter(first, false) {
+        return Vec::new();
+    }
+    let Some(end) = (1..lines.len()).find(|&idx| is_delimiter(lines[idx], true)) else {
+        return Vec::new();
+    };
+    let FrontmatterReading::Properties { properties } = read_lines(&lines[1..end]) else {
+        return Vec::new();
+    };
+    let mut tags = Vec::new();
+    for prop in properties {
+        if prop.key != "tags" {
+            continue;
+        }
+        match prop.value {
+            PropertyValue::None => {}
+            PropertyValue::Text { span } => {
+                let raw = span_text(&lines, &span);
+                for part in raw.split(|c: char| c == ',' || c.is_whitespace()) {
+                    let clean = part.trim().trim_start_matches('#');
+                    if is_valid_tag(clean) {
+                        tags.push(clean.to_string());
+                    }
+                }
+            }
+            PropertyValue::List { items } => {
+                for span in items {
+                    let raw = span_text(&lines, &span);
+                    let clean = raw.trim().trim_start_matches('#');
+                    if is_valid_tag(clean) {
+                        tags.push(clean.to_string());
+                    }
+                }
+            }
+        }
+    }
+    tags
+}
+
+pub fn is_valid_tag(s: &str) -> bool {
+    let mut chars = s.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if !first.is_alphabetic() {
+        return false;
+    }
+    if s.eq_ignore_ascii_case("null")
+        || s.eq_ignore_ascii_case("true")
+        || s.eq_ignore_ascii_case("false")
+    {
+        return false;
+    }
+    chars.all(|c| c.is_alphanumeric() || c == '_' || c == '-' || c == '/')
+        && !s.starts_with('/')
+        && !s.ends_with('/')
+        && !s.contains("//")
+}
+
+fn span_text(lines: &[&[u16]], span: &LineSpan) -> String {
+    let Some(line) = lines.get(span.line.saturating_sub(1)) else {
+        return String::new();
+    };
+    let from = span.from.min(line.len());
+    let to = span.to.min(line.len());
+    if from >= to {
+        return String::new();
+    }
+    String::from_utf16_lossy(&line[from..to])
 }
 
 fn split_utf16_lines(units: &[u16]) -> Vec<&[u16]> {
@@ -106,9 +207,11 @@ fn read_lines(lines: &[&[u16]]) -> FrontmatterReading {
     let mut item_indent: Option<usize> = None;
 
     for (idx, &units) in lines.iter().enumerate() {
-        // Line numbers inside the document are 1-based, and line 1 is `---`.
         let number = idx + 2;
-        let indent_len = units.iter().take_while(|&&u| u == SPACE || u == TAB).count();
+        let indent_len = units
+            .iter()
+            .take_while(|&&u| u == SPACE || u == TAB)
+            .count();
         let content = &units[indent_len..];
         if content.iter().all(|&u| u == SPACE || u == TAB) || content.first() == Some(&HASH) {
             continue;
@@ -372,7 +475,13 @@ mod tests {
                 assert_eq!(properties[1].key, "tags");
                 assert_eq!(properties[2].key, "participants");
             }
-            FrontmatterReading::Unreadable { unreadable } => panic!("Unexpected unreadable at {unreadable}"),
+            FrontmatterReading::Unreadable { unreadable } => {
+                panic!("Unexpected unreadable at {unreadable}")
+            }
         }
+        assert_eq!(
+            extract_frontmatter_tags(yaml),
+            vec!["work".to_string(), "meeting".to_string()]
+        );
     }
 }
