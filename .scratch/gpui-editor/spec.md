@@ -66,3 +66,40 @@ For these tickets: undo and redo, copy, cut and paste, find, spellcheck, the for
 - The decision to write Noteki's own editor element rather than patch GPUI Kit's is worth recording as an ADR once ticket 03 shows the model holds.
 - The 5 MB rule (SPEC › Live preview: a larger Note opens in Source mode) applies to the new element as to the old one.
 - Tickets are in `issues/`, in order. Each one ends with something the user can try in the app (`cargo run`).
+
+## Second batch: render every element of the test note (tickets 06–14)
+
+Tickets 01–05 are done: the element edits text, draws lines of any height, and hides a Heading's `# ` through a display map. The second batch draws everything in `rendering-test.md` (a copy of the user's test note) as SPEC › Live preview says, except **Mermaid and LaTeX**, which stay as written code for now (SPEC already allows that: "Mermaid and math stay visible as code").
+
+### User stories
+
+9. As the user, I want bold, italic, bold italic, strikethrough, highlights and inline code drawn without their marks, the marks showing only while my cursor is inside that element, so that I read a Note as a document and edit it as text.
+10. As the user, I want a link shown as its text and a Wikilink as its name or Alias, and a click on either to open it, so that links read and work as in Obsidian.
+11. As the user, I want `---` drawn as a rule and a quote with a bar on its left, so that a Note's structure shows.
+12. As the user, I want bullets drawn as bullets, nested items indented, numbers kept, and a task's `[ ]` drawn as a checkbox I can click, so that lists and checklists read and work as in Obsidian.
+13. As the user, I want a code block drawn as a box with its language and its code coloured, its fences hidden while my cursor is outside, so that code in my Notes is readable.
+14. As the user, I want `![[image.png]]` to show the image in the Note, so that I see my screenshots where they are.
+15. As the user, I want a table drawn as a grid in place, so that my many tables are readable.
+16. As the user, I want ⌘Z and ⇧⌘Z to undo and redo, typing undone a run at a time, so that a mistake is never final.
+17. As the user, I want ⌘B, ⌘I, ⌘1–⌘6 and ⌘↩ to toggle bold, italic, Headings and tasks, so that I format without typing marks.
+
+### Implementation decisions
+
+- **What the display map can do grows with the tickets**, never by special cases in the element:
+  - ticket 06: more hidden ranges per line, from every inline element the cursor is not in;
+  - ticket 08: a hidden range may be **replaced** by something shown in its place: a string (`•` for `- `) or a box of a given width painted by the element (a checkbox);
+  - ticket 11: a whole line may be drawn as a **block** of its own height (an image), its text hidden while the cursor is off it.
+- **Line decorations** (ticket 07): what is painted around a line's text and not part of it: a rule, a quote's bar, a code block's box, a table's grid. A line's style carries its decoration; the element paints it before the text. Heights never depend on a decoration, so the text above the cursor never jumps.
+- **Marks shown per element, not per line** (ticket 06): the scanner gives each inline element's range and the ranges of its marks; the marks are hidden unless the cursor (or the end of the selection) is inside the element or at its edge, as SPEC says. Today `compute_markdown_spans` shows every mark of the cursor's line; that changes.
+- **The file is never changed by drawing it.** Every element is drawn from the Note as written; the only writes are the user's edits, a checkbox click (`set_task_checked`, already in `core::markdown`) and the format commands, each one undoable.
+- **Borrowed code** (spec › Prior art): Ferrite's `history.rs` for undo (ticket 13) and `formatting.rs` for the format commands (ticket 14), adapted to byte offsets and listed in `THIRD_PARTY.md`.
+- Syntax colouring of code blocks (ticket 09) uses `syntect`, which GPUI Kit already brings in (feature `syntect` in `Cargo.toml`).
+
+### Testing decisions
+
+- `rendering-test.md` goes into a test, opened in the real `NotekiApp` (headless): for each element, what is hidden, what is drawn in its place, and that no line above the cursor moves while the cursor goes through the whole Note line by line.
+- As in tickets 01–05: rules in `src/core/editor/` tested without GPUI, properties in `tests/robustness.rs` (no offset ever inside a hidden range, every replaced range valid), UI tests with real key and mouse events, a mutant per fixed bug in `scripts/mutants.sh`, keystroke timing kept under the numbers of ticket 03.
+
+### Out of scope for this batch
+
+Mermaid diagrams and LaTeX formulas (drawn as code, as written); callouts, footnotes and Comments' boxes beyond hiding `%%`; editing a table cell by cell (ADR 0008's Tab/↑/↓ navigation), which comes after ticket 12; Source mode (⌘E) for the new editor.
