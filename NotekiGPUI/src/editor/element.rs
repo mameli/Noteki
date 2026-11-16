@@ -9,10 +9,12 @@ use std::rc::Rc;
 use gpui_kit::{
     fill, point, px, size, App, AvailableSpace, Bounds, Element, ElementId, ElementInputHandler,
     Entity, Font, GlobalElementId, Hsla, InspectorElementId, IntoElement, LayoutId, Pixels, Point,
-    SharedString, Size, Style, TextAlign, TextRun, UnderlineStyle, Window, WrappedLine,
+    SharedString, Size, Style, TextAlign, TextRun, UnderlineStyle, Window, WindowTextSystem,
+    WrappedLine,
 };
 
-use crate::core::editor::lines::{line_index_of, logical_lines, LineTops};
+use crate::core::editor::lines::{line_index_of, logical_lines, scroll_to_reveal, LineTops};
+use crate::core::editor::movement::prev_grapheme;
 
 use super::NoteEditor;
 
@@ -110,6 +112,20 @@ impl Layout {
         (line.range.start + local).min(line.range.end)
     }
 
+    /// The wrapped row holding `offset`: from its first character to its end,
+    /// which for a row that wraps is before the character it wraps at.
+    pub(super) fn row_range(&self, text: &str, offset: usize) -> Option<Range<usize>> {
+        let caret = self.caret(text, offset)?;
+        let y = caret.top() + caret.size.height / 2.;
+        let line = &self.lines[self.line_of(offset)];
+        let start = self.offset_for_point(text, point(self.origin.x, y));
+        let mut end = self.offset_for_point(text, point(self.origin.x + self.width * 2., y));
+        if end < line.range.end {
+            end = prev_grapheme(text, end).max(start);
+        }
+        Some(start..end)
+    }
+
     /// The rectangles that show `sel` on line `i`, in window coordinates.
     fn selection_rects(&self, i: usize, sel: &Range<usize>) -> Vec<Bounds<Pixels>> {
         let line = &self.lines[i];
@@ -155,14 +171,13 @@ pub(super) struct ShapeInput {
     color: Hsla,
 }
 
-fn shape(input: &ShapeInput, width: Pixels, window: &mut Window) -> Vec<LaidLine> {
+fn shape(input: &ShapeInput, width: Pixels, ts: &WindowTextSystem) -> Vec<LaidLine> {
     let line_height = input.font_size * LINE_HEIGHT;
     logical_lines(&input.text)
         .into_iter()
         .map(|range| {
             let runs = runs_for(input, &range);
-            let shaped = window
-                .text_system()
+            let shaped = ts
                 .shape_text(
                     SharedString::from(input.text[range.clone()].to_string()),
                     input.font_size,
@@ -276,7 +291,7 @@ impl Element for EditorElement {
                     AvailableSpace::Definite(w) => w,
                     _ => px(800.),
                 });
-                let lines = shape(&inp, width, window);
+                let lines = shape(&inp, width, window.text_system());
                 let height: Pixels = lines.iter().map(|l| l.height()).sum();
                 *out.borrow_mut() = Some((width, lines));
                 Size { width, height }
@@ -295,7 +310,7 @@ impl Element for EditorElement {
     ) -> PrepaintState {
         let lines = match measured.borrow_mut().take() {
             Some((w, lines)) if w == bounds.size.width => lines,
-            _ => shape(input, bounds.size.width, window),
+            _ => shape(input, bounds.size.width, window.text_system()),
         };
         let tops = LineTops::new(lines.iter().map(|l| f32::from(l.height())));
         let layout = Layout {
@@ -369,6 +384,53 @@ impl Element for EditorElement {
             window.paint_quad(fill(c, palette.caret));
         }
         let layout = state.layout.clone();
-        self.editor.update(cx, |ed, _| ed.layout = Some(layout));
+        let reveal = self.editor.update(cx, |ed, _| {
+            ed.layout = Some(layout.clone());
+            std::mem::take(&mut ed.reveal).then(|| {
+                (
+                    ed.scroll.clone(),
+                    layout.caret(ed.buf.text(), ed.buf.cursor()),
+                )
+            })
+        });
+        if let Some((scroll, Some(caret))) = reveal {
+            // The caret in the scrolled content, then the least scroll that shows it.
+            let (viewport, offset) = (scroll.bounds(), scroll.offset());
+            let scrolled = f32::from(-offset.y);
+            let top = f32::from(caret.top() - viewport.top()) + scrolled;
+            let height = f32::from(caret.size.height);
+            let wanted = scroll_to_reveal(
+                scrolled,
+                f32::from(viewport.size.height),
+                top,
+                top + height,
+                height,
+                f32::from(scroll.max_offset().y),
+            );
+            if (wanted - scrolled).abs() > 0.5 {
+                scroll.set_offset(point(offset.x, px(-wanted)));
+                window.refresh();
+            }
+        }
     }
+}
+
+/// For `examples/perf.rs`: shapes `text` as one frame of the editor does and
+/// returns its height.
+#[doc(hidden)]
+pub fn shape_for_bench(
+    text: &str,
+    font: Font,
+    font_size: Pixels,
+    width: Pixels,
+    ts: &WindowTextSystem,
+) -> Pixels {
+    let input = ShapeInput {
+        text: SharedString::from(text.to_string()),
+        marked: None,
+        font,
+        font_size,
+        color: Hsla::default(),
+    };
+    shape(&input, width, ts).iter().map(|l| l.height()).sum()
 }

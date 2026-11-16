@@ -58,6 +58,29 @@ impl LineTops {
     }
 }
 
+/// How far to scroll (from the top, never negative, at most `max`) so that
+/// `top..bottom` of the content shows in a viewport `height` tall with `margin`
+/// around it, moving from `scroll` as little as possible. A span too tall for
+/// its margins keeps what margin fits.
+pub fn scroll_to_reveal(
+    scroll: f32,
+    height: f32,
+    top: f32,
+    bottom: f32,
+    margin: f32,
+    max: f32,
+) -> f32 {
+    let margin = margin.min(((height - (bottom - top)) / 2.).max(0.));
+    let wanted = if top - margin < scroll {
+        top - margin
+    } else if bottom + margin > scroll + height {
+        bottom + margin - height
+    } else {
+        scroll
+    };
+    wanted.clamp(0., max.max(0.))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -91,5 +114,26 @@ mod tests {
         assert_eq!(tops.line_at(85.), 3);
         assert_eq!(tops.line_at(-5.), 0);
         assert_eq!(tops.line_at(500.), 3);
+    }
+
+    #[test]
+    fn revealing_scrolls_as_little_as_needed() {
+        // Viewport 100 tall, margin 10, content up to 1000.
+        let r = |scroll, top, bottom| scroll_to_reveal(scroll, 100., top, bottom, 10., 900.);
+        assert_eq!(r(0., 50., 70.), 0., "already in view");
+        assert_eq!(
+            r(0., 120., 140.),
+            50.,
+            "below: its bottom plus margin at the bottom"
+        );
+        assert_eq!(
+            r(300., 200., 220.),
+            190.,
+            "above: its top minus margin at the top"
+        );
+        assert_eq!(r(300., 5., 25.), 0., "never above the start");
+        assert_eq!(r(0., 990., 1010.), 900., "never past the end");
+        // A caret taller than the room left by the margins keeps what fits.
+        assert_eq!(scroll_to_reveal(0., 30., 100., 120., 10., 900.), 95.);
     }
 }

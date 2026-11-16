@@ -54,6 +54,13 @@ The new element replaces GPUI Kit's `Editor` in `NotekiApp` from ticket 01, and 
 
 For these tickets: undo and redo, copy, cut and paste, find, spellcheck, the format shortcuts (⌘B, ⌘I, ⌘1–⌘6), clicking Wikilinks and Tasks in the editor, and every Live preview element other than ATX Headings (emphasis, links, Wikilinks, lists, tables, code blocks, callouts, images). They stop working in the editor when the old one is removed, and come back later, each as a ticket of its own on the same model. Setext Headings are drawn as text. Reader mode does not change.
 
+## Prior art reviewed (2026-11-16)
+
+- **Velotype** (github.com/manyougz/velotype, Apache-2.0, GPUI `gpui-pre` 0.3.9): a Typora-like editor, block-based. Its Markdown is parsed into blocks with an inline tree of styled text and **regenerated on save**. That is the opposite of Noteki's rule: the Note stays as written, merged byte by byte with Takku and Obsidian. So its architecture is not taken. Its `components/block/element.rs` stacks one `WrappedLine` per hard line by the sum of their heights, which is what `src/editor/element.rs` does: a check on the model, and a reference for selection rectangles across wrapped rows (`range_segment_bounds`). The crates it uses for Mermaid (`mermaid-rs-renderer`) and math (`ratex-*`, SVG) are candidates for when those are drawn.
+- **Ferrite** (github.com/OlaProeis/Ferrite, MIT, egui): its drawing is egui's and its `ViewState` assumes one line height, so neither is taken. Two GPUI-free modules fit later tickets, borrowed and adapted as ADR 0007 says, and listed in `THIRD_PARTY.md`:
+  - `src/editor/ferrite/history.rs`: undo/redo as insert/delete operations (not snapshots), typing runs merged, works on a `String` (positions in chars: to convert to bytes). For the undo ticket.
+  - `src/markdown/formatting.rs`: formatting commands on the raw text (bold, italic, code, strikethrough, links, Headings 1–6, lists, quote, code block) that toggle. For the format shortcuts (SPEC: ⌘B, ⌘I, ⌘1–⌘6, ⌘↩).
+
 ## Further Notes
 
 - The decision to write Noteki's own editor element rather than patch GPUI Kit's is worth recording as an ADR once ticket 03 shows the model holds.

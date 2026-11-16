@@ -20,6 +20,9 @@ MUTANTS=(
   "src/app/mod.rs|Duration::from_millis(1000);|Duration::from_millis(10);|--test ui|autosave without the one-second delay"
   "src/app/mod.rs|to_save.push(path.clone());|let _ = \&path;|--test ui|a merge is not saved (SPEC: merged, then saved)"
   "src/app/mod.rs|self.follow_rename(\&old, \&new);|let _ = (\&old, \&new);|--test ui|a rename by another app is not followed"
+  "src/core/editor/buffer.rs|self.marked = (!new.is_empty()).then(\|\| r.start..r.start + new.len());|self.marked = None;|--lib --test ui|a dead key's accent is not kept as composed text"
+  "src/editor/element.rs|std::mem::take(\&mut ed.reveal).then|false.then|--test ui|the view does not follow the cursor"
+  "src/editor/element.rs|end = prev_grapheme(text, end).max(start);|end = end.max(start);|--test ui|⌘→ lands after the space a row wraps at"
 )
 
 # Restore with a fresh mtime: `mv` would keep the backup's older mtime and

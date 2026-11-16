@@ -843,7 +843,10 @@ impl NotekiApp {
                 if other_note || self.editor_text(cx) != text {
                     self.set_editor_text(&text, cursor, window, cx);
                     if other_note {
-                        self.editor.update(cx, |ed, cx| ed.scroll_to_top(cx));
+                        self.editor.update(cx, |ed, cx| {
+                            ed.scroll_to_top(cx);
+                            ed.reveal_cursor(cx);
+                        });
                     }
                 } else {
                     self.set_editor_cursor(cursor, cx);

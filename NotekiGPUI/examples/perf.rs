@@ -14,6 +14,24 @@ use noteki_gpui::core::index::{
 };
 use noteki_gpui::core::markdown::{compute_markdown_spans, preprocess_for_reader};
 
+use gpui_kit::{font, px, TextSystem, WindowTextSystem};
+use std::sync::Arc;
+
+/// The editor's layout of one frame of `text`, with macOS's real text system
+/// (no window opened): `(first frame, a later frame)`. GPUI caches shaped
+/// lines from one frame to the next, so a later frame only looks them up.
+fn editor_frames(
+    platform_text: &Arc<dyn gpui_kit::PlatformTextSystem>,
+    text: &str,
+) -> (Duration, Duration) {
+    let frame = |ts: &WindowTextSystem| {
+        noteki_gpui::editor::shape_for_bench(text, font(".SystemUIFont"), px(15.), px(760.), ts)
+    };
+    let ts = WindowTextSystem::new(Arc::new(TextSystem::new(platform_text.clone())));
+    let first = time(|| frame(&ts)).1;
+    (first, best(5, || frame(&ts)))
+}
+
 struct Rng(u64);
 impl Rng {
     fn below(&mut self, n: usize) -> usize {
@@ -91,6 +109,10 @@ fn main() {
     let big = note_text(&mut rng, n, 300); // ~100 KB note
     let huge = note_text(&mut rng, n, 3000); // ~1 MB note (live preview limit)
 
+    let platform_text = gpui_kit::platform::current_platform(true).text_system();
+    let (open_big, frame_big) = editor_frames(&platform_text, &big);
+    let (open_huge, frame_huge) = editor_frames(&platform_text, &huge);
+
     let rows: Vec<(&str, Duration, Duration)> = vec![
         (
             "open vault, warm cache (scan, read, index, tags)",
@@ -142,6 +164,26 @@ fn main() {
                 compute_markdown_spans(&huge, 10, Some("x.md"), &vault.index)
             }),
             Duration::from_millis(120),
+        ),
+        (
+            "editor, 100 KB note: first frame (opening it)",
+            open_big,
+            Duration::from_millis(150),
+        ),
+        (
+            "editor, 100 KB note: a later frame",
+            frame_big,
+            Duration::from_millis(4),
+        ),
+        (
+            "editor, 1 MB note: first frame (opening it)",
+            open_huge,
+            Duration::from_millis(1000),
+        ),
+        (
+            "editor, 1 MB note: a later frame",
+            frame_huge,
+            Duration::from_millis(16),
         ),
         (
             "outline, 100 KB note (per keystroke)",

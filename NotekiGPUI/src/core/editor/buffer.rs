@@ -200,8 +200,13 @@ impl EditBuffer {
     /// ⌫ and ⌦: deletes the selection, or from the cursor to where `motion`
     /// goes (`Left` for ⌫, `Right` for ⌦, `WordLeft` for ⌥⌫...).
     pub fn delete(&mut self, motion: Motion) -> bool {
+        self.delete_to(self.target(motion))
+    }
+
+    /// Deletes the selection, or from the cursor to `target`.
+    pub fn delete_to(&mut self, target: usize) -> bool {
         let r = if self.selection.is_empty() {
-            let (h, t) = (self.selection.head, self.target(motion));
+            let (h, t) = (self.selection.head, self.clamp(target));
             h.min(t)..h.max(t)
         } else {
             self.selection.range()

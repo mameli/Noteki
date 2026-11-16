@@ -680,3 +680,59 @@ fn a_dead_key_composes_an_accent_through_the_input_handler(cx: &mut TestAppConte
     assert_eq!(editor_state(cx, &f), ("caffé".to_string(), "caffé".len()));
     assert_eq!(status(cx, &f), "Edited");
 }
+
+#[gpui_kit::test]
+fn the_view_follows_the_cursor_moved_by_keys(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let text: String = (0..300).map(|i| format!("Riga {i}\n")).collect();
+    editor_with(cx, &f, &text, 0);
+    let scrolled = |cx: &mut TestAppContext| {
+        app(cx, &f, |a, _, cx| {
+            f32::from(-a.editor().read(cx).scroll_offset().y)
+        })
+    };
+    assert_eq!(scrolled(cx), 0.);
+    press(cx, &f, "cmd-down");
+    frame(cx, &f);
+    let at_end = scrolled(cx);
+    assert!(at_end > 1000., "scrolled to the end: {at_end}");
+    // Typing at the end keeps it in view; moving up a few lines does not scroll.
+    press(cx, &f, "up up");
+    frame(cx, &f);
+    assert_eq!(scrolled(cx), at_end);
+    press(cx, &f, "cmd-up");
+    frame(cx, &f);
+    assert_eq!(scrolled(cx), 0.);
+}
+
+#[gpui_kit::test]
+fn command_arrows_go_to_the_ends_of_the_wrapped_row(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let long = "parola ".repeat(200);
+    let text = format!("{long}\nfine");
+    editor_with(cx, &f, &text, 0);
+    press(cx, &f, "cmd-right");
+    let row_end = editor_state(cx, &f).1;
+    assert!(
+        row_end > 0 && row_end < long.len(),
+        "end of the first row: {row_end}"
+    );
+    assert!(
+        long[..row_end].ends_with("parola"),
+        "before the space it wraps at"
+    );
+    press(cx, &f, "down cmd-left");
+    let next_row = editor_state(cx, &f).1;
+    assert!(
+        next_row > row_end && next_row < long.len(),
+        "start of the second row: {next_row}"
+    );
+    press(cx, &f, "ctrl-e");
+    assert_eq!(
+        editor_state(cx, &f).1,
+        long.len(),
+        "⌃E goes to the end of the paragraph"
+    );
+    press(cx, &f, "ctrl-a");
+    assert_eq!(editor_state(cx, &f).1, 0);
+}

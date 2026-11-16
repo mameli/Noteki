@@ -23,6 +23,8 @@ use crate::core::editor::buffer::{range_from_utf16, range_to_utf16};
 use crate::core::editor::{EditBuffer, Motion};
 use crate::theme::NotekiPalette;
 
+#[doc(hidden)]
+pub use element::shape_for_bench;
 use element::{EditorElement, Layout};
 
 const CONTEXT: &str = "NoteEditor";
@@ -37,6 +39,7 @@ actions!(
         DeleteWordRight,
         DeleteToLineStart,
         DeleteToLineEnd,
+        DeleteToParagraphEnd,
         Newline,
         Left,
         Right,
@@ -46,6 +49,8 @@ actions!(
         WordRight,
         LineStart,
         LineEnd,
+        ParagraphStart,
+        ParagraphEnd,
         DocStart,
         DocEnd,
         SelectLeft,
@@ -77,7 +82,7 @@ pub fn register_keybindings(cx: &mut App) {
         KeyBinding::new("alt-delete", DeleteWordRight, c),
         KeyBinding::new("cmd-backspace", DeleteToLineStart, c),
         KeyBinding::new("cmd-delete", DeleteToLineEnd, c),
-        KeyBinding::new("ctrl-k", DeleteToLineEnd, c),
+        KeyBinding::new("ctrl-k", DeleteToParagraphEnd, c),
         KeyBinding::new("enter", Newline, c),
         KeyBinding::new("shift-enter", Newline, c),
         KeyBinding::new("left", Left, c),
@@ -92,8 +97,8 @@ pub fn register_keybindings(cx: &mut App) {
         KeyBinding::new("alt-right", WordRight, c),
         KeyBinding::new("cmd-left", LineStart, c),
         KeyBinding::new("cmd-right", LineEnd, c),
-        KeyBinding::new("ctrl-a", LineStart, c),
-        KeyBinding::new("ctrl-e", LineEnd, c),
+        KeyBinding::new("ctrl-a", ParagraphStart, c),
+        KeyBinding::new("ctrl-e", ParagraphEnd, c),
         KeyBinding::new("home", LineStart, c),
         KeyBinding::new("end", LineEnd, c),
         KeyBinding::new("cmd-up", DocStart, c),
@@ -135,6 +140,8 @@ pub struct NoteEditor {
     goal_x: Option<Pixels>,
     selecting: bool,
     cursor_on: bool,
+    /// Scroll the cursor into view at the next frame (keys and edits, not clicks).
+    reveal: bool,
     _blink: Task<()>,
 }
 
@@ -169,6 +176,7 @@ impl NoteEditor {
             goal_x: None,
             selecting: false,
             cursor_on: true,
+            reveal: false,
             _blink: blink,
         }
     }
@@ -206,6 +214,17 @@ impl NoteEditor {
         cx.notify();
     }
 
+    /// Scrolls the cursor into view at the next frame.
+    pub fn reveal_cursor(&mut self, cx: &mut Context<Self>) {
+        self.reveal = true;
+        cx.notify();
+    }
+
+    /// How far the text is scrolled: `y` is 0 at the top, negative below it.
+    pub fn scroll_offset(&self) -> Point<Pixels> {
+        self.scroll.offset()
+    }
+
     pub fn set_selected_range(&mut self, range: Range<usize>, cx: &mut Context<Self>) {
         self.buf.set_selection(range.start, range.end);
         self.goal_x = None;
@@ -232,7 +251,38 @@ impl NoteEditor {
 
     fn wake(&mut self, cx: &mut Context<Self>) {
         self.cursor_on = true;
+        self.reveal = true;
         cx.notify();
+    }
+
+    /// Where ⌘← (`end` false) or ⌘→ goes: the start or end of the row the
+    /// cursor is on, as wrapped; the logical line's when there is no layout yet.
+    fn row_target(&self, end: bool) -> usize {
+        let fallback = || {
+            self.buf.target(if end {
+                Motion::LineEnd
+            } else {
+                Motion::LineStart
+            })
+        };
+        self.layout
+            .as_ref()
+            .and_then(|l| l.row_range(self.buf.text(), self.buf.cursor()))
+            .map(|r| if end { r.end } else { r.start })
+            .unwrap_or_else(fallback)
+    }
+
+    fn row_motion(&mut self, end: bool, extend: bool, cx: &mut Context<Self>) {
+        let target = self.row_target(end);
+        self.buf.move_to(target, extend);
+        self.goal_x = None;
+        self.wake(cx);
+    }
+
+    fn delete_row(&mut self, end: bool, cx: &mut Context<Self>) {
+        let target = self.row_target(end);
+        let changed = self.buf.delete_to(target);
+        self.edited(changed, cx);
     }
 
     fn edited(&mut self, changed: bool, cx: &mut Context<Self>) {
@@ -294,6 +344,7 @@ impl NoteEditor {
         self.buf.move_to(offset, ev.modifiers.shift);
         self.goal_x = None;
         self.wake(cx);
+        self.reveal = false;
     }
 
     fn on_mouse_move(&mut self, ev: &MouseMoveEvent, _: &mut Window, cx: &mut Context<Self>) {
@@ -304,6 +355,7 @@ impl NoteEditor {
             let offset = layout.offset_for_point(self.buf.text(), ev.position);
             self.buf.move_to(offset, true);
             self.wake(cx);
+            self.reveal = false;
         }
     }
 
@@ -327,8 +379,9 @@ handlers! {
     Delete => |ed, cx| ed.delete(Motion::Right, cx);
     DeleteWordLeft => |ed, cx| ed.delete(Motion::WordLeft, cx);
     DeleteWordRight => |ed, cx| ed.delete(Motion::WordRight, cx);
-    DeleteToLineStart => |ed, cx| ed.delete(Motion::LineStart, cx);
-    DeleteToLineEnd => |ed, cx| ed.delete(Motion::LineEnd, cx);
+    DeleteToLineStart => |ed, cx| ed.delete_row(false, cx);
+    DeleteToLineEnd => |ed, cx| ed.delete_row(true, cx);
+    DeleteToParagraphEnd => |ed, cx| ed.delete(Motion::LineEnd, cx);
     Newline => |ed, cx| ed.replace_selection("\n", cx);
     Left => |ed, cx| ed.motion(Motion::Left, false, cx);
     Right => |ed, cx| ed.motion(Motion::Right, false, cx);
@@ -336,8 +389,10 @@ handlers! {
     Down => |ed, cx| ed.vertical(false, false, cx);
     WordLeft => |ed, cx| ed.motion(Motion::WordLeft, false, cx);
     WordRight => |ed, cx| ed.motion(Motion::WordRight, false, cx);
-    LineStart => |ed, cx| ed.motion(Motion::LineStart, false, cx);
-    LineEnd => |ed, cx| ed.motion(Motion::LineEnd, false, cx);
+    LineStart => |ed, cx| ed.row_motion(false, false, cx);
+    LineEnd => |ed, cx| ed.row_motion(true, false, cx);
+    ParagraphStart => |ed, cx| ed.motion(Motion::LineStart, false, cx);
+    ParagraphEnd => |ed, cx| ed.motion(Motion::LineEnd, false, cx);
     DocStart => |ed, cx| ed.motion(Motion::DocStart, false, cx);
     DocEnd => |ed, cx| ed.motion(Motion::DocEnd, false, cx);
     SelectLeft => |ed, cx| ed.motion(Motion::Left, true, cx);
@@ -346,8 +401,8 @@ handlers! {
     SelectDown => |ed, cx| ed.vertical(false, true, cx);
     SelectWordLeft => |ed, cx| ed.motion(Motion::WordLeft, true, cx);
     SelectWordRight => |ed, cx| ed.motion(Motion::WordRight, true, cx);
-    SelectLineStart => |ed, cx| ed.motion(Motion::LineStart, true, cx);
-    SelectLineEnd => |ed, cx| ed.motion(Motion::LineEnd, true, cx);
+    SelectLineStart => |ed, cx| ed.row_motion(false, true, cx);
+    SelectLineEnd => |ed, cx| ed.row_motion(true, true, cx);
     SelectDocStart => |ed, cx| ed.motion(Motion::DocStart, true, cx);
     SelectDocEnd => |ed, cx| ed.motion(Motion::DocEnd, true, cx);
     SelectAll => |ed, cx| { ed.buf.select_all(); ed.wake(cx) };
