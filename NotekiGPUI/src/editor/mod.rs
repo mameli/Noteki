@@ -34,7 +34,9 @@ use crate::core::editor::styling::{
     style_line, style_lines, CodeColours, CodePart, Decoration, LineStyle,
 };
 use crate::core::editor::{EditBuffer, Motion};
-use crate::core::markdown::{self, compute_markdown_spans, line_of_offset, BlockKind};
+use crate::core::markdown::{
+    self, compute_markdown_spans, line_of_offset, link_at, BlockKind, Link,
+};
 use crate::core::wikilink::VaultIndex;
 use crate::theme::NotekiPalette;
 
@@ -144,10 +146,12 @@ pub fn register_keybindings(cx: &mut App) {
 /// The Live preview style of each line, shared with the element.
 pub(crate) type LineStyles = Rc<Vec<Rc<LineStyle>>>;
 
-/// Emitted when the user changes the text; never for [`NoteEditor::set_text`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NoteEditorEvent {
+    /// The user changed the text; never sent for [`NoteEditor::set_text`].
     Changed,
+    /// A click on a link: the app opens it (⌘-click: in a new Tab).
+    OpenLink { link: Link, new_tab: bool },
 }
 
 pub struct NoteEditor {
@@ -165,6 +169,8 @@ pub struct NoteEditor {
     cursor_on: bool,
     /// Scroll the cursor into view at the next frame (keys and edits, not clicks).
     reveal: bool,
+    /// The pointer is over a link that a click would open.
+    over_link: bool,
     /// Bumped at every change of the text, so the styles know when to recompute.
     revision: u64,
     /// The Note's path and the Vault's links, to tell resolved Wikilinks.
@@ -215,6 +221,7 @@ impl NoteEditor {
             _edge_scroll: None,
             cursor_on: true,
             reveal: false,
+            over_link: false,
             revision: 0,
             link_context: (None, Arc::default()),
             code_colours: HashMap::new(),
@@ -526,6 +533,15 @@ impl NoteEditor {
             return;
         }
         let offset = layout.offset_for_point(self.buf.text(), ev.position);
+        if ev.click_count == 1 && !ev.modifiers.shift {
+            if let Some(link) = self.link_to_open(offset) {
+                cx.emit(NoteEditorEvent::OpenLink {
+                    link,
+                    new_tab: ev.modifiers.platform,
+                });
+                return;
+            }
+        }
         let unit = match ev.click_count {
             0 | 1 => ClickUnit::Char,
             2 => ClickUnit::Word,
@@ -554,6 +570,29 @@ impl NoteEditor {
                 _ => break,
             }
         }));
+    }
+
+    /// The link a click at `offset` opens: one whose text is there, unless the
+    /// cursor is in it already (its marks show: the user is editing it).
+    fn link_to_open(&self, offset: usize) -> Option<Link> {
+        let (range, link) = link_at(self.buf.text(), offset)?;
+        let c = self.buf.cursor();
+        (!(range.start <= c && c <= range.end)).then_some(link)
+    }
+
+    /// Shows a pointing hand over a link a click would open.
+    fn on_hover(&mut self, ev: &MouseMoveEvent, _: &mut Window, cx: &mut Context<Self>) {
+        if self.drag.is_some() {
+            return;
+        }
+        let over = self.layout.as_ref().is_some_and(|l| {
+            let offset = l.offset_for_point(self.buf.text(), ev.position);
+            self.link_to_open(offset).is_some()
+        });
+        if over != self.over_link {
+            self.over_link = over;
+            cx.notify();
+        }
     }
 
     /// Selects from where the drag began to `offset`, by the drag's unit.
@@ -710,7 +749,12 @@ impl Render for NoteEditor {
                 .size_full()
                 .overflow_y_scroll()
                 .track_scroll(&self.scroll)
-                .cursor(CursorStyle::IBeam)
+                .cursor(if self.over_link {
+                    CursorStyle::PointingHand
+                } else {
+                    CursorStyle::IBeam
+                })
+                .on_mouse_move(cx.listener(Self::on_hover))
                 .on_action(cx.listener(|_, _: &ShowCharacterPalette, window, _| {
                     window.show_character_palette()
                 }))

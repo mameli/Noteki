@@ -27,7 +27,7 @@ use crate::core::index::{
     HeadingItem, SearchResult, TagNode,
 };
 use crate::core::markdown::{
-    self, line_of_offset, preprocess_for_reader, set_task_checked, ReaderLink,
+    self, line_of_offset, preprocess_for_reader, set_task_checked, Link, ReaderLink,
 };
 use crate::core::tabs::{rename_target, OpenIn, Tabs};
 use crate::core::vault::{
@@ -1002,7 +1002,18 @@ impl NotekiApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let NoteEditorEvent::Changed = event;
+        match event {
+            NoteEditorEvent::Changed => {}
+            NoteEditorEvent::OpenLink { link, new_tab } => {
+                match link {
+                    Link::Url(url) => cx.open_url(url),
+                    Link::Note(w) => {
+                        self.follow_link(&w.target, w.heading.as_deref(), *new_tab, window, cx)
+                    }
+                }
+                return;
+            }
+        }
         let Some(path) = self.editor_path.clone() else {
             return;
         };

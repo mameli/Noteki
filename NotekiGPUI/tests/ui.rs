@@ -867,16 +867,27 @@ fn showing_marks_never_moves_the_lines_above_the_cursor(cx: &mut TestAppContext)
 // ---- Mouse ----
 
 fn mouse_down(cx: &mut TestAppContext, f: &Fixture, at: (f32, f32), count: usize, shift: bool) {
-    use gpui_kit::{Modifiers, MouseButton, MouseDownEvent, PlatformInput};
+    let modifiers = gpui_kit::Modifiers {
+        shift,
+        ..Default::default()
+    };
+    mouse_down_with(cx, f, at, count, modifiers);
+}
+
+fn mouse_down_with(
+    cx: &mut TestAppContext,
+    f: &Fixture,
+    at: (f32, f32),
+    count: usize,
+    modifiers: gpui_kit::Modifiers,
+) {
+    use gpui_kit::{MouseButton, MouseDownEvent, PlatformInput};
     ui(cx, f, |window, cx| {
         window.dispatch_event(
             PlatformInput::MouseDown(MouseDownEvent {
                 button: MouseButton::Left,
                 position: gpui_kit::point(px(at.0), px(at.1)),
-                modifiers: Modifiers {
-                    shift,
-                    ..Default::default()
-                },
+                modifiers,
                 click_count: count,
                 first_mouse: false,
             }),
@@ -1239,4 +1250,64 @@ fn a_code_block_shows_its_fences_only_while_the_cursor_is_in_it(cx: &mut TestApp
     // Out again: hidden.
     press(cx, &f, "cmd-down");
     assert_eq!(caret_at(cx, &f, open_end).0, hidden_open);
+}
+
+#[gpui_kit::test]
+fn a_click_on_a_wikilink_opens_its_note_and_cmd_click_a_new_tab(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let text = "Vai a [[Reading list]] ora";
+    editor_with(cx, &f, text, 0);
+    let at = point_at(cx, &f, text.find("Reading").unwrap() + 3);
+    let tabs = app(cx, &f, |a, _, _| a.tabs().len());
+    mouse_down_with(
+        cx,
+        &f,
+        at,
+        1,
+        gpui_kit::Modifiers {
+            platform: true,
+            ..Default::default()
+        },
+    );
+    mouse_up(cx, &f, at);
+    assert_eq!(
+        app(cx, &f, |a, _, _| a.tabs().len()),
+        tabs + 1,
+        "⌘-click: a new Tab"
+    );
+    assert_eq!(
+        app(cx, &f, |a, _, _| a.active_path().map(str::to_string)),
+        Some("Reading list.md".into())
+    );
+    // A plain click opens it in the current Tab.
+    editor_with(cx, &f, text, 0);
+    let at = point_at(cx, &f, text.find("Reading").unwrap() + 3);
+    let tabs = app(cx, &f, |a, _, _| a.tabs().len());
+    click(cx, &f, at, 1);
+    assert_eq!(app(cx, &f, |a, _, _| a.tabs().len()), tabs);
+    assert_eq!(
+        app(cx, &f, |a, _, _| a.active_path().map(str::to_string)),
+        Some("Reading list.md".into())
+    );
+}
+
+#[gpui_kit::test]
+fn a_click_on_a_link_opens_its_url_unless_the_cursor_is_in_it(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let text = "Visita [GitHub](https://github.com) oggi";
+    let label = text.find("GitHub").unwrap();
+    editor_with(cx, &f, text, 0);
+    let at = point_at(cx, &f, label + 2);
+    click(cx, &f, at, 1);
+    assert_eq!(cx.opened_url(), Some("https://github.com".to_string()));
+    assert_eq!(editor_state(cx, &f).1, 0, "the cursor did not move");
+    // With the cursor in the link (its marks showing), a click only moves it.
+    app(cx, &f, |a, _, cx| {
+        a.editor()
+            .clone()
+            .update(cx, |ed, cx| ed.set_selected_range(label..label, cx))
+    });
+    let at = point_at(cx, &f, label + 4);
+    click(cx, &f, at, 1);
+    assert_eq!(editor_state(cx, &f).1, label + 4);
 }

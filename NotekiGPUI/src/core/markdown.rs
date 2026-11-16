@@ -636,6 +636,48 @@ pub fn wikilink_at(text: &str, offset: usize) -> Option<Wikilink> {
         .map(|(_, tok)| Wikilink::parse(&text[tok.inner]))
 }
 
+/// A link of the text, as a click opens it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Link {
+    /// `[label](url)`: its destination, as written.
+    Url(String),
+    /// `[[target#heading|alias]]`.
+    Note(Wikilink),
+}
+
+/// The link whose shown text (a Markdown link's label, a Wikilink's name or
+/// Alias) holds `offset`, edges included, with the range of the whole link.
+/// Not in code, nor the Frontmatter; an Embed is no link.
+pub fn link_at(text: &str, offset: usize) -> Option<(Range<usize>, Link)> {
+    let line = lines(text)
+        .into_iter()
+        .find(|l| l.start <= offset && offset <= l.start + l.text.len())?;
+    if line.kind != BlockKind::Text {
+        return None;
+    }
+    let at = offset - line.start;
+    inline_tokens(line.text).into_iter().find_map(|tok| {
+        let range = line.start + tok.range.start..line.start + tok.range.end;
+        if !(tok.inner.start <= at && at <= tok.inner.end) {
+            return None;
+        }
+        match tok.kind {
+            InlineKind::Wikilink { embed: false } => Some((
+                range,
+                Link::Note(Wikilink::parse(&line.text[tok.inner.clone()])),
+            )),
+            InlineKind::MarkdownLink => {
+                // `[label](destination "title")`: the destination, without a title.
+                let dest = &line.text[tok.inner.end + 2..tok.range.end - 1];
+                let url = dest.split_whitespace().next().unwrap_or("");
+                let url = url.trim_start_matches('<').trim_end_matches('>');
+                (!url.is_empty()).then(|| (range, Link::Url(url.to_string())))
+            }
+            _ => None,
+        }
+    })
+}
+
 /// Inline `#tags` (outside code and frontmatter), in order.
 pub fn inline_tags(text: &str) -> Vec<String> {
     let mut out = Vec::new();
@@ -1152,6 +1194,27 @@ mod tests {
             .into_iter()
             .map(|t| (t.kind, &line[t.range]))
             .collect()
+    }
+
+    #[test]
+    fn link_at_finds_a_links_shown_text() {
+        let text = "Visita [GitHub](https://github.com \"t\") e [[Nota|Alias]].\n`[x](y)`";
+        let gh = text.find("GitHub").unwrap();
+        assert_eq!(
+            link_at(text, gh + 2).map(|l| l.1),
+            Some(Link::Url("https://github.com".into()))
+        );
+        for edge in [gh, gh + "GitHub".len()] {
+            assert!(link_at(text, edge).is_some(), "at its edge {edge}");
+        }
+        assert_eq!(link_at(text, gh - 1), None, "before its `[`");
+        assert_eq!(link_at(text, 2), None);
+        let alias = text.find("Alias").unwrap();
+        match link_at(text, alias).map(|l| l.1) {
+            Some(Link::Note(w)) => assert_eq!(w.target, "Nota"),
+            other => panic!("{other:?}"),
+        }
+        assert_eq!(link_at(text, text.len() - 3), None, "not in code");
     }
 
     #[test]
