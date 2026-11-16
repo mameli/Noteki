@@ -977,7 +977,7 @@ impl Element for EditorElement {
             styles,
             palette: ed.palette,
             font: style.font(),
-            font_size: style.font_size.to_pixels(window.rem_size()),
+            font_size: ed.font_size,
             cache: ed.shape_cache.clone(),
         };
         let inp = input.clone();

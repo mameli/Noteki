@@ -60,6 +60,9 @@ actions!(
         ReopenClosedTabAction,
         NextTabAction,
         PrevTabAction,
+        ZoomIn,
+        ZoomOut,
+        ZoomReset,
         NavigateBackAction,
         NavigateForwardAction,
         OpenVaultAction,
@@ -95,6 +98,11 @@ pub fn register_keybindings(cx: &mut App) {
         KeyBinding::new("cmd-shift-]", NextTabAction, None),
         KeyBinding::new("ctrl-shift-tab", PrevTabAction, None),
         KeyBinding::new("cmd-shift-[", PrevTabAction, None),
+        KeyBinding::new("cmd-=", ZoomIn, None),
+        KeyBinding::new("cmd-+", ZoomIn, None),
+        KeyBinding::new("cmd-shift-=", ZoomIn, None),
+        KeyBinding::new("cmd--", ZoomOut, None),
+        KeyBinding::new("cmd-0", ZoomReset, None),
         KeyBinding::new("cmd-[", NavigateBackAction, None),
         KeyBinding::new("cmd-]", NavigateForwardAction, None),
         KeyBinding::new("cmd-alt-left", NavigateBackAction, None),
@@ -342,7 +350,12 @@ impl NotekiApp {
         let settings = settings::load(config.settings_path.as_deref());
         let palette = apply_noteki_theme(settings.theme_name, settings.appearance, window, cx);
 
-        let editor = cx.new(|cx| NoteEditor::new(palette, window, cx));
+        let font_size = gpui_kit::px(settings.font_size);
+        let editor = cx.new(|cx| {
+            let mut ed = NoteEditor::new(palette, window, cx);
+            ed.set_font_size(font_size, cx);
+            ed
+        });
         let search_input = cx.new(|cx| {
             InputState::new(window, cx)
                 .placeholder("Search  ·  tag:work  path:Journal  \"a phrase\"")
@@ -588,6 +601,18 @@ impl NotekiApp {
         );
         let palette = self.palette;
         self.editor.update(cx, |ed, cx| ed.set_palette(palette, cx));
+        cx.notify();
+    }
+
+    /// ⌘+ (`step` 1), ⌘− (−1), ⌘0 (`None`): the text's size, remembered.
+    pub(crate) fn zoom(&mut self, step: Option<f32>, cx: &mut Context<Self>) {
+        self.settings.font_size = match step {
+            Some(step) => self.settings.zoomed(step),
+            None => settings::DEFAULT_FONT_SIZE,
+        };
+        self.persist(); // the text size is remembered
+        let size = gpui_kit::px(self.settings.font_size);
+        self.editor.update(cx, |ed, cx| ed.set_font_size(size, cx));
         cx.notify();
     }
 

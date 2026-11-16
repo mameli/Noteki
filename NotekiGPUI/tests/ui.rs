@@ -1584,3 +1584,19 @@ fn cmd_d_selects_the_occurrences_and_typing_changes_them_all(cx: &mut TestAppCon
         "Esc: one selection again"
     );
 }
+
+#[gpui_kit::test]
+fn cmd_plus_and_minus_change_the_text_size_and_cmd_0_resets_it(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    editor_with(cx, &f, "testo\naltro", 0);
+    let normal = heights(cx, &f)[0];
+    press(cx, &f, "cmd-= cmd-=");
+    let larger = heights(cx, &f)[0];
+    assert!(larger > normal, "{normal} → {larger}");
+    let saved = std::fs::read_to_string(f.dir.join("settings.json")).unwrap();
+    assert!(saved.contains("\"font_size\": 17"), "remembered: {saved}");
+    press(cx, &f, "cmd--");
+    assert!(heights(cx, &f)[0] < larger);
+    press(cx, &f, "cmd-0");
+    assert_eq!(heights(cx, &f)[0], normal);
+}

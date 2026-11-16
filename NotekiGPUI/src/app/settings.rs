@@ -57,7 +57,7 @@ pub struct VaultSession {
     pub expanded_folders: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Settings {
     pub vault_path: Option<String>,
@@ -70,6 +70,19 @@ pub struct Settings {
     pub view_mode: ViewMode,
     pub theme_name: NotekiThemeName,
     pub appearance: AppearanceMode,
+    /// The text's size in points (SPEC › Window: 10 to 32, 15 by default).
+    pub font_size: f32,
+}
+
+pub const DEFAULT_FONT_SIZE: f32 = 15.;
+pub const MIN_FONT_SIZE: f32 = 10.;
+pub const MAX_FONT_SIZE: f32 = 32.;
+
+impl Settings {
+    /// The text size a step larger (`+1`) or smaller (`-1`), within its limits.
+    pub fn zoomed(&self, step: f32) -> f32 {
+        (self.font_size + step).clamp(MIN_FONT_SIZE, MAX_FONT_SIZE)
+    }
 }
 
 impl Default for Settings {
@@ -85,6 +98,7 @@ impl Default for Settings {
             view_mode: ViewMode::default(),
             theme_name: NotekiThemeName::default(),
             appearance: AppearanceMode::default(),
+            font_size: DEFAULT_FONT_SIZE,
         }
     }
 }
@@ -159,5 +173,18 @@ mod tests {
             serde_json::from_str(r#"{"vault_path":"/x","view_mode":"reader"}"#).unwrap();
         assert_eq!(s.view_mode, ViewMode::Reader);
         assert!(s.left_sidebar_open);
+    }
+
+    #[test]
+    fn text_size_steps_within_its_limits_and_is_remembered() {
+        let mut s = Settings::default();
+        assert_eq!(s.font_size, 15.);
+        s.font_size = 31.;
+        assert_eq!(s.zoomed(1.), 32.);
+        assert_eq!(s.zoomed(5.), 32.);
+        s.font_size = 10.;
+        assert_eq!(s.zoomed(-1.), 10.);
+        let old: Settings = serde_json::from_str("{}").unwrap();
+        assert_eq!(old.font_size, 15., "a file from before keeps the default");
     }
 }

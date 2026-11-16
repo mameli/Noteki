@@ -127,6 +127,9 @@ impl Render for NotekiApp {
                     this.cycle_tab(false, window, cx)
                 }),
             )
+            .on_action(cx.listener(|this, _: &ZoomIn, _, cx| this.zoom(Some(1.), cx)))
+            .on_action(cx.listener(|this, _: &ZoomOut, _, cx| this.zoom(Some(-1.), cx)))
+            .on_action(cx.listener(|this, _: &ZoomReset, _, cx| this.zoom(None, cx)))
             .on_action(cx.listener(|this, _: &NavigateBackAction, window, cx| {
                 this.navigate(true, window, cx)
             }))

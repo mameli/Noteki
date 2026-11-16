@@ -228,6 +228,8 @@ pub struct NoteEditor {
     reveal: bool,
     /// The pointer is over a link that a click would open.
     over_link: bool,
+    /// The text's size, from the settings (⌘+, ⌘−, ⌘0).
+    font_size: Pixels,
     /// The find bar, while it is open (⌘F).
     find: Option<find_bar::FindBar>,
     /// The Note shown, and the undo histories of the others.
@@ -287,6 +289,7 @@ impl NoteEditor {
             reveal: false,
             over_link: false,
             find: None,
+            font_size: px(15.),
             note_key: None,
             histories: HashMap::new(),
             revision: 0,
@@ -415,6 +418,12 @@ impl NoteEditor {
 
     pub fn focus(&self, window: &mut Window, cx: &mut Context<Self>) {
         window.focus(&self.focus_handle, cx);
+    }
+
+    pub fn set_font_size(&mut self, size: Pixels, cx: &mut Context<Self>) {
+        self.font_size = size;
+        self.reveal = true;
+        cx.notify();
     }
 
     pub fn set_palette(&mut self, palette: NotekiPalette, cx: &mut Context<Self>) {
