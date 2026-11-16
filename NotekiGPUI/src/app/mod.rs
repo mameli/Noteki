@@ -5,6 +5,7 @@
 
 mod render;
 pub mod settings;
+#[allow(dead_code)] // Live preview styles: drawn by the new editor again from ticket 03.
 mod style;
 
 use std::collections::{HashMap, HashSet};
@@ -14,9 +15,7 @@ use std::time::{Duration, Instant};
 
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 
-use gpui_kit::component::input::{
-    EditorState, InputEvent, InputState, Position, TextDecoration, TextDecorationCollection,
-};
+use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::component::tree::{TreeEvent, TreeItem, TreeState};
 use gpui_kit::{
     actions, App, AppContext as _, Context, Entity, FocusHandle, Focusable, KeyBinding,
@@ -24,13 +23,13 @@ use gpui_kit::{
 };
 
 use crate::core::document::{ExternalOutcome, NoteDoc};
+use crate::core::editor::lines::logical_lines;
 use crate::core::index::{
     build_tag_tree, extract_outline, find_backlinks, search_vault, BacklinkMatch, Corpus,
     HeadingItem, SearchResult, TagNode,
 };
 use crate::core::markdown::{
-    self, compute_markdown_spans, line_of_offset, preprocess_for_reader, set_task_checked,
-    ReaderLink,
+    self, line_of_offset, preprocess_for_reader, set_task_checked, ReaderLink,
 };
 use crate::core::tabs::{rename_target, OpenIn, Tabs};
 use crate::core::vault::{
@@ -39,6 +38,7 @@ use crate::core::vault::{
     validate_item_name, write_note_atomic, AttachmentKind, VaultItem,
 };
 use crate::core::wikilink::{folder_of, ResolvedItem, VaultIndex};
+use crate::editor::{NoteEditor, NoteEditorEvent};
 use crate::theme::{apply_noteki_theme, AppearanceMode, NotekiPalette, NotekiThemeName};
 
 pub use settings::{LeftPane, RightPane, Settings, ViewMode};
@@ -109,6 +109,7 @@ pub fn register_keybindings(cx: &mut App) {
         KeyBinding::new("cmd-k", InsertWikilinkAction, None),
         KeyBinding::new("cmd-enter", FollowLinkUnderCursorAction, None),
     ]);
+    crate::editor::register_keybindings(cx);
 }
 
 /// SPEC › Saving: about one second after the last change.
@@ -117,8 +118,6 @@ pub const AUTOSAVE_DELAY: Duration = Duration::from_millis(1000);
 /// so a burst (an atomic write, a git checkout) is one reload.
 pub const FS_SETTLE: Duration = Duration::from_millis(250);
 const FS_POLL: Duration = Duration::from_millis(100);
-/// Above this size the live preview is switched off (it re-scans per keystroke).
-pub const LIVE_PREVIEW_MAX_BYTES: usize = 1_000_000;
 
 #[derive(Debug, Clone, Default)]
 pub struct AppConfig {
@@ -319,10 +318,7 @@ pub struct NotekiApp {
     search_input: Entity<InputState>,
     search_results: Vec<SearchResult>,
 
-    editor: Entity<EditorState>,
-    live_decorations: Option<TextDecorationCollection>,
-    /// `(path, cursor line, text length)` the decorations were computed for.
-    decorated_for: Option<(String, usize, usize)>,
+    editor: Entity<NoteEditor>,
 
     outline: Vec<HeadingItem>,
     backlinks: Vec<BacklinkMatch>,
@@ -349,14 +345,7 @@ impl NotekiApp {
         let settings = settings::load(config.settings_path.as_deref());
         let palette = apply_noteki_theme(settings.theme_name, settings.appearance, window, cx);
 
-        let editor = cx.new(|cx| {
-            EditorState::new(window, cx)
-                .language("markdown")
-                .soft_wrap(true)
-                .line_number(false)
-                .folding(false)
-                .searchable(true)
-        });
+        let editor = cx.new(|cx| NoteEditor::new(palette, window, cx));
         let search_input = cx.new(|cx| {
             InputState::new(window, cx)
                 .placeholder("Search  ·  tag:work  path:Journal  \"a phrase\"")
@@ -365,10 +354,6 @@ impl NotekiApp {
 
         let subscriptions = vec![
             cx.subscribe_in(&editor, window, Self::on_editor_event),
-            // Cursor moves emit no event: watch the editor to show the marks of the line being edited.
-            cx.observe_in(&editor, window, |this, _, _, cx| {
-                this.update_decorations(false, cx)
-            }),
             cx.subscribe_in(&search_input, window, |this, _, ev: &InputEvent, _, cx| {
                 if matches!(ev, InputEvent::Change) {
                     this.refresh_search(cx);
@@ -411,8 +396,6 @@ impl NotekiApp {
             search_input,
             search_results: Vec::new(),
             editor,
-            live_decorations: None,
-            decorated_for: None,
             outline: Vec::new(),
             backlinks: Vec::new(),
             reader_markdown: None,
@@ -476,10 +459,10 @@ impl NotekiApp {
     }
 
     pub fn editor_text(&self, cx: &App) -> String {
-        self.editor.read(cx).value().to_string()
+        self.editor.read(cx).text().to_string()
     }
 
-    pub fn editor(&self) -> &Entity<EditorState> {
+    pub fn editor(&self) -> &Entity<NoteEditor> {
         &self.editor
     }
 
@@ -606,7 +589,8 @@ impl NotekiApp {
             window,
             cx,
         );
-        self.update_decorations(true, cx);
+        let palette = self.palette;
+        self.editor.update(cx, |ed, cx| ed.set_palette(palette, cx));
         cx.notify();
     }
 
@@ -855,10 +839,12 @@ impl NotekiApp {
         match active {
             Some((path, cursor)) if self.docs.contains_key(&path) => {
                 let text = self.docs[&path].text().to_string();
-                if self.editor_path.as_deref() != Some(path.as_str())
-                    || self.editor_text(cx) != text
-                {
+                let other_note = self.editor_path.as_deref() != Some(path.as_str());
+                if other_note || self.editor_text(cx) != text {
                     self.set_editor_text(&text, cursor, window, cx);
+                    if other_note {
+                        self.editor.update(cx, |ed, cx| ed.scroll_to_top(cx));
+                    }
                 } else {
                     self.set_editor_cursor(cursor, cx);
                 }
@@ -869,8 +855,6 @@ impl NotekiApp {
             }
             _ => self.editor_path = None,
         }
-        self.decorated_for = None;
-        self.update_decorations(true, cx);
         self.refresh_outline();
         self.refresh_backlinks();
         self.refresh_reader();
@@ -899,20 +883,17 @@ impl NotekiApp {
         &mut self,
         text: &str,
         cursor: usize,
-        window: &mut Window,
+        _: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        self.editor.update(cx, |ed, cx| {
-            // `set_value` emits no Change event, so this is never taken for typing.
-            ed.set_value(text.to_string(), window, cx);
-            let c = cursor.min(text.len());
-            ed.set_selected_range(c..c, cx);
-        });
+        // `set_text` emits no Changed event, so this is never taken for typing.
+        self.editor
+            .update(cx, |ed, cx| ed.set_text(text, cursor, cx));
     }
 
     fn set_editor_cursor(&mut self, cursor: usize, cx: &mut Context<Self>) {
         self.editor.update(cx, |ed, cx| {
-            let c = cursor.min(ed.value().len());
+            let c = cursor.min(ed.text().len());
             ed.set_selected_range(c..c, cx);
         });
     }
@@ -1000,14 +981,12 @@ impl NotekiApp {
 
     fn on_editor_event(
         &mut self,
-        _: &Entity<EditorState>,
-        event: &InputEvent,
+        _: &Entity<NoteEditor>,
+        event: &NoteEditorEvent,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if !matches!(event, InputEvent::Change) {
-            return;
-        }
+        let NoteEditorEvent::Changed = event;
         let Some(path) = self.editor_path.clone() else {
             return;
         };
@@ -1021,7 +1000,6 @@ impl NotekiApp {
     }
 
     fn after_text_change(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.update_decorations(true, cx);
         self.refresh_outline();
         self.refresh_reader();
         self.schedule_autosave(window, cx);
@@ -1253,7 +1231,6 @@ impl NotekiApp {
         }
         self.refresh_outline();
         self.refresh_reader();
-        self.update_decorations(true, cx);
         self.persist_session();
         cx.notify();
     }
@@ -1391,7 +1368,7 @@ impl NotekiApp {
 
     pub(crate) fn follow_link_under_cursor(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let ed = self.editor.read(cx);
-        let (text, cursor) = (ed.value().to_string(), ed.cursor());
+        let (text, cursor) = (ed.text().to_string(), ed.cursor());
         if let Some(link) = markdown::wikilink_at(&text, cursor) {
             self.follow_link(&link.target, link.heading.as_deref(), false, window, cx);
         }
@@ -1415,14 +1392,16 @@ impl NotekiApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        let line = line_one_based.saturating_sub(1) as u32;
+        let line = line_one_based.saturating_sub(1);
         self.editor.update(cx, |ed, cx| {
-            ed.set_cursor_position(Position { line, character: 0 }, window, cx)
+            let lines = logical_lines(ed.text());
+            let start = lines.get(line).or(lines.last()).map_or(0, |l| l.start);
+            ed.set_selected_range(start..start, cx);
+            ed.focus(window, cx);
         });
         if self.settings.view_mode == ViewMode::Reader {
             self.set_view_mode(ViewMode::Live, cx);
         }
-        self.update_decorations(false, cx);
     }
 
     /// A Reader checkbox was clicked; `marker_offset` is in the Reader Markdown.
@@ -1686,44 +1665,6 @@ impl NotekiApp {
         };
     }
 
-    /// Live preview: recomputed when the text changes, or when the cursor moves
-    /// to another line (the marks of the cursor's line are shown).
-    fn update_decorations(&mut self, force: bool, cx: &mut Context<Self>) {
-        let Some(path) = self.editor_path.clone() else {
-            return;
-        };
-        let ed = self.editor.read(cx);
-        let text = ed.value();
-        let cursor_line = line_of_offset(&text, ed.cursor());
-        let key = (path.clone(), cursor_line, text.len());
-        if !force && self.decorated_for.as_ref() == Some(&key) {
-            return;
-        }
-        self.decorated_for = Some(key);
-        let decorations: Vec<TextDecoration> = if text.len() > LIVE_PREVIEW_MAX_BYTES {
-            Vec::new()
-        } else {
-            let index = self
-                .vault
-                .as_ref()
-                .map(|v| v.index.clone())
-                .unwrap_or_default();
-            compute_markdown_spans(&text, cursor_line, Some(&path), &index)
-                .into_iter()
-                .map(|s| TextDecoration::new(s.range, style::span_style(s.kind, &self.palette)))
-                .collect()
-        };
-        match &self.live_decorations {
-            Some(c) => c.set(decorations, cx),
-            None => {
-                let c = self.editor.update(cx, |ed, cx| {
-                    ed.create_decorations_collection(decorations, cx)
-                });
-                self.live_decorations = Some(c);
-            }
-        }
-    }
-
     pub(crate) fn wrap_selection(
         &mut self,
         prefix: &str,
@@ -1735,8 +1676,9 @@ impl NotekiApp {
             return;
         }
         self.editor.update(cx, |ed, cx| {
-            let selected = ed.selected_value().to_string();
-            ed.replace(format!("{prefix}{selected}{suffix}"), window, cx);
+            let selected = ed.selected_text().to_string();
+            ed.replace_selection(&format!("{prefix}{selected}{suffix}"), cx);
+            ed.focus(window, cx);
         });
     }
 
@@ -1747,7 +1689,7 @@ impl NotekiApp {
         cx: &mut Context<Self>,
     ) {
         self.editor.update(cx, |ed, cx| {
-            ed.insert(format!("[[{link}]]"), window, cx);
+            ed.replace_selection(&format!("[[{link}]]"), cx);
             ed.focus(window, cx);
         });
     }

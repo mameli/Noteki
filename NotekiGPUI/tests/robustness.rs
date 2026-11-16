@@ -442,3 +442,59 @@ fn tabs_invariants_under_random_operations() {
         }
     }
 }
+
+// ---- The editor's rules (core::editor) ----
+
+#[test]
+fn editor_edits_and_movements_keep_the_cursor_on_a_char_boundary() {
+    use noteki_gpui::core::editor::lines::{line_index_of, logical_lines};
+    use noteki_gpui::core::editor::{EditBuffer, Motion};
+    const MOTIONS: &[Motion] = &[
+        Motion::Left,
+        Motion::Right,
+        Motion::WordLeft,
+        Motion::WordRight,
+        Motion::LineStart,
+        Motion::LineEnd,
+        Motion::DocStart,
+        Motion::DocEnd,
+    ];
+    let mut rng = Rng(0xED17_0001);
+    for _ in 0..cases() / 4 {
+        let mut b = EditBuffer::new(gen_text(&mut rng, 30));
+        b.move_to(rng.below(b.text().len() + 2), false);
+        for _ in 0..40 {
+            let motion = MOTIONS[rng.below(MOTIONS.len())];
+            match rng.below(7) {
+                0 => {
+                    b.insert(rng.pick(PIECES));
+                }
+                1 => {
+                    b.delete(motion);
+                }
+                2 => {
+                    let piece = rng.pick(PIECES);
+                    let sel = rng.below(piece.len() + 2);
+                    b.replace_and_mark(None, piece, Some(sel..sel));
+                }
+                3 => {
+                    let n = b.text().len() + 3;
+                    b.set_selection(rng.below(n), rng.below(n));
+                }
+                _ => b.apply_motion(motion, rng.below(2) == 0),
+            }
+            let (t, s) = (b.text(), b.selection());
+            for o in [s.anchor, s.head] {
+                assert!(o <= t.len() && t.is_char_boundary(o), "{o} in {t:?}");
+            }
+            if let Some(m) = b.marked() {
+                assert_slice(t, &m, "marked range");
+            }
+            let lines = logical_lines(t);
+            assert!(line_index_of(&lines, b.cursor()) < lines.len());
+            for l in &lines {
+                assert_slice(t, l, "logical line");
+            }
+        }
+    }
+}

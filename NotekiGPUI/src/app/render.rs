@@ -5,7 +5,7 @@ use gpui_kit::base::Disableable as _;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::command::{Command, CommandItem, CommandState};
 use gpui_kit::component::dialog::DialogButtonProps;
-use gpui_kit::component::input::{Editor, Input, InputState};
+use gpui_kit::component::input::{Input, InputState};
 use gpui_kit::component::list::ListItem;
 use gpui_kit::component::resizable::{h_resizable, resizable_panel};
 use gpui_kit::component::scroll::ScrollableElement as _;
@@ -17,7 +17,7 @@ use gpui_kit::component::{
 };
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    div, hsla, px, relative, AnyElement, AppContext as _, ClickEvent, Context, Hsla, ImageSource,
+    div, hsla, px, AnyElement, AppContext as _, ClickEvent, Context, Hsla, ImageSource,
     InteractiveElement as _, IntoElement, ParentElement as _, Render, Role, SharedString,
     StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, Window,
 };
@@ -1106,15 +1106,7 @@ impl NotekiApp {
             .id("editor-pane")
             .test_support()
             .size_full()
-            .px_6()
-            .py_4()
-            .child(
-                div()
-                    .size_full()
-                    .max_w(px(820.))
-                    .mx_auto()
-                    .child(Editor::new(&self.editor).bordered(false).h(relative(1.))),
-            )
+            .child(self.editor.clone())
             .into_any_element()
     }
 

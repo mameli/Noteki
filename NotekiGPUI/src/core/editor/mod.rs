@@ -1,0 +1,9 @@
+//! The rules of Noteki's editor, without GPUI: the text with its selection,
+//! cursor movement, and the vertical geometry of lines of different heights.
+//! The element that draws them is `crate::editor`.
+
+pub mod buffer;
+pub mod lines;
+pub mod movement;
+
+pub use buffer::{EditBuffer, Motion, Selection};

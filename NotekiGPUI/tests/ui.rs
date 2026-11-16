@@ -577,3 +577,106 @@ fn crlf_line_endings_and_final_newline_are_kept(cx: &mut TestAppContext) {
     wait_autosave(cx);
     assert_eq!(read(&f, "Windows.md"), "X# Title\r\n\r\nBody\r\n");
 }
+
+// ---- The editor element ----
+
+/// Opens a Note, puts `text` in the editor with the cursor at `cursor`, and focuses it.
+fn editor_with(cx: &mut TestAppContext, f: &Fixture, text: &str, cursor: usize) {
+    app(cx, f, |a, w, cx| {
+        a.open_path("Ideas.md", OpenIn::CurrentTab, w, cx)
+    });
+    let text = text.to_string();
+    app(cx, f, |a, window, cx| {
+        a.editor().clone().update(cx, |ed, cx| {
+            ed.set_text(&text, cursor, cx);
+            ed.focus(window, cx);
+        })
+    });
+    frame(cx, f);
+}
+
+fn press(cx: &mut TestAppContext, f: &Fixture, keys: &str) {
+    for key in keys.split_whitespace() {
+        ui(cx, f, |window, cx| window.press(key, cx));
+    }
+    cx.run_until_parked();
+}
+
+fn editor_state(cx: &mut TestAppContext, f: &Fixture) -> (String, usize) {
+    app(cx, f, |a, _, cx| {
+        let ed = a.editor().read(cx);
+        (ed.text().to_string(), ed.cursor())
+    })
+}
+
+#[gpui_kit::test]
+fn keys_move_by_character_word_and_line_and_delete(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    editor_with(cx, &f, "Ciao, mondo bello\nseconda riga", 0);
+    press(cx, &f, "alt-right alt-right");
+    assert_eq!(editor_state(cx, &f).1, "Ciao, mondo".len());
+    press(cx, &f, "cmd-right");
+    assert_eq!(editor_state(cx, &f).1, "Ciao, mondo bello".len());
+    press(cx, &f, "alt-backspace");
+    assert_eq!(editor_state(cx, &f).0, "Ciao, mondo \nseconda riga");
+    press(cx, &f, "backspace enter");
+    assert_eq!(editor_state(cx, &f).0, "Ciao, mondo\n\nseconda riga");
+    press(cx, &f, "cmd-down left left shift-alt-left");
+    let sel = app(cx, &f, |a, _, cx| {
+        a.editor().read(cx).selected_text().to_string()
+    });
+    assert_eq!(sel, "ri");
+    type_in_editor(cx, &f, "R");
+    assert_eq!(editor_state(cx, &f).0, "Ciao, mondo\n\nseconda Rga");
+}
+
+#[gpui_kit::test]
+fn typing_marks_the_note_edited_but_set_text_does_not(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    editor_with(cx, &f, "uno", 3);
+    assert_ne!(status(cx, &f), "Edited");
+    press(cx, &f, "backspace");
+    assert_eq!(status(cx, &f), "Edited");
+}
+
+#[gpui_kit::test]
+fn up_and_down_keep_the_x_across_a_shorter_line(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    // Monospace or not, "abcdefgh" is wider than "ab": down from after "abcde"
+    // lands at the end of "ab", then back under the "e" on the third line.
+    editor_with(cx, &f, "abcdefgh\nab\nabcdefgh", 5);
+    press(cx, &f, "down");
+    assert_eq!(editor_state(cx, &f).1, 9 + 2);
+    press(cx, &f, "down");
+    assert_eq!(editor_state(cx, &f).1, 12 + 5);
+    press(cx, &f, "up up");
+    assert_eq!(editor_state(cx, &f).1, 5);
+    press(cx, &f, "up");
+    assert_eq!(
+        editor_state(cx, &f).1,
+        0,
+        "up on the first row goes to the start"
+    );
+    press(cx, &f, "shift-down shift-down shift-down shift-down");
+    let (text, cursor) = editor_state(cx, &f);
+    assert_eq!(cursor, text.len(), "down on the last row goes to the end");
+}
+
+#[gpui_kit::test]
+fn a_dead_key_composes_an_accent_through_the_input_handler(cx: &mut TestAppContext) {
+    use gpui_kit::test::TestInput;
+    use gpui_kit::ElementInputHandler;
+    let f = fixture(cx);
+    editor_with(cx, &f, "caff", 4);
+    let editor = app(cx, &f, |a, _, _| a.editor().clone());
+    ui(cx, &f, |window, cx| {
+        let bounds = window.find("editor-pane").bounds();
+        let mut input = TestInput::new(ElementInputHandler::new(bounds, editor), window);
+        input.compose_text(None, "´", Some(1..1), cx);
+        assert_eq!(input.marked_text_range(cx), Some(4..5));
+        input.commit_text("é", cx);
+        assert_eq!(input.marked_text_range(cx), None);
+    });
+    assert_eq!(editor_state(cx, &f), ("caffé".to_string(), "caffé".len()));
+    assert_eq!(status(cx, &f), "Edited");
+}
