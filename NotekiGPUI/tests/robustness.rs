@@ -547,7 +547,19 @@ fn editor_display_map_never_puts_an_offset_inside_a_hidden_mark() {
     use noteki_gpui::core::editor::styling::style_lines;
     let idx = index();
     let mut rng = Rng(0xED17_0003);
-    let pieces = ["# ", "## ", "  ### ", "#", "\n# ", "\n"];
+    let pieces = [
+        "# ",
+        "## ",
+        "  ### ",
+        "#",
+        "\n# ",
+        "\n",
+        "| a | **b** |\n|---|:-:|\n| c |",
+        " | ",
+        "- [ ] ",
+        "![[x.png]]",
+        "```rust\n",
+    ];
     for _ in 0..cases() {
         let mut text = gen_text(&mut rng, 30);
         let at = rng.below(text.len() + 1);
@@ -557,19 +569,30 @@ fn editor_display_map_never_puts_an_offset_inside_a_hidden_mark() {
             .rev()
             .find(|&i| text.is_char_boundary(i))
             .unwrap();
-        let spans = compute_markdown_spans(&text, Some(cursor), None, &idx);
+        // As the editor does: every line styled with the cursor off it, then
+        // the cursor's line again with the cursor on it.
+        let spans = compute_markdown_spans(&text, None, None, &idx);
         let lines = logical_lines(&text);
-        for (style, line) in style_lines(
+        let mut styles = style_lines(
             &text,
             &spans,
             noteki_gpui::core::editor::styling::Context {
                 highlight: &mut |l, c| noteki_gpui::core::editor::code::highlight(l, c).into(),
                 image: &mut |_| None,
             },
-        )
-        .iter()
-        .zip(&lines)
-        {
+        );
+        let scanned = noteki_gpui::core::markdown::lines(&text);
+        let i = line_of_offset(&text, cursor);
+        let mut own = Vec::new();
+        noteki_gpui::core::markdown::line_spans(
+            &scanned[i],
+            Some(cursor - scanned[i].start),
+            None,
+            &idx,
+            &mut own,
+        );
+        styles[i] = noteki_gpui::core::editor::styling::style_line(&scanned[i], &own);
+        for (style, line) in styles.iter().zip(&lines) {
             if line.start <= cursor && cursor <= line.end {
                 let c = cursor - line.start;
                 assert!(

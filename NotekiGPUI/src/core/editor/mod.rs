@@ -8,5 +8,6 @@ pub mod display;
 pub mod lines;
 pub mod movement;
 pub mod styling;
+pub mod table;
 
 pub use buffer::{EditBuffer, Motion, Selection};

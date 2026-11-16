@@ -3,23 +3,25 @@
 //! [`LineTops`], never by `line_height * row`.
 
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::ops::Range;
 use std::path::Path;
 use std::rc::Rc;
 use std::sync::Arc;
 
 use gpui_kit::{
-    fill, point, px, size, App, AvailableSpace, Bounds, Corners, DispatchPhase, Element, ElementId,
-    ElementInputHandler, Entity, Font, GlobalElementId, HighlightStyle, Hsla, ImageAssetLoader,
-    InspectorElementId, IntoElement, LayoutId, MouseMoveEvent, MouseUpEvent, Pixels, Point,
-    Resource, SharedString, Size, Style, TextAlign, TextRun, UnderlineStyle, Window,
-    WindowTextSystem, WrappedLine,
+    fill, point, px, size, App, AvailableSpace, Bounds, ContentMask, Corners, DispatchPhase,
+    Element, ElementId, ElementInputHandler, Entity, Font, FontWeight, GlobalElementId,
+    HighlightStyle, Hsla, ImageAssetLoader, InspectorElementId, IntoElement, LayoutId,
+    MouseMoveEvent, MouseUpEvent, Pixels, Point, Resource, ShapedLine, SharedString, Size, Style,
+    TextAlign, TextRun, UnderlineStyle, Window, WindowTextSystem, WrappedLine,
 };
 
 use crate::core::editor::display::{shown_text, to_buffer, to_display};
 use crate::core::editor::lines::{logical_lines, scroll_to_reveal, LineTops};
 use crate::core::editor::movement::prev_grapheme;
 use crate::core::editor::styling::{CodePart, Decoration, LineStyle};
+use crate::core::editor::table::{Align, RowKind, Table, TableRow};
 use crate::core::markdown::{ListKind, MdSpanKind};
 use crate::theme::NotekiPalette;
 
@@ -46,6 +48,10 @@ const CODE_PAD: Pixels = px(12.);
 const CODE_RADIUS: Pixels = px(6.);
 /// Code is drawn in the system's monospaced font.
 const CODE_FONT: &str = "Menlo";
+/// A table cell's text is this far from its column's edges.
+const CELL_PAD: Pixels = px(8.);
+/// A column is never wider than about 40 characters (ADR 0008), in ems.
+const MAX_COLUMN_EMS: f32 = 22.;
 
 #[derive(Clone)]
 pub(super) struct LaidLine {
@@ -63,6 +69,30 @@ pub(super) struct LaidLine {
     text_height: Pixels,
     /// An image drawn under the text, at the size it is drawn.
     image: Option<(Rc<Path>, Size<Pixels>)>,
+    /// A table row's cells, each at its column (the line's own text is empty).
+    cells: Option<Rc<[Cell]>>,
+    /// A table's column edges, from the left: for the grid.
+    columns: Option<Rc<[Pixels]>>,
+}
+
+/// One table cell as drawn: its text in the line, its place, its shaped text.
+pub(super) struct Cell {
+    /// Its text in the line, relative to the line's start.
+    range: Range<usize>,
+    /// Where its text starts (alignment included), and how much room it has
+    /// from there before its column's edge.
+    x: Pixels,
+    room: Pixels,
+    /// What of its text is hidden (marks), relative to the cell's start.
+    hidden: Vec<Range<usize>>,
+    shaped: ShapedLine,
+}
+
+impl Cell {
+    fn x_for(&self, local: usize) -> Pixels {
+        let i = local.clamp(self.range.start, self.range.end) - self.range.start;
+        self.x + self.shaped.x_for_index(to_display(&self.hidden, i))
+    }
 }
 
 impl LaidLine {
@@ -73,6 +103,15 @@ impl LaidLine {
     /// The position of `offset` (clamped to the line) relative to the line's top-left.
     fn position(&self, offset: usize) -> Point<Pixels> {
         let local = offset.clamp(self.range.start, self.range.end) - self.range.start;
+        if let Some(cells) = &self.cells {
+            // In a cell, or the next cell's start (a pipe, a space).
+            let x = cells
+                .iter()
+                .find(|c| local <= c.range.end)
+                .or(cells.last())
+                .map_or(px(0.), |c| c.x_for(local));
+            return point(x, px(0.));
+        }
         let shown = to_display(&self.hidden, local);
         // Where a line wraps, the caret is at the start of the next row (GPUI
         // gives the end of the row before), as in every macOS text view.
@@ -156,6 +195,19 @@ impl Layout {
         }
         let i = self.tops.line_at(f32::from(rel.y));
         let line = &self.lines[i];
+        if let Some(cells) = &line.cells {
+            // The cell whose column holds `x`, else the nearest.
+            let cell = cells
+                .iter()
+                .rev()
+                .find(|c| rel.x >= c.x - CELL_PAD)
+                .or(cells.first());
+            let local = cell.map_or(0, |c| {
+                let shown = c.shaped.closest_index_for_x(rel.x - c.x);
+                c.range.start + to_buffer(&c.hidden, shown)
+            });
+            return (line.range.start + local).min(line.range.end);
+        }
         let y = (rel.y - self.top_of(i)).clamp(px(0.), line.height() - px(0.5));
         let shown = match line.shaped.closest_index_for_position(
             point((rel.x - line.indent).max(px(0.)), y),
@@ -327,6 +379,7 @@ fn shape(
         .is_some_and(|f| f.look == look && f.width == width);
     let plain = Rc::new(LineStyle::default());
     let mut sources = Vec::with_capacity(cache.sources.len());
+    let mut columns = HashMap::new();
     let lines: Vec<LaidLine> = logical_lines(&input.text)
         .into_iter()
         .enumerate()
@@ -349,7 +402,7 @@ fn shape(
                     ..cache.lines[i].clone()
                 }
             } else {
-                shape_line(input, range.clone(), style, width, ts)
+                shape_line(input, range.clone(), style, width, ts, &mut columns)
             };
             sources.push(LineSource {
                 text: if reusable {
@@ -496,6 +549,35 @@ fn paint_decoration(
                 }
             }
         }
+        Some(Decoration::Table(row)) => {
+            let Some(edges) = &line.columns else {
+                return;
+            };
+            let right = left + *edges.last().unwrap_or(&px(0.));
+            let h = line.height();
+            let border = palette.separator;
+            let hline = |y: Pixels, window: &mut Window| {
+                window.paint_quad(fill(
+                    Bounds::new(point(left, y), size(right - left, px(1.))),
+                    border,
+                ))
+            };
+            if row.kind == RowKind::Delimiter {
+                // The rule under the header, across the table.
+                hline(top + h / 2., window);
+                return;
+            }
+            if row.kind == RowKind::Header {
+                hline(top, window);
+            }
+            hline(top + h - px(1.), window);
+            for x in edges.iter() {
+                window.paint_quad(fill(
+                    Bounds::new(point(left + *x, top), size(px(1.), h)),
+                    border,
+                ));
+            }
+        }
         // Painted after the text, in `paint`.
         Some(Decoration::Image(_)) | None => {}
     }
@@ -533,13 +615,136 @@ fn checkbox_bounds(x: Pixels, mid: Pixels) -> Bounds<Pixels> {
     )
 }
 
+/// A table's column widths, its cells' padding included: each as wide as its
+/// widest cell, up to about 40 characters, all shrunk in proportion when the
+/// table is wider than the text (ADR 0008).
+fn column_widths(
+    table: &Table,
+    input: &ShapeInput,
+    width: Pixels,
+    ts: &WindowTextSystem,
+) -> Rc<[Pixels]> {
+    let max = input.font_size * MAX_COLUMN_EMS;
+    let mut widths = vec![px(0.); table.align.len()];
+    for (r, row) in table.rows.iter().enumerate() {
+        let weight = if r == 0 {
+            FontWeight::BOLD
+        } else {
+            FontWeight::NORMAL
+        };
+        let font = Font {
+            weight,
+            ..input.font.clone()
+        };
+        for (w, cell) in widths.iter_mut().zip(row) {
+            let run = text_run(
+                cell.len(),
+                &font,
+                input.palette.text,
+                HighlightStyle::default(),
+            );
+            let shaped = ts.shape_line(cell.clone().into(), input.font_size, &[run], None);
+            *w = (*w).max(shaped.width().min(max));
+        }
+    }
+    let padded: Vec<Pixels> = widths.iter().map(|w| *w + CELL_PAD * 2.).collect();
+    let total: Pixels = padded.iter().copied().sum();
+    let scale = if total > width && total > px(0.) {
+        width / total
+    } else {
+        1.
+    };
+    padded.into_iter().map(|w| w * scale).collect()
+}
+
+/// A table row's cells, shaped one by one and placed in their columns.
+fn table_cells(
+    input: &ShapeInput,
+    range: &Range<usize>,
+    style: &LineStyle,
+    row: &TableRow,
+    widths: &[Pixels],
+    ts: &WindowTextSystem,
+) -> Rc<[Cell]> {
+    let mut left = px(0.);
+    let mut cells = Vec::new();
+    for ((cell, w), align) in row.cells.iter().zip(widths).zip(&row.table.align) {
+        // The cell's own style: the line's, cut to the cell.
+        let clip = |r: &Range<usize>| {
+            let (a, b) = (r.start.max(cell.start), r.end.min(cell.end));
+            (a < b).then(|| a - cell.start..b - cell.start)
+        };
+        let mut cell_style = LineStyle {
+            segments: style
+                .segments
+                .iter()
+                .filter_map(|(r, k)| clip(r).map(|r| (r, k.clone())))
+                .collect(),
+            hidden: style.hidden.iter().filter_map(clip).collect(),
+            ..LineStyle::default()
+        };
+        if row.kind == RowKind::Header {
+            cell_style
+                .segments
+                .push((0..cell.len(), vec![MdSpanKind::Bold]));
+        }
+        let abs = range.start + cell.start..range.start + cell.end;
+        let runs = runs_for(input, &abs, &cell_style);
+        let text = shown_text(&input.text[abs], &cell_style.hidden);
+        let shaped = ts.shape_line(text.into(), input.font_size, &runs, None);
+        let room = (*w - CELL_PAD * 2.).max(px(0.));
+        let x = left
+            + CELL_PAD
+            + match align {
+                Align::Left => px(0.),
+                Align::Center => ((room - shaped.width()) / 2.).max(px(0.)),
+                Align::Right => (room - shaped.width()).max(px(0.)),
+            };
+        cells.push(Cell {
+            range: cell.clone(),
+            x,
+            room: left + CELL_PAD + room - x,
+            hidden: cell_style.hidden,
+            shaped,
+        });
+        left += *w;
+    }
+    cells.into()
+}
+
 fn shape_line(
     input: &ShapeInput,
     range: Range<usize>,
     style: &LineStyle,
     width: Pixels,
     ts: &WindowTextSystem,
+    columns: &mut HashMap<*const Table, Rc<[Pixels]>>,
 ) -> LaidLine {
+    if let Some(Decoration::Table(row)) = &style.decoration {
+        let widths = columns
+            .entry(Rc::as_ptr(&row.table))
+            .or_insert_with(|| column_widths(&row.table, input, width, ts))
+            .clone();
+        let cells = (row.kind != RowKind::Delimiter)
+            .then(|| table_cells(input, &range, style, row, &widths, ts));
+        let mut edges = vec![px(0.)];
+        for w in widths.iter() {
+            edges.push(*edges.last().unwrap() + *w);
+        }
+        let line_height = input.font_size * LINE_HEIGHT;
+        return LaidLine {
+            range,
+            line_height,
+            hidden: style.hidden.clone().into(),
+            shaped: Rc::default(),
+            indent: px(0.),
+            decoration: style.decoration.clone(),
+            text_height: line_height,
+            image: None,
+            cells,
+            columns: Some(edges.into()),
+        };
+    }
     let (font_size, line_height) = match style.heading {
         Some(level) => {
             let size = input.font_size * HEADING_SCALE[usize::from(level.clamp(1, 6)) - 1];
@@ -588,6 +793,8 @@ fn shape_line(
         decoration: style.decoration.clone(),
         text_height,
         image,
+        cells: None,
+        columns: None,
     }
 }
 
@@ -872,6 +1079,21 @@ impl Element for EditorElement {
                 cx,
             );
             paint_image(line, (layout.origin.x, top), input, window, cx);
+            for cell in line.cells.iter().flat_map(|c| c.iter()) {
+                // A cell's text never overflows its column: cut at its edge.
+                let x = layout.origin.x + cell.x;
+                let clip = Bounds::new(point(x, top), size(cell.room, line.line_height));
+                window.with_content_mask(Some(ContentMask { bounds: clip }), |window| {
+                    let _ = cell.shaped.paint(
+                        point(x, top),
+                        line.line_height,
+                        TextAlign::Left,
+                        None,
+                        window,
+                        cx,
+                    );
+                });
+            }
             let _ = line.shaped.paint(
                 point(layout.origin.x + line.indent, top),
                 line.line_height,

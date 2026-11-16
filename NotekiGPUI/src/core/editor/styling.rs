@@ -4,6 +4,7 @@
 use std::ops::Range;
 use std::rc::Rc;
 
+use crate::core::editor::table::{tables, RowKind, TableRow};
 use crate::core::markdown::{
     image_embed, lines, list_item, parse_atx_heading, quote_prefix, BlockKind, Line, ListKind,
     MdSpan, MdSpanKind,
@@ -39,6 +40,8 @@ pub enum Decoration {
     /// A line holding only an image Embed: drawn as the image, its source
     /// hidden while the cursor is off the line.
     Image(Image),
+    /// A table's row, drawn as its cells in their columns (ADR 0008).
+    Table(TableRow),
 }
 
 /// An image of the Vault, as the editor draws it.
@@ -79,6 +82,10 @@ pub fn style_lines(text: &str, spans: &[MdSpan], cx: Context) -> Vec<LineStyle> 
     let mut clipped: Vec<Vec<(Range<usize>, MdSpanKind)>> = vec![Vec::new(); lines.len()];
     let mut parts: Vec<Option<CodePart>> = vec![None; lines.len()];
     let code_spans = code_blocks(&lines, text, &mut parts, cx.highlight);
+    let mut rows: Vec<Option<TableRow>> = vec![None; lines.len()];
+    for (i, row) in tables(&lines) {
+        rows[i] = Some(row);
+    }
     for span in spans.iter().chain(&code_spans) {
         let first = lines
             .partition_point(|l| l.start <= span.range.start)
@@ -94,10 +101,20 @@ pub fn style_lines(text: &str, spans: &[MdSpan], cx: Context) -> Vec<LineStyle> 
         .iter()
         .zip(clipped)
         .zip(parts)
-        .map(|((line, spans), part)| {
+        .zip(rows)
+        .map(|(((line, spans), part), row)| {
             let mut style = style_of(line, spans);
             if let Some(part) = part {
                 style.decoration = Some(Decoration::Code(part));
+            } else if let Some(row) = row {
+                // Only the cells' text shows: the pipes and the spaces around go.
+                style.hidden = if row.kind == RowKind::Delimiter {
+                    style.segments.clear();
+                    vec![0..line.text.len()]
+                } else {
+                    outside(&row.cells, line.text.len(), &style.hidden)
+                };
+                style.decoration = Some(Decoration::Table(row));
             } else if line.kind == BlockKind::Text {
                 // The cursor is off every line here: an image hides its source.
                 if let Some(image) = image_embed(line.text).and_then(&mut *cx.image) {
@@ -109,6 +126,32 @@ pub fn style_lines(text: &str, spans: &[MdSpan], cx: Context) -> Vec<LineStyle> 
             style
         })
         .collect()
+}
+
+/// What of a line `len` long is outside `cells`, merged with what `hidden`
+/// already hides inside them.
+fn outside(cells: &[Range<usize>], len: usize, hidden: &[Range<usize>]) -> Vec<Range<usize>> {
+    let mut out: Vec<Range<usize>> = Vec::new();
+    let mut at = 0;
+    for c in cells {
+        if at < c.start {
+            out.push(at..c.start);
+        }
+        at = c.end;
+    }
+    if at < len {
+        out.push(at..len);
+    }
+    out.extend(hidden.iter().cloned());
+    out.sort_unstable_by_key(|r| r.start);
+    let mut merged: Vec<Range<usize>> = Vec::with_capacity(out.len());
+    for r in out {
+        match merged.last_mut() {
+            Some(last) if r.start <= last.end => last.end = last.end.max(r.end),
+            _ => merged.push(r),
+        }
+    }
+    merged
 }
 
 /// Finds the fenced code blocks: marks each line's part of its box in `parts`,
@@ -491,6 +534,17 @@ mod tests {
         assert_eq!(s[1].decoration, Some(Decoration::Image(image.clone())));
         assert_eq!(s[1].hidden, vec![0..15]);
         assert_eq!(s[2].decoration, None, "a missing image stays as its source");
+    }
+
+    #[test]
+    fn a_table_shows_only_its_cells() {
+        let text = "| Nome | **Tipo** |\n| --- | ---: |\n| a | b |";
+        let s = styles(text, None);
+        assert!(matches!(s[0].decoration, Some(Decoration::Table(_))));
+        // `| `, ` | **`, `** |`: the pipes, spaces and the bold's marks.
+        assert_eq!(s[0].hidden, vec![0..2, 6..11, 15..19]);
+        assert_eq!(s[1].hidden, vec![0..text.lines().nth(1).unwrap().len()]);
+        assert_eq!(s[2].hidden, vec![0..2, 3..6, 7..9]);
     }
 
     #[test]

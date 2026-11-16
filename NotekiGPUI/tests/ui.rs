@@ -1336,3 +1336,42 @@ fn an_image_embed_is_drawn_as_the_image_and_shows_its_source_with_the_cursor(
         "{cursor}"
     );
 }
+
+#[gpui_kit::test]
+fn a_table_is_drawn_as_a_grid_in_place(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let text = "testo\n| Nome | Tipo | Stato |\n| :--- | :---: | ---: |\n| Markdown | Testo | OK |\n| Swift | Codice | TODO |\nfine";
+    let at = |s: &str| text.find(s).unwrap();
+    editor_with(cx, &f, text, 0);
+    let h = heights(cx, &f);
+    assert!(
+        h[1..5].iter().all(|&x| x == h[0]),
+        "every row one line: {h:?}"
+    );
+    // Left: the cells start together; right: they end together; centre: their
+    // middles meet.
+    assert_eq!(
+        caret_at(cx, &f, at("Markdown")).0,
+        caret_at(cx, &f, at("Swift")).0
+    );
+    assert_eq!(
+        caret_at(cx, &f, at("OK") + 2).0,
+        caret_at(cx, &f, at("TODO") + 4).0
+    );
+    let mid = |cx: &mut TestAppContext, s: &str| {
+        (caret_at(cx, &f, at(s)).0 + caret_at(cx, &f, at(s) + s.len()).0) / 2.
+    };
+    assert!((mid(cx, "Testo") - mid(cx, "Codice")).abs() < 1.);
+    // The cursor's row shows its source; the other rows stay a grid.
+    let row = at("| Markdown");
+    app(cx, &f, |a, _, cx| {
+        a.editor()
+            .clone()
+            .update(cx, |ed, cx| ed.set_selected_range(row..row, cx))
+    });
+    assert!(
+        caret_at(cx, &f, at("Markdown")).0 > caret_at(cx, &f, row).0,
+        "`| ` shows"
+    );
+    assert_eq!(heights(cx, &f), h, "nothing changes height");
+}
