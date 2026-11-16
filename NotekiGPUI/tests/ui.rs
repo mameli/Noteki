@@ -807,3 +807,59 @@ fn opening_a_code_block_above_a_heading_draws_it_as_code(cx: &mut TestAppContext
         "the Heading is inside the code block now: {after:?}"
     );
 }
+
+fn caret_at(cx: &mut TestAppContext, f: &Fixture, offset: usize) -> (f32, f32) {
+    frame(cx, f);
+    app(cx, f, |a, _, cx| {
+        let b = a.editor().read(cx).caret_bounds(offset).expect("a layout");
+        (f32::from(b.origin.x), f32::from(b.origin.y))
+    })
+}
+
+#[gpui_kit::test]
+fn heading_marks_are_hidden_off_the_cursor_line_and_shown_on_it(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    // "## Titolo": its text starts at 3.
+    editor_with(cx, &f, "## Titolo\ntesto", 10);
+    let left = caret_at(cx, &f, 10).0;
+    assert_eq!(
+        caret_at(cx, &f, 3).0,
+        left,
+        "the Heading's text starts at the left edge"
+    );
+    assert_eq!(caret_at(cx, &f, 0).0, left);
+    press(cx, &f, "up");
+    assert_eq!(
+        editor_state(cx, &f).1,
+        3,
+        "↑ lands before the first letter, after the marks"
+    );
+    assert!(caret_at(cx, &f, 3).0 > left, "on its line, the `## ` shows");
+    press(cx, &f, "down");
+    assert_eq!(
+        caret_at(cx, &f, 3).0,
+        left,
+        "and hides again when the cursor leaves"
+    );
+}
+
+#[gpui_kit::test]
+fn showing_marks_never_moves_the_lines_above_the_cursor(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let text = "# Uno\ntesto lungo\n## Due\naltro\n### Tre\nfine";
+    let starts: Vec<usize> = std::iter::once(0)
+        .chain(text.match_indices('\n').map(|(i, _)| i + 1))
+        .collect();
+    editor_with(cx, &f, text, text.len());
+    let tops = |cx: &mut TestAppContext| -> Vec<f32> {
+        starts.iter().map(|&o| caret_at(cx, &f, o).1).collect()
+    };
+    let mut before = tops(cx);
+    // Up through every line: the lines above the cursor stay where they were.
+    for line in (0..starts.len() - 1).rev() {
+        press(cx, &f, "up");
+        let now = tops(cx);
+        assert_eq!(now[..line], before[..line], "moving onto line {line}");
+        before = now;
+    }
+}

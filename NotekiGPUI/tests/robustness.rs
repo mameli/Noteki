@@ -509,7 +509,7 @@ fn editor_line_styles_stay_inside_their_lines() {
         let text = gen_text(&mut rng, 40);
         let cursor_line = rng.below(8);
         let spans = compute_markdown_spans(&text, cursor_line, Some("Dir/Here.md"), &idx);
-        let styles = style_lines(&text, &spans);
+        let styles = style_lines(&text, &spans, cursor_line);
         let lines = logical_lines(&text);
         assert_eq!(styles.len(), lines.len(), "one style per line of {text:?}");
         for (style, line) in styles.iter().zip(&lines) {
@@ -524,6 +524,51 @@ fn editor_line_styles_stay_inside_their_lines() {
                     "{r:?} in {line:?} of {text:?}"
                 );
                 end = r.end;
+            }
+        }
+    }
+}
+
+#[test]
+fn editor_display_map_never_puts_an_offset_inside_a_hidden_mark() {
+    use noteki_gpui::core::editor::display::{shown_text, to_buffer, to_display};
+    use noteki_gpui::core::editor::lines::logical_lines;
+    use noteki_gpui::core::editor::styling::style_lines;
+    let idx = index();
+    let mut rng = Rng(0xED17_0003);
+    let pieces = ["# ", "## ", "  ### ", "#", "\n# ", "\n"];
+    for _ in 0..cases() {
+        let mut text = gen_text(&mut rng, 30);
+        let at = rng.below(text.len() + 1);
+        let at = (0..=at).rev().find(|&i| text.is_char_boundary(i)).unwrap();
+        text.insert_str(at, rng.pick(&pieces));
+        let cursor_line = rng.below(6);
+        let spans = compute_markdown_spans(&text, cursor_line, None, &idx);
+        let lines = logical_lines(&text);
+        for (i, (style, line)) in style_lines(&text, &spans, cursor_line)
+            .iter()
+            .zip(&lines)
+            .enumerate()
+        {
+            if i == cursor_line {
+                assert!(style.hidden.is_empty(), "marks hidden on the cursor's line");
+            }
+            let line_text = &text[line.clone()];
+            let mut end = 0;
+            for h in &style.hidden {
+                assert!(
+                    h.start >= end && h.end <= line_text.len(),
+                    "{h:?} in {line_text:?}"
+                );
+                assert_slice(line_text, h, "hidden range");
+                end = h.end;
+            }
+            let shown = shown_text(line_text, &style.hidden);
+            for d in (0..=shown.len()).filter(|&d| shown.is_char_boundary(d)) {
+                let o = to_buffer(&style.hidden, d);
+                assert_eq!(to_display(&style.hidden, o), d, "{line_text:?}");
+                assert!(line_text.is_char_boundary(o));
+                assert!(!style.hidden.iter().any(|h| h.start < o && o < h.end));
             }
         }
     }

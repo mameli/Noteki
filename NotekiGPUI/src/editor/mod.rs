@@ -261,6 +261,12 @@ impl NoteEditor {
         cx.notify();
     }
 
+    /// Where the caret at `offset` was drawn in the last frame, in window
+    /// coordinates (for tests).
+    pub fn caret_bounds(&self, offset: usize) -> Option<Bounds<Pixels>> {
+        self.layout.as_ref()?.caret(self.buf.text(), offset)
+    }
+
     /// The height of each logical line in the last frame (for tests).
     pub fn line_heights(&self) -> Vec<f32> {
         self.layout
@@ -323,7 +329,7 @@ impl NoteEditor {
             // A line whose style did not change keeps the same `Rc`, so the
             // element sees at a glance that it needs no shaping.
             let prev = &self.styles.1;
-            let styles = style_lines(text, &spans)
+            let styles = style_lines(text, &spans, key.1)
                 .into_iter()
                 .enumerate()
                 .map(|(i, s)| match prev.get(i) {

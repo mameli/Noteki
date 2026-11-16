@@ -13,6 +13,7 @@ use gpui_kit::{
     WindowTextSystem, WrappedLine,
 };
 
+use crate::core::editor::display::{shown_text, to_buffer, to_display};
 use crate::core::editor::lines::{logical_lines, scroll_to_reveal, LineTops};
 use crate::core::editor::movement::prev_grapheme;
 use crate::core::editor::styling::LineStyle;
@@ -35,6 +36,9 @@ pub(super) struct LaidLine {
     /// The line's bytes in the text, without its line break.
     range: Range<usize>,
     line_height: Pixels,
+    /// What of the line is not drawn, relative to its start (its display map).
+    hidden: Rc<[Range<usize>]>,
+    /// The line as shown: without its hidden ranges.
     shaped: Rc<WrappedLine>,
 }
 
@@ -47,7 +51,7 @@ impl LaidLine {
     fn position(&self, offset: usize) -> Point<Pixels> {
         let local = offset.clamp(self.range.start, self.range.end) - self.range.start;
         self.shaped
-            .position_for_index(local, self.line_height)
+            .position_for_index(to_display(&self.hidden, local), self.line_height)
             .unwrap_or_else(|| point(self.shaped.width(), px(0.)))
     }
 }
@@ -117,12 +121,13 @@ impl Layout {
         let i = self.tops.line_at(f32::from(rel.y));
         let line = &self.lines[i];
         let y = (rel.y - self.top_of(i)).clamp(px(0.), line.height() - px(0.5));
-        let local = match line
+        let shown = match line
             .shaped
             .closest_index_for_position(point(rel.x.max(px(0.)), y), line.line_height)
         {
             Ok(i) | Err(i) => i,
         };
+        let local = to_buffer(&line.hidden, shown);
         (line.range.start + local).min(line.range.end)
     }
 
@@ -326,7 +331,7 @@ fn shape_line(
     let runs = runs_for(input, &range, style);
     let shaped = ts
         .shape_text(
-            SharedString::from(input.text[range.clone()].to_string()),
+            SharedString::from(shown_text(&input.text[range.clone()], &style.hidden)),
             font_size,
             &runs,
             Some(width),
@@ -338,12 +343,14 @@ fn shape_line(
     LaidLine {
         range,
         line_height,
+        hidden: style.hidden.clone().into(),
         shaped: Rc::new(shaped),
     }
 }
 
-/// The text runs of one line: the Live preview styles of its segments, and
-/// the text being composed underlined. Ranges are relative to the line.
+/// The text runs of the shown line: the Live preview styles of its segments,
+/// and the text being composed underlined. Ranges are relative to the line;
+/// its hidden ranges get no run, as they are not in the shown text.
 fn runs_for(input: &ShapeInput, line: &Range<usize>, style: &LineStyle) -> Vec<TextRun> {
     let len = line.len();
     let mut layers: Vec<(Range<usize>, HighlightStyle)> = style
@@ -370,15 +377,22 @@ fn runs_for(input: &ShapeInput, line: &Range<usize>, style: &LineStyle) -> Vec<T
             layers.push((a - line.start..b - line.start, underline));
         }
     }
-    // Cut the line at every layer's ends; each piece gets every layer over it.
+    // Cut the line at every layer's and hidden range's ends; each shown piece
+    // gets every layer over it.
     let mut bounds = vec![0, len];
-    for (r, _) in &layers {
-        bounds.extend([r.start, r.end]);
+    for r in layers.iter().map(|(r, _)| r).chain(&style.hidden) {
+        bounds.extend([r.start.min(len), r.end.min(len)]);
     }
     bounds.sort_unstable();
     bounds.dedup();
     let runs: Vec<TextRun> = bounds
         .windows(2)
+        .filter(|w| {
+            !style
+                .hidden
+                .iter()
+                .any(|h| h.start <= w[0] && w[1] <= h.end)
+        })
         .map(|w| {
             let style = layers
                 .iter()

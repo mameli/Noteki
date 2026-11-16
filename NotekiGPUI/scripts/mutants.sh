@@ -22,7 +22,9 @@ MUTANTS=(
   "src/app/mod.rs|self.follow_rename(\&old, \&new);|let _ = (\&old, \&new);|--test ui|a rename by another app is not followed"
   "src/core/editor/buffer.rs|self.marked = (!new.is_empty()).then(\|\| r.start..r.start + new.len());|self.marked = None;|--lib --test ui|a dead key's accent is not kept as composed text"
   "src/editor/element.rs|std::mem::take(\&mut ed.reveal).then|false.then|--test ui|the view does not follow the cursor"
-  "src/core/editor/styling.rs|heading: (line.kind == BlockKind::Text)|heading: (true)|--lib --test ui|a # in a code block or the Frontmatter is drawn as a Heading"
+  "src/core/editor/styling.rs|let heading = (line.kind == BlockKind::Text)|let heading = (true)|--lib --test ui|a # in a code block or the Frontmatter is drawn as a Heading"
+  "src/core/editor/display.rs|        if offset < h.start {|        if offset <= h.start {|--lib --test ui --test robustness|a click before a Heading's first letter lands before its hidden \`# \`"
+  "src/core/editor/styling.rs|Some(level) if line.index != cursor_line =>|Some(level) =>|--lib --test ui --test robustness|a Heading's marks stay hidden on the cursor's line"
   "src/editor/element.rs|end = prev_grapheme(text, end).max(start);|end = end.max(start);|--test ui|⌘→ lands after the space a row wraps at"
   "src/editor/element.rs|\&\& (Rc::ptr_eq(\&src.style, style) \|\| src.style == *style)|\&\& true|--test ui|a line whose style changed is drawn from the cache, as it was"
 )
