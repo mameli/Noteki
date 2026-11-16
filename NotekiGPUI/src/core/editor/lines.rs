@@ -81,6 +81,21 @@ pub fn scroll_to_reveal(
     wanted.clamp(0., max.max(0.))
 }
 
+/// While a selection is dragged past the top or bottom of the view, how far
+/// to scroll per frame (negative: up): the further past the edge, the faster.
+pub fn edge_scroll(pointer_y: f32, top: f32, bottom: f32) -> f32 {
+    const PER_PIXEL: f32 = 0.3;
+    const MAX: f32 = 60.;
+    let past = if pointer_y < top {
+        pointer_y - top
+    } else if pointer_y > bottom {
+        pointer_y - bottom
+    } else {
+        return 0.;
+    };
+    (past * PER_PIXEL).clamp(-MAX, MAX)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -135,5 +150,14 @@ mod tests {
         assert_eq!(r(0., 990., 1010.), 900., "never past the end");
         // A caret taller than the room left by the margins keeps what fits.
         assert_eq!(scroll_to_reveal(0., 30., 100., 120., 10., 900.), 95.);
+    }
+
+    #[test]
+    fn dragging_past_an_edge_scrolls_faster_the_further_it_is() {
+        assert_eq!(edge_scroll(50., 0., 100.), 0.);
+        assert!(edge_scroll(-10., 0., 100.) < 0.);
+        assert!(edge_scroll(110., 0., 100.) > 0.);
+        assert!(edge_scroll(150., 0., 100.) > edge_scroll(110., 0., 100.));
+        assert_eq!(edge_scroll(10_000., 0., 100.), 60., "up to a limit");
     }
 }

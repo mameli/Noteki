@@ -7,10 +7,10 @@ use std::ops::Range;
 use std::rc::Rc;
 
 use gpui_kit::{
-    fill, point, px, size, App, AvailableSpace, Bounds, Element, ElementId, ElementInputHandler,
-    Entity, Font, GlobalElementId, HighlightStyle, Hsla, InspectorElementId, IntoElement, LayoutId,
-    Pixels, Point, SharedString, Size, Style, TextAlign, TextRun, UnderlineStyle, Window,
-    WindowTextSystem, WrappedLine,
+    fill, point, px, size, App, AvailableSpace, Bounds, DispatchPhase, Element, ElementId,
+    ElementInputHandler, Entity, Font, GlobalElementId, HighlightStyle, Hsla, InspectorElementId,
+    IntoElement, LayoutId, MouseMoveEvent, MouseUpEvent, Pixels, Point, SharedString, Size, Style,
+    TextAlign, TextRun, UnderlineStyle, Window, WindowTextSystem, WrappedLine,
 };
 
 use crate::core::editor::display::{shown_text, to_buffer, to_display};
@@ -573,6 +573,22 @@ impl Element for EditorElement {
             ElementInputHandler::new(bounds, self.editor.clone()),
             cx,
         );
+        // A drag goes on outside the editor (over the tab bar, past the window's
+        // edge): follow the pointer wherever it is, not only over the element.
+        if self.editor.read(cx).drag.is_some() {
+            let editor = self.editor.clone();
+            window.on_mouse_event(move |ev: &MouseMoveEvent, phase, _, cx| {
+                if phase == DispatchPhase::Bubble {
+                    editor.update(cx, |ed, cx| ed.on_drag_move(ev, cx));
+                }
+            });
+            let editor = self.editor.clone();
+            window.on_mouse_event(move |ev: &MouseUpEvent, phase, _, cx| {
+                if phase == DispatchPhase::Bubble {
+                    editor.update(cx, |ed, cx| ed.on_drag_end(ev, cx));
+                }
+            });
+        }
         for r in state.selection.drain(..) {
             window.paint_quad(fill(r, palette.selection));
         }

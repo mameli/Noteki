@@ -24,6 +24,8 @@ use gpui_kit::{
 };
 
 use crate::core::editor::buffer::{range_from_utf16, range_to_utf16};
+use crate::core::editor::lines::edge_scroll;
+use crate::core::editor::movement::{line_range_at, word_range_at};
 use crate::core::editor::styling::{style_lines, LineStyle};
 use crate::core::editor::{EditBuffer, Motion};
 use crate::core::markdown::{compute_markdown_spans, line_of_offset};
@@ -36,6 +38,7 @@ use element::{EditorElement, Layout, ShapeCache};
 
 const CONTEXT: &str = "NoteEditor";
 const BLINK: Duration = Duration::from_millis(500);
+const EDGE_SCROLL_TICK: Duration = Duration::from_millis(16);
 /// Above this size Live preview is off: the Note is drawn as plain text.
 pub const LIVE_PREVIEW_MAX_BYTES: usize = 1_000_000;
 
@@ -150,7 +153,9 @@ pub struct NoteEditor {
     layout: Option<Layout>,
     /// The x ↑ and ↓ keep, from where the vertical movement began.
     goal_x: Option<Pixels>,
-    selecting: bool,
+    /// The selection being made with the mouse, while the button is down.
+    drag: Option<Drag>,
+    _edge_scroll: Option<Task<()>>,
     cursor_on: bool,
     /// Scroll the cursor into view at the next frame (keys and edits, not clicks).
     reveal: bool,
@@ -196,7 +201,8 @@ impl NoteEditor {
             scroll: ScrollHandle::new(),
             layout: None,
             goal_x: None,
-            selecting: false,
+            drag: None,
+            _edge_scroll: None,
             cursor_on: true,
             reveal: false,
             revision: 0,
@@ -428,34 +434,134 @@ impl NoteEditor {
         self.wake(cx);
     }
 
+    /// What the mouse selects: what is under it when it went down, and the unit
+    /// it goes on selecting by while it moves (a double-click: words).
+    fn unit_at(unit: ClickUnit, text: &str, offset: usize) -> Range<usize> {
+        match unit {
+            ClickUnit::Char => offset..offset,
+            ClickUnit::Word => word_range_at(text, offset),
+            ClickUnit::Line => line_range_at(text, offset),
+        }
+    }
+
     fn on_mouse_down(&mut self, ev: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         window.focus(&self.focus_handle, cx);
         let Some(layout) = &self.layout else {
             return;
         };
         let offset = layout.offset_for_point(self.buf.text(), ev.position);
-        self.selecting = true;
-        self.buf.move_to(offset, ev.modifiers.shift);
+        let unit = match ev.click_count {
+            0 | 1 => ClickUnit::Char,
+            2 => ClickUnit::Word,
+            _ => ClickUnit::Line,
+        };
+        let origin = if unit == ClickUnit::Char && ev.modifiers.shift {
+            // ⇧-click extends what is selected.
+            let a = self.buf.selection().anchor;
+            a..a
+        } else {
+            Self::unit_at(unit, self.buf.text(), offset)
+        };
+        self.drag = Some(Drag {
+            unit,
+            origin,
+            pointer: ev.position,
+        });
+        self.select_to(offset);
         self.goal_x = None;
         self.wake(cx);
         self.reveal = false;
+        self._edge_scroll = Some(cx.spawn_in(window, async move |this, cx| loop {
+            cx.background_executor().timer(EDGE_SCROLL_TICK).await;
+            match this.update(cx, |ed, cx| ed.edge_scroll(cx)) {
+                Ok(true) => {}
+                _ => break,
+            }
+        }));
     }
 
-    fn on_mouse_move(&mut self, ev: &MouseMoveEvent, _: &mut Window, cx: &mut Context<Self>) {
-        if !self.selecting {
+    /// Selects from where the drag began to `offset`, by the drag's unit.
+    fn select_to(&mut self, offset: usize) {
+        let Some(drag) = &self.drag else {
             return;
+        };
+        let here = Self::unit_at(drag.unit, self.buf.text(), offset);
+        let o = drag.origin.clone();
+        if here.start < o.start {
+            self.buf.set_selection(o.end, here.start);
+        } else {
+            self.buf.set_selection(o.start, here.end.max(o.end));
         }
+    }
+
+    /// While a selection is dragged, the pointer is followed anywhere in the
+    /// window (the element listens for the whole window, see `paint`).
+    pub(super) fn on_drag_move(&mut self, ev: &MouseMoveEvent, cx: &mut Context<Self>) {
+        let Some(drag) = &mut self.drag else {
+            return;
+        };
+        drag.pointer = ev.position;
         if let Some(layout) = &self.layout {
             let offset = layout.offset_for_point(self.buf.text(), ev.position);
-            self.buf.move_to(offset, true);
+            self.select_to(offset);
             self.wake(cx);
             self.reveal = false;
         }
     }
 
-    fn on_mouse_up(&mut self, _: &MouseUpEvent, _: &mut Window, _: &mut Context<Self>) {
-        self.selecting = false;
+    pub(super) fn on_drag_end(&mut self, _: &MouseUpEvent, _: &mut Context<Self>) {
+        if self.drag.is_none() {
+            return;
+        }
+        self.drag = None;
+        self._edge_scroll = None;
     }
+
+    /// One frame of scrolling while a selection is dragged past the top or
+    /// bottom of the view; `false` once the drag is over.
+    fn edge_scroll(&mut self, cx: &mut Context<Self>) -> bool {
+        let Some(drag) = &self.drag else {
+            return false;
+        };
+        let pointer = drag.pointer;
+        let view = self.scroll.bounds();
+        let step = edge_scroll(
+            f32::from(pointer.y),
+            f32::from(view.top()),
+            f32::from(view.bottom()),
+        );
+        if step == 0. {
+            return true;
+        }
+        let (offset, max) = (self.scroll.offset(), self.scroll.max_offset());
+        let y = (offset.y - px(step)).clamp(-max.y, px(0.));
+        if y != offset.y {
+            self.scroll.set_offset(point(offset.x, y));
+            // The text moved under the pointer by what was scrolled.
+            if let Some(layout) = &self.layout {
+                let under = point(pointer.x, pointer.y - (y - offset.y));
+                let o = layout.offset_for_point(self.buf.text(), under);
+                self.select_to(o);
+            }
+            cx.notify();
+        }
+        true
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ClickUnit {
+    Char,
+    Word,
+    Line,
+}
+
+struct Drag {
+    unit: ClickUnit,
+    /// What the click selected, which the drag always keeps selected.
+    origin: Range<usize>,
+    /// Where the pointer is, in window coordinates.
+    pointer: Point<Pixels>,
 }
 
 macro_rules! handlers {
@@ -532,10 +638,7 @@ impl Render for NoteEditor {
                 .on_action(cx.listener(|_, _: &ShowCharacterPalette, window, _| {
                     window.show_character_palette()
                 }))
-                .on_mouse_down(MouseButton::Left, cx.listener(Self::on_mouse_down))
-                .on_mouse_move(cx.listener(Self::on_mouse_move))
-                .on_mouse_up(MouseButton::Left, cx.listener(Self::on_mouse_up))
-                .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_mouse_up));
+                .on_mouse_down(MouseButton::Left, cx.listener(Self::on_mouse_down));
         self.bind_actions(root, cx).child(
             div().w_full().px_6().py_4().child(
                 div()

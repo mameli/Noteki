@@ -25,6 +25,7 @@ MUTANTS=(
   "src/core/editor/styling.rs|let heading = (line.kind == BlockKind::Text)|let heading = (true)|--lib --test ui|a # in a code block or the Frontmatter is drawn as a Heading"
   "src/core/editor/display.rs|        if offset < h.start {|        if offset <= h.start {|--lib --test ui --test robustness|a click before a Heading's first letter lands before its hidden \`# \`"
   "src/core/editor/styling.rs|Some(level) if line.index != cursor_line =>|Some(level) =>|--lib --test ui --test robustness|a Heading's marks stay hidden on the cursor's line"
+  "src/editor/element.rs|if self.editor.read(cx).drag.is_some() {|if false {|--test ui|a drag stops following the pointer once it leaves the editor"
   "src/editor/element.rs|end = prev_grapheme(text, end).max(start);|end = end.max(start);|--test ui|⌘→ lands after the space a row wraps at"
   "src/editor/element.rs|\&\& (Rc::ptr_eq(\&src.style, style) \|\| src.style == *style)|\&\& true|--test ui|a line whose style changed is drawn from the cache, as it was"
 )

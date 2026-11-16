@@ -863,3 +863,179 @@ fn showing_marks_never_moves_the_lines_above_the_cursor(cx: &mut TestAppContext)
         before = now;
     }
 }
+
+// ---- Mouse ----
+
+fn mouse_down(cx: &mut TestAppContext, f: &Fixture, at: (f32, f32), count: usize, shift: bool) {
+    use gpui_kit::{Modifiers, MouseButton, MouseDownEvent, PlatformInput};
+    ui(cx, f, |window, cx| {
+        window.dispatch_event(
+            PlatformInput::MouseDown(MouseDownEvent {
+                button: MouseButton::Left,
+                position: gpui_kit::point(px(at.0), px(at.1)),
+                modifiers: Modifiers {
+                    shift,
+                    ..Default::default()
+                },
+                click_count: count,
+                first_mouse: false,
+            }),
+            cx,
+        );
+    });
+    frame(cx, f);
+}
+
+fn mouse_move(cx: &mut TestAppContext, f: &Fixture, at: (f32, f32)) {
+    use gpui_kit::{MouseButton, MouseMoveEvent, PlatformInput};
+    ui(cx, f, |window, cx| {
+        window.dispatch_event(
+            PlatformInput::MouseMove(MouseMoveEvent {
+                position: gpui_kit::point(px(at.0), px(at.1)),
+                pressed_button: Some(MouseButton::Left),
+                modifiers: Default::default(),
+            }),
+            cx,
+        );
+    });
+    frame(cx, f);
+}
+
+fn mouse_up(cx: &mut TestAppContext, f: &Fixture, at: (f32, f32)) {
+    use gpui_kit::{MouseButton, MouseUpEvent, PlatformInput};
+    ui(cx, f, |window, cx| {
+        window.dispatch_event(
+            PlatformInput::MouseUp(MouseUpEvent {
+                button: MouseButton::Left,
+                position: gpui_kit::point(px(at.0), px(at.1)),
+                modifiers: Default::default(),
+                click_count: 1,
+            }),
+            cx,
+        );
+    });
+    frame(cx, f);
+}
+
+fn click(cx: &mut TestAppContext, f: &Fixture, at: (f32, f32), count: usize) {
+    mouse_down(cx, f, at, count, false);
+    mouse_up(cx, f, at);
+}
+
+/// A point just right of the caret at `offset`, halfway down its row.
+fn point_at(cx: &mut TestAppContext, f: &Fixture, offset: usize) -> (f32, f32) {
+    frame(cx, f);
+    app(cx, f, |a, _, cx| {
+        let b = a.editor().read(cx).caret_bounds(offset).expect("a layout");
+        (
+            f32::from(b.origin.x) + 1.,
+            f32::from(b.origin.y + b.size.height / 2.),
+        )
+    })
+}
+
+fn pane(cx: &mut TestAppContext, f: &Fixture) -> gpui_kit::Bounds<gpui_kit::Pixels> {
+    ui(cx, f, |window, _| window.find("editor-pane").bounds())
+}
+
+fn selection(cx: &mut TestAppContext, f: &Fixture) -> std::ops::Range<usize> {
+    app(cx, f, |a, _, cx| a.editor().read(cx).selected_range())
+}
+
+#[gpui_kit::test]
+fn a_click_on_a_heading_lands_before_the_letter_clicked(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    // Off the cursor's line, "## " is hidden; the click on "t" of "Titolo"
+    // shows it, and the cursor is still before that "t".
+    editor_with(cx, &f, "## Titolo\ntesto", 12);
+    let t = "## Ti".len();
+    let at = point_at(cx, &f, t);
+    click(cx, &f, at, 1);
+    assert_eq!(editor_state(cx, &f).1, t);
+}
+
+#[gpui_kit::test]
+fn a_click_past_a_line_or_below_the_text_goes_to_its_end(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    editor_with(cx, &f, "corta\nseconda riga\nfine", 0);
+    let (_, y) = point_at(cx, &f, 0);
+    let right = f32::from(pane(cx, &f).right()) - 10.;
+    click(cx, &f, (right, y), 1);
+    assert_eq!(editor_state(cx, &f).1, "corta".len());
+    let (x, y) = point_at(cx, &f, "corta\nseconda riga\nfi".len());
+    click(cx, &f, (x, y + 300.), 1);
+    let (text, cursor) = editor_state(cx, &f);
+    assert_eq!(cursor, text.len());
+}
+
+#[gpui_kit::test]
+fn a_click_on_a_wrapped_row_lands_on_that_row(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let long = "parola ".repeat(200);
+    editor_with(cx, &f, &long, 0);
+    press(cx, &f, "down");
+    let second_row = editor_state(cx, &f).1;
+    press(cx, &f, "cmd-up");
+    let at = point_at(cx, &f, second_row + 3);
+    click(cx, &f, at, 1);
+    assert_eq!(editor_state(cx, &f).1, second_row + 3);
+}
+
+#[gpui_kit::test]
+fn double_and_triple_clicks_select_a_word_and_a_line(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    editor_with(cx, &f, "uno perché tre\nseconda", 0);
+    let at = point_at(cx, &f, "uno per".len());
+    click(cx, &f, at, 2);
+    assert_eq!(selection(cx, &f), 4..4 + "perché".len());
+    click(cx, &f, at, 3);
+    assert_eq!(selection(cx, &f), 0.."uno perché tre\n".len());
+}
+
+#[gpui_kit::test]
+fn drag_and_shift_click_select(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    editor_with(cx, &f, "uno due tre\nquattro", 0);
+    let from = point_at(cx, &f, 4);
+    let to = point_at(cx, &f, 7);
+    mouse_down(cx, &f, from, 1, false);
+    mouse_move(cx, &f, to);
+    mouse_up(cx, &f, to);
+    assert_eq!(selection(cx, &f), 4..7);
+    let further = point_at(cx, &f, "uno due tre\nquat".len());
+    mouse_down(cx, &f, further, 1, true);
+    mouse_up(cx, &f, further);
+    assert_eq!(selection(cx, &f), 4.."uno due tre\nquat".len());
+}
+
+#[gpui_kit::test]
+fn dragging_below_the_view_scrolls_and_extends_the_selection(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let text: String = (0..300).map(|i| format!("Riga {i}\n")).collect();
+    editor_with(cx, &f, &text, 0);
+    let start = point_at(cx, &f, 0);
+    mouse_down(cx, &f, start, 1, false);
+    let below = (start.0, f32::from(pane(cx, &f).bottom()) + 10.);
+    mouse_move(cx, &f, below);
+    let first = selection(cx, &f).end;
+    for _ in 0..20 {
+        cx.executor()
+            .advance_clock(std::time::Duration::from_millis(16));
+        cx.run_until_parked();
+        frame(cx, &f);
+    }
+    let scrolled = app(cx, &f, |a, _, cx| {
+        f32::from(-a.editor().read(cx).scroll_offset().y)
+    });
+    assert!(scrolled > 0., "the view scrolled down");
+    assert!(selection(cx, &f).end > first, "the selection grew with it");
+    mouse_up(cx, &f, below);
+    let after_up = scrolled;
+    cx.executor()
+        .advance_clock(std::time::Duration::from_millis(200));
+    cx.run_until_parked();
+    let now = app(cx, &f, |a, _, cx| {
+        f32::from(-a.editor().read(cx).scroll_offset().y)
+    });
+    assert_eq!(now, after_up, "and stops when the button is released");
+}
