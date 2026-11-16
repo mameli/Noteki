@@ -413,8 +413,10 @@ fn scan_inline(s: &str, from: usize, to: usize, out: &mut Vec<Inline>) {
     let mut i = from;
     while i < to {
         match b[i] {
-            b'\\' => {
-                let next = if i + 1 < to { char_len_at(s, i + 1) } else { 0 };
+            // CommonMark: a backslash escapes ASCII punctuation only; before
+            // anything else (`\pi` in a formula) it is a backslash.
+            b'\\' if i + 1 < to && b[i + 1].is_ascii_punctuation() => {
+                let next = char_len_at(s, i + 1);
                 if next > 0 {
                     out.push(Inline {
                         kind: InlineKind::Escape,
@@ -1284,10 +1286,10 @@ mod tests {
 
     #[test]
     fn escapes_and_multibyte_are_safe() {
-        assert_eq!(
-            kinds("\\è #perché"),
-            vec![(InlineKind::Escape, "\\è"), (InlineKind::Tag, "#perché")]
-        );
+        // Only ASCII punctuation is escaped (CommonMark): `\è` and `\pi` keep
+        // their backslash, and nothing lands inside the `è`.
+        assert_eq!(kinds("\\è #perché"), vec![(InlineKind::Tag, "#perché")]);
+        assert_eq!(kinds("$\\pi$"), vec![]);
         assert_eq!(kinds("\\"), vec![]);
         assert_eq!(kinds("\\#nottag"), vec![(InlineKind::Escape, "\\#")]);
     }

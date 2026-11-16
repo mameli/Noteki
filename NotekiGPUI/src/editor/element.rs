@@ -52,6 +52,8 @@ const CODE_FONT: &str = "Menlo";
 const CELL_PAD: Pixels = px(8.);
 /// A column is never wider than about 40 characters (ADR 0008), in ems.
 const MAX_COLUMN_EMS: f32 = 22.;
+/// A table's delimiter row, drawn as the line under its header.
+const DELIMITER_ROW: Pixels = px(2.);
 
 #[derive(Clone)]
 pub(super) struct LaidLine {
@@ -563,8 +565,11 @@ fn paint_decoration(
                 ))
             };
             if row.kind == RowKind::Delimiter {
-                // The rule under the header, across the table.
-                hline(top + h / 2., window);
+                // The rule under the header, across the table: two pixels.
+                window.paint_quad(fill(
+                    Bounds::new(point(left, top), size(right - left, h)),
+                    border,
+                ));
                 return;
             }
             if row.kind == RowKind::Header {
@@ -602,7 +607,12 @@ fn paint_image(
             let _ = window.paint_image(bounds, bounds, Corners::all(px(4.)), image, 0, false);
         }
         Some(Err(_)) => {}
-        None => window.paint_quad(fill(bounds, input.palette.code_bg).corner_radii(px(4.))),
+        None => {
+            window.paint_quad(fill(bounds, input.palette.code_bg).corner_radii(px(4.)));
+            // Frames until it is ready, so it shows as soon as it is, whatever
+            // GPUI notifies (only while an image in view is loading).
+            window.request_animation_frame();
+        }
     }
 }
 
@@ -732,6 +742,13 @@ fn shape_line(
             edges.push(*edges.last().unwrap() + *w);
         }
         let line_height = input.font_size * LINE_HEIGHT;
+        // The delimiter row is only the rule under the header. Its height
+        // changes only when the cursor is on it, which SPEC allows.
+        let text_height = if row.kind == RowKind::Delimiter {
+            DELIMITER_ROW
+        } else {
+            line_height
+        };
         return LaidLine {
             range,
             line_height,
@@ -739,7 +756,7 @@ fn shape_line(
             shaped: Rc::default(),
             indent: px(0.),
             decoration: style.decoration.clone(),
-            text_height: line_height,
+            text_height,
             image: None,
             cells,
             columns: Some(edges.into()),
@@ -1084,6 +1101,14 @@ impl Element for EditorElement {
                 let x = layout.origin.x + cell.x;
                 let clip = Bounds::new(point(x, top), size(cell.room, line.line_height));
                 window.with_content_mask(Some(ContentMask { bounds: clip }), |window| {
+                    let _ = cell.shaped.paint_background(
+                        point(x, top),
+                        line.line_height,
+                        TextAlign::Left,
+                        None,
+                        window,
+                        cx,
+                    );
                     let _ = cell.shaped.paint(
                         point(x, top),
                         line.line_height,
@@ -1094,6 +1119,15 @@ impl Element for EditorElement {
                     );
                 });
             }
+            let at = point(layout.origin.x + line.indent, top);
+            let _ = line.shaped.paint_background(
+                at,
+                line.line_height,
+                TextAlign::Left,
+                None,
+                window,
+                cx,
+            );
             let _ = line.shaped.paint(
                 point(layout.origin.x + line.indent, top),
                 line.line_height,

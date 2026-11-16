@@ -1345,9 +1345,10 @@ fn a_table_is_drawn_as_a_grid_in_place(cx: &mut TestAppContext) {
     editor_with(cx, &f, text, 0);
     let h = heights(cx, &f);
     assert!(
-        h[1..5].iter().all(|&x| x == h[0]),
+        [1, 3, 4].iter().all(|&i| h[i] == h[0]),
         "every row one line: {h:?}"
     );
+    assert!(h[2] < h[0] / 4., "the delimiter row is only a rule: {h:?}");
     // Left: the cells start together; right: they end together; centre: their
     // middles meet.
     assert_eq!(
