@@ -80,6 +80,16 @@ fn keystroke_timing(cx: &mut TestAppContext) {
     );
     let t = Instant::now();
     for _ in 0..n {
+        cx.update_window(window, |_, w, cx| w.press("right", cx))
+            .unwrap();
+        cx.run_until_parked();
+    }
+    println!(
+        "per arrow key incl. frame: {:.2} ms",
+        t.elapsed().as_secs_f64() * 1e3 / n as f64
+    );
+    let t = Instant::now();
+    for _ in 0..n {
         cx.update_window(window, |_, w, cx| {
             w.refresh();
             w.render_frame(cx)

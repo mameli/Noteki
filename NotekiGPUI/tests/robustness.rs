@@ -167,8 +167,12 @@ fn live_preview_spans_are_valid_ranges() {
     let mut rng = Rng(0x9E37_79B9_7F4A_7C15);
     for _ in 0..cases() {
         let text = gen_text(&mut rng, 40);
-        let line_count = text.split('\n').count();
-        for cursor in [0, rng.below(line_count + 2), usize::MAX] {
+        for cursor in [
+            None,
+            Some(0),
+            Some(rng.below(text.len() + 2)),
+            Some(usize::MAX),
+        ] {
             for span in compute_markdown_spans(&text, cursor, Some("Dir/Here.md"), &idx) {
                 assert_slice(&text, &span.range, "span");
                 assert!(
@@ -507,9 +511,9 @@ fn editor_line_styles_stay_inside_their_lines() {
     let mut rng = Rng(0xED17_0002);
     for _ in 0..cases() {
         let text = gen_text(&mut rng, 40);
-        let cursor_line = rng.below(8);
-        let spans = compute_markdown_spans(&text, cursor_line, Some("Dir/Here.md"), &idx);
-        let styles = style_lines(&text, &spans, cursor_line);
+        let cursor = Some(rng.below(text.len() + 1));
+        let spans = compute_markdown_spans(&text, cursor, Some("Dir/Here.md"), &idx);
+        let styles = style_lines(&text, &spans);
         let lines = logical_lines(&text);
         assert_eq!(styles.len(), lines.len(), "one style per line of {text:?}");
         for (style, line) in styles.iter().zip(&lines) {
@@ -542,16 +546,21 @@ fn editor_display_map_never_puts_an_offset_inside_a_hidden_mark() {
         let at = rng.below(text.len() + 1);
         let at = (0..=at).rev().find(|&i| text.is_char_boundary(i)).unwrap();
         text.insert_str(at, rng.pick(&pieces));
-        let cursor_line = rng.below(6);
-        let spans = compute_markdown_spans(&text, cursor_line, None, &idx);
+        let cursor = (0..=rng.below(text.len() + 1).min(text.len()))
+            .rev()
+            .find(|&i| text.is_char_boundary(i))
+            .unwrap();
+        let spans = compute_markdown_spans(&text, Some(cursor), None, &idx);
         let lines = logical_lines(&text);
-        for (i, (style, line)) in style_lines(&text, &spans, cursor_line)
-            .iter()
-            .zip(&lines)
-            .enumerate()
-        {
-            if i == cursor_line {
-                assert!(style.hidden.is_empty(), "marks hidden on the cursor's line");
+        for (style, line) in style_lines(&text, &spans).iter().zip(&lines) {
+            if line.start <= cursor && cursor <= line.end {
+                let c = cursor - line.start;
+                assert!(
+                    !style.hidden.iter().any(|h| h.start < c && c < h.end),
+                    "the cursor {c} inside a hidden mark of {:?}: {:?}",
+                    &text[line.clone()],
+                    style.hidden
+                );
             }
             let line_text = &text[line.clone()];
             let mut end = 0;

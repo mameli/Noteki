@@ -10,7 +10,7 @@ fn backslash_before_multibyte_char_does_not_panic() {
     let index = VaultIndex::default();
     let text = "Prezzo \\è alto #tag \\€";
     let _ = extract_note_tags(text);
-    let _ = compute_markdown_spans(text, 0, None, &index);
+    let _ = compute_markdown_spans(text, Some(0), None, &index);
 }
 
 #[test]

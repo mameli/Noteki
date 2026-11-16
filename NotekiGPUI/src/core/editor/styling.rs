@@ -3,7 +3,7 @@
 
 use std::ops::Range;
 
-use crate::core::markdown::{lines, parse_atx_heading, BlockKind, MdSpan, MdSpanKind};
+use crate::core::markdown::{lines, parse_atx_heading, BlockKind, Line, MdSpan, MdSpanKind};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct LineStyle {
@@ -13,15 +13,14 @@ pub struct LineStyle {
     /// style when an edit above moves it), and the span kinds covering each,
     /// in the order the scanner gave them: a later kind is drawn over an earlier.
     pub segments: Vec<(Range<usize>, Vec<MdSpanKind>)>,
-    /// Ranges of the line (relative to its start, sorted) that Live preview
-    /// hides: a Heading's `# ` when the cursor is on another line.
+    /// Ranges of the line (relative to its start, sorted, disjoint) that Live
+    /// preview hides: the scanner's syntax marks.
     pub hidden: Vec<Range<usize>>,
 }
 
 /// One [`LineStyle`] per logical line of `text` (as `lines` splits it).
-/// A span across lines is cut at each line's end. The marks of the
-/// `cursor_line` (0-based) are shown, those of the other lines hidden.
-pub fn style_lines(text: &str, spans: &[MdSpan], cursor_line: usize) -> Vec<LineStyle> {
+/// A span across lines is cut at each line's end.
+pub fn style_lines(text: &str, spans: &[MdSpan]) -> Vec<LineStyle> {
     let lines = lines(text);
     let mut clipped: Vec<Vec<(Range<usize>, MdSpanKind)>> = vec![Vec::new(); lines.len()];
     for span in spans {
@@ -32,37 +31,57 @@ pub fn style_lines(text: &str, spans: &[MdSpan], cursor_line: usize) -> Vec<Line
             if line.start >= span.range.end {
                 break;
             }
-            let r = line.range();
-            let (a, b) = (span.range.start.max(r.start), span.range.end.min(r.end));
-            if a < b {
-                clipped[i].push((a - r.start..b - r.start, span.kind));
-            }
+            push_clipped(&mut clipped[i], line, span);
         }
     }
     lines
         .iter()
         .zip(clipped)
-        .map(|(line, spans)| {
-            let trimmed = line.text.trim_start();
-            let heading = (line.kind == BlockKind::Text)
-                .then(|| parse_atx_heading(trimmed).map(|(level, _)| level))
-                .flatten();
-            // The `#`s, the space after them and any indent before.
-            let hidden = match heading {
-                Some(level) if line.index != cursor_line => {
-                    let leading = line.text.len() - trimmed.len();
-                    let end = (leading + usize::from(level) + 1).min(line.text.len());
-                    std::iter::once(0..end).collect()
-                }
-                _ => Vec::new(),
-            };
-            LineStyle {
-                heading,
-                segments: segments(spans),
-                hidden,
-            }
-        })
+        .map(|(line, spans)| style_of(line, spans))
         .collect()
+}
+
+/// The style of one line from its own spans (offsets in the whole text), as
+/// [`style_lines`] gives it: to restyle only the cursor's line when it moves.
+pub fn style_line(line: &Line, spans: &[MdSpan]) -> LineStyle {
+    let mut clipped = Vec::new();
+    for span in spans {
+        push_clipped(&mut clipped, line, span);
+    }
+    style_of(line, clipped)
+}
+
+fn push_clipped(out: &mut Vec<(Range<usize>, MdSpanKind)>, line: &Line, span: &MdSpan) {
+    let r = line.range();
+    let (a, b) = (span.range.start.max(r.start), span.range.end.min(r.end));
+    if a < b {
+        out.push((a - r.start..b - r.start, span.kind));
+    }
+}
+
+fn style_of(line: &Line, spans: Vec<(Range<usize>, MdSpanKind)>) -> LineStyle {
+    let heading = (line.kind == BlockKind::Text)
+        .then(|| parse_atx_heading(line.text.trim_start()).map(|(level, _)| level))
+        .flatten();
+    let mut hidden: Vec<Range<usize>> = spans
+        .iter()
+        .filter(|(_, k)| *k == MdSpanKind::SyntaxMarker)
+        .map(|(r, _)| r.clone())
+        .collect();
+    hidden.sort_unstable_by_key(|r| r.start);
+    // Marks may touch or nest (an escape inside a link's label): merge them.
+    let mut merged: Vec<Range<usize>> = Vec::with_capacity(hidden.len());
+    for r in hidden {
+        match merged.last_mut() {
+            Some(last) if r.start <= last.end => last.end = last.end.max(r.end),
+            _ => merged.push(r),
+        }
+    }
+    LineStyle {
+        heading,
+        segments: segments(spans),
+        hidden: merged,
+    }
 }
 
 /// Cuts overlapping ranges into pieces that each carry every kind over them.
@@ -91,24 +110,23 @@ mod tests {
     use crate::core::markdown::compute_markdown_spans;
     use crate::core::wikilink::VaultIndex;
 
-    fn styles(text: &str, cursor_line: usize) -> Vec<LineStyle> {
+    fn styles(text: &str, cursor: Option<usize>) -> Vec<LineStyle> {
         style_lines(
             text,
-            &compute_markdown_spans(text, cursor_line, None, &VaultIndex::default()),
-            cursor_line,
+            &compute_markdown_spans(text, cursor, None, &VaultIndex::default()),
         )
     }
 
     #[test]
     fn headings_have_their_level_even_while_empty() {
-        let s = styles("# Uno\ntesto\n### Tre\n#\n#tag\n####### sette", 99);
+        let s = styles("# Uno\ntesto\n### Tre\n#\n#tag\n####### sette", None);
         let levels: Vec<_> = s.iter().map(|l| l.heading).collect();
         assert_eq!(levels, vec![Some(1), None, Some(3), Some(1), None, None]);
     }
 
     #[test]
     fn a_hash_in_code_or_frontmatter_is_no_heading() {
-        let s = styles("---\n# no: x\n---\n```\n# no\n```\n# sì", 99);
+        let s = styles("---\n# no: x\n---\n```\n# no\n```\n# sì", None);
         let levels: Vec<_> = s.iter().map(|l| l.heading).collect();
         assert_eq!(levels, vec![None, None, None, None, None, None, Some(1)]);
     }
@@ -118,7 +136,7 @@ mod tests {
         // Off the cursor's line: the `## ` is a faded marker, the rest Heading
         // text with a bold part inside.
         let text = "## Titolo **forte**";
-        let s = styles(text, 99);
+        let s = styles(text, None);
         let seg = &s[0].segments;
         assert_eq!(seg[0], (0..3, vec![MdSpanKind::SyntaxMarker]));
         let forte = text.find("forte").unwrap(); // the first line starts at 0
@@ -142,24 +160,72 @@ mod tests {
             range: 1..5,
             kind: MdSpanKind::Comment,
         }];
-        let s = style_lines(text, &spans, 99);
+        let s = style_lines(text, &spans);
         assert_eq!(s[0].segments, vec![(1..2, vec![MdSpanKind::Comment])]);
         assert_eq!(s[1].segments, vec![(0..2, vec![MdSpanKind::Comment])]);
     }
 
     #[test]
     fn heading_marks_are_hidden_off_the_cursor_line() {
-        let s = styles("# Uno\n  ### Tre\n#\ntesto", 3);
+        let s = styles("# Uno\n  ### Tre\n#\ntesto", None);
         assert_eq!(s[0].hidden, vec![0..2]);
-        assert_eq!(s[1].hidden, vec![0..6], "with the indent before");
+        assert_eq!(s[1].hidden, vec![2..6], "the indent stays");
         assert_eq!(
             s[2].hidden,
             vec![0..1],
             "an empty Heading has no space to hide"
         );
         assert!(s[3].hidden.is_empty());
-        let on_cursor = styles("# Uno\ntesto", 0);
-        assert!(on_cursor[0].hidden.is_empty(), "shown on the cursor's line");
+        let on_cursor = styles("# Uno\ntesto", Some(4));
+        assert!(
+            on_cursor[0].hidden.is_empty(),
+            "shown with the cursor anywhere on the line"
+        );
+    }
+
+    #[test]
+    fn inline_marks_show_only_in_the_element_the_cursor_is_in() {
+        let text = "uno **due** e `tre` e [qui](http://x)";
+        let hidden = |cursor| styles(text, cursor)[0].hidden.clone();
+        let all = hidden(None);
+        let starts: Vec<usize> = all.iter().map(|r| r.start).collect();
+        assert_eq!(all.len(), 6, "** ** ` ` [ ](http://x): {all:?}");
+        assert_eq!(starts[0], 4);
+        // In the bold (and at its edges): its marks show, the others stay hidden.
+        for c in [4, 7, 11] {
+            let h = hidden(Some(c));
+            assert_eq!(h.len(), 4, "cursor at {c}: {h:?}");
+            assert!(h.iter().all(|r| r.start >= 14), "{h:?}");
+        }
+        // Off every element: everything hidden, even on the cursor's line.
+        assert_eq!(hidden(Some(1)), all);
+    }
+
+    #[test]
+    fn a_wikilink_hides_its_target_before_an_alias_and_a_comment_its_marks() {
+        let s = styles("[[Nota|Alias]] %%nascosto%%", None);
+        assert_eq!(s[0].hidden, vec![0..7, 12..14, 15..17, 25..27]);
+    }
+
+    #[test]
+    fn nested_and_tricky_marks() {
+        let hidden = |t: &str| styles(t, None)[0].hidden.clone();
+        assert_eq!(hidden("***x***"), vec![0..3, 4..7], "bold italic");
+        assert_eq!(
+            hidden("`a **b**`"),
+            vec![0..1, 8..9],
+            "code keeps its stars"
+        );
+        assert_eq!(
+            hidden("[a](u \"t\")"),
+            vec![0..1, 2..10],
+            "a link with a title"
+        );
+        assert_eq!(
+            hidden("| [[N\\|A]] |"),
+            vec![2..7, 8..10],
+            "an escaped bar in a table still shows the alias"
+        );
     }
 
     #[test]
@@ -167,12 +233,12 @@ mod tests {
         let before = styles(
             "uno
 **due**",
-            99,
+            None,
         );
         let after = styles(
             "uno più lungo
 **due**",
-            99,
+            None,
         );
         assert_eq!(before[1], after[1]);
     }

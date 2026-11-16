@@ -26,9 +26,9 @@ use gpui_kit::{
 use crate::core::editor::buffer::{range_from_utf16, range_to_utf16};
 use crate::core::editor::lines::edge_scroll;
 use crate::core::editor::movement::{line_range_at, word_range_at};
-use crate::core::editor::styling::{style_lines, LineStyle};
+use crate::core::editor::styling::{style_line, style_lines, LineStyle};
 use crate::core::editor::{EditBuffer, Motion};
-use crate::core::markdown::{compute_markdown_spans, line_of_offset};
+use crate::core::markdown::{self, compute_markdown_spans, line_of_offset};
 use crate::core::wikilink::VaultIndex;
 use crate::theme::NotekiPalette;
 
@@ -163,7 +163,9 @@ pub struct NoteEditor {
     revision: u64,
     /// The Note's path and the Vault's links, to tell resolved Wikilinks.
     link_context: (Option<String>, Arc<VaultIndex>),
-    /// Live preview styles per line, and the `(revision, cursor line)` they are for.
+    /// Live preview styles per line with every mark hidden, and the revision.
+    base_styles: (Option<u64>, LineStyles),
+    /// The same with the cursor's line restyled, and the `(revision, cursor)`.
     styles: (Option<(u64, usize)>, LineStyles),
     /// The text as GPUI shares it, and the revision it was copied at.
     shared: (u64, SharedString),
@@ -207,6 +209,7 @@ impl NoteEditor {
             reveal: false,
             revision: 0,
             link_context: (None, Arc::default()),
+            base_styles: (None, Rc::default()),
             styles: (None, Rc::default()),
             shared: (u64::MAX, SharedString::default()),
             shape_cache: Rc::default(),
@@ -328,21 +331,30 @@ impl NoteEditor {
         if text.len() > LIVE_PREVIEW_MAX_BYTES {
             return Rc::default();
         }
-        let key = (self.revision, line_of_offset(text, self.buf.cursor()));
+        let (path, index) = &self.link_context;
+        // Every line with its marks hidden, once per change of the text.
+        if self.base_styles.0 != Some(self.revision) {
+            let spans = compute_markdown_spans(text, None, path.as_deref(), index);
+            let styles = keep_equal(&self.base_styles.1, style_lines(text, &spans));
+            self.base_styles = (Some(self.revision), Rc::new(styles));
+        }
+        // Then only the cursor's line again, with the marks of the element
+        // the cursor is in: moving the cursor costs one line, not the Note.
+        let cursor = self.buf.cursor();
+        let key = (self.revision, cursor);
         if self.styles.0 != Some(key) {
-            let (path, index) = &self.link_context;
-            let spans = compute_markdown_spans(text, key.1, path.as_deref(), index);
-            // A line whose style did not change keeps the same `Rc`, so the
-            // element sees at a glance that it needs no shaping.
-            let prev = &self.styles.1;
-            let styles = style_lines(text, &spans, key.1)
-                .into_iter()
-                .enumerate()
-                .map(|(i, s)| match prev.get(i) {
-                    Some(p) if **p == s => p.clone(),
-                    _ => Rc::new(s),
-                })
-                .collect();
+            let mut styles: Vec<Rc<LineStyle>> = (*self.base_styles.1).clone();
+            if let Some(line) = markdown::lines(text).get(line_of_offset(text, cursor)) {
+                let mut spans = Vec::new();
+                let in_line = Some(cursor - line.start);
+                markdown::line_spans(line, in_line, path.as_deref(), index, &mut spans);
+                let style = style_line(line, &spans);
+                if let Some(slot) = styles.get_mut(line.index) {
+                    if **slot != style {
+                        *slot = Rc::new(style);
+                    }
+                }
+            }
             self.styles = (Some(key), Rc::new(styles));
         }
         self.styles.1.clone()
@@ -768,4 +780,16 @@ impl EntityInputHandler for NoteEditor {
             layout.offset_for_point(t, p),
         ))
     }
+}
+
+/// `new`, where a line's style equal to the one in `prev` keeps `prev`'s `Rc`,
+/// so the element sees at a glance that the line needs no shaping.
+fn keep_equal(prev: &[Rc<LineStyle>], new: Vec<LineStyle>) -> Vec<Rc<LineStyle>> {
+    new.into_iter()
+        .enumerate()
+        .map(|(i, s)| match prev.get(i) {
+            Some(p) if **p == s => p.clone(),
+            _ => Rc::new(s),
+        })
+        .collect()
 }

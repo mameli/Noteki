@@ -1039,3 +1039,64 @@ fn dragging_below_the_view_scrolls_and_extends_the_selection(cx: &mut TestAppCon
     });
     assert_eq!(now, after_up, "and stops when the button is released");
 }
+
+// ---- The test note (tests/fixtures/rendering-test.md) ----
+
+const RENDERING: &str = include_str!("fixtures/rendering-test.md");
+
+#[gpui_kit::test]
+fn walking_down_the_test_note_never_moves_the_lines_above(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let starts: Vec<usize> = std::iter::once(0)
+        .chain(RENDERING.match_indices('\n').map(|(i, _)| i + 1))
+        .filter(|&o| o < RENDERING.len())
+        .collect();
+    editor_with(cx, &f, RENDERING, 0);
+    let mut tops: Vec<f32> = Vec::new();
+    for line in 0..starts.len() {
+        // The top of every line up to this one, in the text (the view scrolls
+        // to follow the cursor), the cursor on this one.
+        frame(cx, &f);
+        let all: Vec<f32> = app(cx, &f, |a, _, cx| {
+            let ed = a.editor().read(cx);
+            let scrolled = -ed.scroll_offset().y;
+            starts
+                .iter()
+                .map(|&o| f32::from(ed.caret_bounds(o).unwrap().origin.y + scrolled))
+                .collect()
+        });
+        let now = all[..line].to_vec();
+        let moved = now.iter().zip(&tops).any(|(a, b)| (a - b).abs() > 0.5); // the scroll is rounded to pixels
+        assert!(
+            !moved,
+            "the cursor came onto line {line}: {now:?} vs {tops:?}"
+        );
+        tops = now;
+        tops.push(all[line]);
+        press(cx, &f, "down");
+        // ↓ moves by wrapped row: put the cursor at the next line's start.
+        app(cx, &f, |a, _, cx| {
+            let next = starts.get(line + 1).copied().unwrap_or(RENDERING.len());
+            a.editor()
+                .clone()
+                .update(cx, |ed, cx| ed.set_selected_range(next..next, cx))
+        });
+    }
+}
+
+#[gpui_kit::test]
+fn emphasis_marks_are_hidden_off_the_element_and_shown_in_it(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let text = "Questo testo è **in grassetto**.\naltro";
+    let open = text.find("**").unwrap();
+    editor_with(cx, &f, text, text.len());
+    // Off the element, the `**` takes no room: "è " is followed by "in".
+    assert_eq!(caret_at(cx, &f, open).0, caret_at(cx, &f, open + 2).0);
+    // The cursor in the bold shows its marks.
+    app(cx, &f, |a, _, cx| {
+        a.editor()
+            .clone()
+            .update(cx, |ed, cx| ed.set_selected_range(open + 4..open + 4, cx))
+    });
+    assert!(caret_at(cx, &f, open + 2).0 > caret_at(cx, &f, open).0);
+}

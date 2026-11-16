@@ -353,6 +353,29 @@ fn scan_inline(s: &str, from: usize, to: usize, out: &mut Vec<Inline>) {
                     }
                 }
             }
+            // `***x***`: italic around bold, as CommonMark reads it.
+            // Unclosed, the stars are read as `**` then `*`, below.
+            b'*' if starts(i, "***")
+                && i + 3 < to
+                && !b[i + 3].is_ascii_whitespace()
+                && find_closing(s, i + 3, to, "***").is_some() =>
+            {
+                if let Some(close) = find_closing(s, i + 3, to, "***") {
+                    out.push(Inline {
+                        kind: InlineKind::Italic,
+                        range: i..close + 3,
+                        inner: i + 1..close + 2,
+                    });
+                    out.push(Inline {
+                        kind: InlineKind::Bold,
+                        range: i + 1..close + 2,
+                        inner: i + 3..close,
+                    });
+                    scan_inline(s, i + 3, close, out);
+                    i = close + 3;
+                    continue;
+                }
+            }
             b'*' | b'~' | b'=' => {
                 let c = b[i];
                 let doubled = i + 1 < to && b[i + 1] == c;
@@ -515,24 +538,43 @@ pub struct MdSpan {
     pub kind: MdSpanKind,
 }
 
-/// Decorations for the live editor. Syntax marks (`**`, `[[`, `# `…) are dimmed
-/// except on `cursor_line` (0-based), where the user is editing them.
+/// Live preview spans of the whole text. Syntax marks (`**`, `[[`, `# `…) are
+/// `SyntaxMarker` spans, which the editor hides, except the marks of the element
+/// the `cursor` (a byte offset) is in or at the edge of, and a Heading's `#`s
+/// with the cursor anywhere on its line (SPEC › Live preview).
 pub fn compute_markdown_spans(
     text: &str,
-    cursor_line: usize,
+    cursor: Option<usize>,
     source_path: Option<&str>,
     index: &VaultIndex,
 ) -> Vec<MdSpan> {
     let mut spans = Vec::new();
+    for line in lines(text) {
+        let in_line = cursor
+            .filter(|&c| line.start <= c && c <= line.start + line.text.len())
+            .map(|c| c - line.start);
+        line_spans(&line, in_line, source_path, index, &mut spans);
+    }
+    spans
+}
+
+/// The spans of one line, pushed to `spans` with offsets in the whole text.
+/// `cursor` is the cursor's offset in the line when it is on it.
+pub fn line_spans(
+    line: &Line,
+    cursor: Option<usize>,
+    source_path: Option<&str>,
+    index: &VaultIndex,
+    spans: &mut Vec<MdSpan>,
+) {
     let mut push = |range: Range<usize>, kind: MdSpanKind| {
         if range.start < range.end {
             spans.push(MdSpan { range, kind });
         }
     };
-
-    for line in lines(text) {
+    {
         let s = line.start;
-        let on_cursor = line.index == cursor_line;
+        let on_cursor = cursor.is_some();
         match line.kind {
             BlockKind::FrontmatterDelimiter => push(line.range(), MdSpanKind::FrontmatterDelimiter),
             BlockKind::Frontmatter => {
@@ -570,6 +612,9 @@ pub fn compute_markdown_spans(
 
                 for tok in inline_tokens(line.text) {
                     let r = |r: Range<usize>| s + r.start..s + r.end;
+                    // The marks of the element the cursor is in, or at the edge of, show.
+                    let on_cursor =
+                        cursor.is_some_and(|c| tok.range.start <= c && c <= tok.range.end);
                     let (open, close) = (
                         tok.range.start..tok.inner.start,
                         tok.inner.end..tok.range.end,
@@ -593,7 +638,10 @@ pub fn compute_markdown_spans(
                             markers(&mut push);
                             push(r(tok.inner.clone()), MdSpanKind::InlineCode);
                         }
-                        InlineKind::Comment => push(r(tok.range.clone()), MdSpanKind::Comment),
+                        InlineKind::Comment => {
+                            markers(&mut push);
+                            push(r(tok.inner.clone()), MdSpanKind::Comment);
+                        }
                         InlineKind::Wikilink { .. } => {
                             markers(&mut push);
                             let inner = &line.text[tok.inner.clone()];
@@ -646,7 +694,6 @@ pub fn compute_markdown_spans(
             }
         }
     }
-    spans
 }
 
 // ---------------------------------------------------------------------------

@@ -154,22 +154,22 @@ fn main() {
         (
             "live preview, 100 KB note (per keystroke)",
             best(10, || {
-                compute_markdown_spans(&big, 10, Some("x.md"), &vault.index)
+                compute_markdown_spans(&big, Some(10), Some("x.md"), &vault.index)
             }),
             Duration::from_millis(16),
         ),
         (
             "live preview, 1 MB note (per keystroke)",
             best(3, || {
-                compute_markdown_spans(&huge, 10, Some("x.md"), &vault.index)
+                compute_markdown_spans(&huge, Some(10), Some("x.md"), &vault.index)
             }),
             Duration::from_millis(120),
         ),
         (
             "editor styles per line, 100 KB note (per keystroke)",
             best(10, || {
-                let spans = compute_markdown_spans(&big, 10, Some("x.md"), &vault.index);
-                noteki_gpui::core::editor::styling::style_lines(&big, &spans, 10)
+                let spans = compute_markdown_spans(&big, Some(10), Some("x.md"), &vault.index);
+                noteki_gpui::core::editor::styling::style_lines(&big, &spans)
             }),
             Duration::from_millis(16),
         ),
