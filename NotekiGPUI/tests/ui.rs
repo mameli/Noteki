@@ -1209,3 +1209,34 @@ fn a_click_on_a_checkbox_toggles_the_task_and_keeps_the_cursor(cx: &mut TestAppC
     click(cx, &f, at, 1);
     assert!(editor_state(cx, &f).0.ends_with("- [ ] fatto"));
 }
+
+#[gpui_kit::test]
+fn a_code_block_shows_its_fences_only_while_the_cursor_is_in_it(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let text = "testo\n```swift\nlet a = 1\nprint(a)\n```\nfine";
+    let open_end = text.find("swift").unwrap() + "swift".len();
+    let close_end = text.rfind("```").unwrap() + 3;
+    editor_with(cx, &f, text, 0);
+    let out = heights(cx, &f);
+    let hidden_open = caret_at(cx, &f, open_end).0;
+    let hidden_close = caret_at(cx, &f, close_end).0;
+    // Into the block's code: both fences show, nothing changes height.
+    let body = text.find("print").unwrap();
+    app(cx, &f, |a, _, cx| {
+        a.editor()
+            .clone()
+            .update(cx, |ed, cx| ed.set_selected_range(body..body, cx))
+    });
+    assert_eq!(heights(cx, &f), out);
+    assert!(
+        caret_at(cx, &f, open_end).0 > hidden_open,
+        "the opening fence shows"
+    );
+    assert!(
+        caret_at(cx, &f, close_end).0 > hidden_close,
+        "the closing fence shows"
+    );
+    // Out again: hidden.
+    press(cx, &f, "cmd-down");
+    assert_eq!(caret_at(cx, &f, open_end).0, hidden_open);
+}

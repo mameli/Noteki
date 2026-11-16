@@ -7,7 +7,7 @@ use std::ops::Range;
 use std::rc::Rc;
 
 use gpui_kit::{
-    fill, point, px, size, App, AvailableSpace, Bounds, DispatchPhase, Element, ElementId,
+    fill, point, px, size, App, AvailableSpace, Bounds, Corners, DispatchPhase, Element, ElementId,
     ElementInputHandler, Entity, Font, GlobalElementId, HighlightStyle, Hsla, InspectorElementId,
     IntoElement, LayoutId, MouseMoveEvent, MouseUpEvent, Pixels, Point, SharedString, Size, Style,
     TextAlign, TextRun, UnderlineStyle, Window, WindowTextSystem, WrappedLine,
@@ -16,8 +16,8 @@ use gpui_kit::{
 use crate::core::editor::display::{shown_text, to_buffer, to_display};
 use crate::core::editor::lines::{logical_lines, scroll_to_reveal, LineTops};
 use crate::core::editor::movement::prev_grapheme;
-use crate::core::editor::styling::{Decoration, LineStyle};
-use crate::core::markdown::ListKind;
+use crate::core::editor::styling::{CodePart, Decoration, LineStyle};
+use crate::core::markdown::{ListKind, MdSpanKind};
 use crate::theme::NotekiPalette;
 
 use super::style::span_style;
@@ -38,6 +38,11 @@ const QUOTE_BAR: Pixels = px(3.);
 const LIST_INDENT: Pixels = px(20.);
 const LIST_MARKER: Pixels = px(24.);
 const CHECKBOX: Pixels = px(14.);
+/// A code block's text is this far from its box's edges.
+const CODE_PAD: Pixels = px(12.);
+const CODE_RADIUS: Pixels = px(6.);
+/// Code is drawn in the system's monospaced font.
+const CODE_FONT: &str = "Menlo";
 
 #[derive(Clone)]
 pub(super) struct LaidLine {
@@ -167,7 +172,7 @@ impl Layout {
         let Some(Decoration::List {
             level,
             kind: ListKind::Task { checked, bracket },
-        }) = line.decoration
+        }) = line.decoration.clone()
         else {
             return None;
         };
@@ -371,7 +376,7 @@ fn paint_decoration(
     cx: &mut App,
 ) {
     let palette = &input.palette;
-    match line.decoration {
+    match &line.decoration {
         Some(Decoration::Rule) => {
             let y = top + line.height() / 2.;
             window.paint_quad(fill(
@@ -380,7 +385,7 @@ fn paint_decoration(
             ));
         }
         Some(Decoration::Quote { depth }) => {
-            for d in 0..depth {
+            for d in 0..*depth {
                 let x = left + QUOTE_INDENT * f32::from(d);
                 window.paint_quad(fill(
                     Bounds::new(point(x, top), size(QUOTE_BAR, line.height())),
@@ -389,10 +394,10 @@ fn paint_decoration(
             }
         }
         Some(Decoration::List { level, kind }) => {
-            let x = left + LIST_INDENT * f32::from(level);
+            let x = left + LIST_INDENT * f32::from(*level);
             // Centred on the first row.
             let mid = top + line.line_height / 2.;
-            match kind {
+            match *kind {
                 ListKind::Bullet => {
                     let d = px(5.);
                     window.paint_quad(
@@ -451,6 +456,39 @@ fn paint_decoration(
                 }
             }
         }
+        Some(Decoration::Code(part)) => {
+            let (round_top, round_bottom) = match part {
+                CodePart::Open { .. } => (CODE_RADIUS, px(0.)),
+                CodePart::Body => (px(0.), px(0.)),
+                CodePart::Close => (px(0.), CODE_RADIUS),
+            };
+            let corners = Corners {
+                top_left: round_top,
+                top_right: round_top,
+                bottom_left: round_bottom,
+                bottom_right: round_bottom,
+            };
+            window.paint_quad(
+                fill(
+                    Bounds::new(point(left, top), size(width, line.height())),
+                    palette.code_bg,
+                )
+                .corner_radii(corners),
+            );
+            if let CodePart::Open { language } = part {
+                if !language.is_empty() {
+                    let label: SharedString = language.to_string().into();
+                    let font_size = input.font_size * 0.8;
+                    let run =
+                        text_run(label.len(), &input.font, palette.syntax, Default::default());
+                    let shaped = window
+                        .text_system()
+                        .shape_line(label, font_size, &[run], None);
+                    let at = point(left + width - shaped.width() - CODE_PAD, top);
+                    let _ = shaped.paint(at, line.line_height, TextAlign::Left, None, window, cx);
+                }
+            }
+        }
         None => {}
     }
 }
@@ -478,9 +516,10 @@ fn shape_line(
         }
         None => (input.font_size, input.font_size * LINE_HEIGHT),
     };
-    let indent = match style.decoration {
-        Some(Decoration::Quote { depth }) => QUOTE_INDENT * f32::from(depth),
-        Some(Decoration::List { level, .. }) => LIST_INDENT * f32::from(level) + LIST_MARKER,
+    let indent = match &style.decoration {
+        Some(Decoration::Quote { depth }) => QUOTE_INDENT * f32::from(*depth),
+        Some(Decoration::List { level, .. }) => LIST_INDENT * f32::from(*level) + LIST_MARKER,
+        Some(Decoration::Code(_)) => CODE_PAD,
         _ => px(0.),
     };
     let runs = runs_for(input, &range, style);
@@ -501,7 +540,7 @@ fn shape_line(
         hidden: style.hidden.clone().into(),
         shaped: Rc::new(shaped),
         indent,
-        decoration: style.decoration,
+        decoration: style.decoration.clone(),
     }
 }
 
@@ -534,6 +573,20 @@ fn runs_for(input: &ShapeInput, line: &Range<usize>, style: &LineStyle) -> Vec<T
             layers.push((a - line.start..b - line.start, underline));
         }
     }
+    // Code, inline or in a block, is in the monospaced font.
+    let mono: Vec<Range<usize>> = style
+        .segments
+        .iter()
+        .filter(|(_, k)| {
+            k.iter()
+                .any(|k| matches!(k, MdSpanKind::InlineCode | MdSpanKind::CodeBlock))
+        })
+        .map(|(r, _)| r.clone())
+        .collect();
+    let code_font = Font {
+        family: CODE_FONT.into(),
+        ..input.font.clone()
+    };
     // Cut the line at every layer's and hidden range's ends; each shown piece
     // gets every layer over it.
     let mut bounds = vec![0, len];
@@ -555,7 +608,12 @@ fn runs_for(input: &ShapeInput, line: &Range<usize>, style: &LineStyle) -> Vec<T
                 .iter()
                 .filter(|(r, _)| r.start <= w[0] && w[1] <= r.end)
                 .fold(HighlightStyle::default(), |acc, (_, s)| acc.highlight(*s));
-            text_run(w[1] - w[0], &input.font, input.palette.text, style)
+            let font = if mono.iter().any(|r| r.start <= w[0] && w[1] <= r.end) {
+                &code_font
+            } else {
+                &input.font
+            };
+            text_run(w[1] - w[0], font, input.palette.text, style)
         })
         .collect();
     if runs.is_empty() {

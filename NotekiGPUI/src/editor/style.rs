@@ -59,8 +59,35 @@ pub fn span_style(kind: MdSpanKind, p: &NotekiPalette) -> HighlightStyle {
             background_color: Some(p.highlight),
             ..Default::default()
         },
-        MdSpanKind::InlineCode | MdSpanKind::CodeBlock => HighlightStyle {
+        MdSpanKind::InlineCode => HighlightStyle {
             background_color: Some(p.code_bg),
+            ..Default::default()
+        },
+        // A code block's box is painted by the element, across its width.
+        MdSpanKind::CodeBlock => HighlightStyle::default(),
+        MdSpanKind::CodeComment => HighlightStyle {
+            color: Some(p.syntax),
+            font_style: Some(FontStyle::Italic),
+            ..Default::default()
+        },
+        MdSpanKind::CodeString => HighlightStyle {
+            color: Some(p.string),
+            ..Default::default()
+        },
+        MdSpanKind::CodeNumber => HighlightStyle {
+            color: Some(p.number),
+            ..Default::default()
+        },
+        MdSpanKind::CodeKeyword => HighlightStyle {
+            color: Some(p.keyword),
+            ..Default::default()
+        },
+        MdSpanKind::CodeType => HighlightStyle {
+            color: Some(p.heading),
+            ..Default::default()
+        },
+        MdSpanKind::CodeFunction => HighlightStyle {
+            color: Some(p.link),
             ..Default::default()
         },
         MdSpanKind::WikilinkResolved | MdSpanKind::MarkdownLink => HighlightStyle {

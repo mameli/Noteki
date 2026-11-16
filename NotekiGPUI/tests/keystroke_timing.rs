@@ -22,7 +22,7 @@ fn keystroke_timing(cx: &mut TestAppContext) {
     for i in 0..1500 {
         big.push_str(&format!("{i} {para}"));
         if i % 20 == 0 {
-            big.push_str("## Sezione\n");
+            big.push_str("## Sezione\n```swift\nstruct Note {\n    let title: String\n}\nprint(\"Hello\")\n```\n");
         }
     }
     std::fs::write(dir.join("vault/Big.md"), &big).unwrap();

@@ -513,7 +513,9 @@ fn editor_line_styles_stay_inside_their_lines() {
         let text = gen_text(&mut rng, 40);
         let cursor = Some(rng.below(text.len() + 1));
         let spans = compute_markdown_spans(&text, cursor, Some("Dir/Here.md"), &idx);
-        let styles = style_lines(&text, &spans);
+        let styles = style_lines(&text, &spans, &mut |l, c| {
+            noteki_gpui::core::editor::code::highlight(l, c).into()
+        });
         let lines = logical_lines(&text);
         assert_eq!(styles.len(), lines.len(), "one style per line of {text:?}");
         for (style, line) in styles.iter().zip(&lines) {
@@ -552,7 +554,12 @@ fn editor_display_map_never_puts_an_offset_inside_a_hidden_mark() {
             .unwrap();
         let spans = compute_markdown_spans(&text, Some(cursor), None, &idx);
         let lines = logical_lines(&text);
-        for (style, line) in style_lines(&text, &spans).iter().zip(&lines) {
+        for (style, line) in style_lines(&text, &spans, &mut |l, c| {
+            noteki_gpui::core::editor::code::highlight(l, c).into()
+        })
+        .iter()
+        .zip(&lines)
+        {
             if line.start <= cursor && cursor <= line.end {
                 let c = cursor - line.start;
                 assert!(

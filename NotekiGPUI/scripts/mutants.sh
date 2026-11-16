@@ -30,6 +30,7 @@ MUTANTS=(
   "src/core/editor/styling.rs|BlockKind::Rule if merged.first() == Some(\&(0..line.text.len())) =>|BlockKind::Rule =>|--lib|a rule is drawn over its marks on the cursor's line"
   "src/editor/element.rs|self.shaped.runs()[b.run_ix].glyphs[b.glyph_ix].index == shown|false|--test ui|where a line wraps, the caret is drawn at the end of the row before"
   "src/editor/mod.rs|if checked { \" \" } else { \"x\" }|\"x\"|--test ui|a click on a checked task's box does not clear it"
+  "src/editor/mod.rs|                        restyle(\&lines[j], 0);|                        let _ = j;|--test ui|a code block's fences stay hidden with the cursor in it"
   "src/editor/element.rs|end = prev_grapheme(text, end).max(start);|end = end.max(start);|--test ui|⌘→ lands after the space a row wraps at"
   "src/editor/element.rs|\&\& (Rc::ptr_eq(\&src.style, style) \|\| src.style == *style)|\&\& true|--test ui|a line whose style changed is drawn from the cache, as it was"
 )

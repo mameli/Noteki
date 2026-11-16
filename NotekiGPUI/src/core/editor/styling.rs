@@ -2,6 +2,7 @@
 //! Headings: what the editor needs to shape each line on its own.
 
 use std::ops::Range;
+use std::rc::Rc;
 
 use crate::core::markdown::{
     lines, list_item, parse_atx_heading, quote_prefix, BlockKind, Line, ListKind, MdSpan,
@@ -23,7 +24,7 @@ pub struct LineStyle {
     pub decoration: Option<Decoration>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Decoration {
     /// A thematic break, drawn as a rule while its marks are hidden.
     Rule,
@@ -32,14 +33,33 @@ pub enum Decoration {
     /// A list item's bullet, number or checkbox, drawn before its text while
     /// its marks are hidden; the text indented by its level.
     List { level: u8, kind: ListKind },
+    /// A line of a fenced code block's box: its opening fence (with the
+    /// language it names, shown as a label), its code, its closing fence.
+    Code(CodePart),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CodePart {
+    Open { language: Rc<str> },
+    Body,
+    Close,
+}
+
+/// The colours of a code block's code, offsets in the code.
+pub type CodeColours = Rc<[(Range<usize>, MdSpanKind)]>;
+
+/// Colours a code block's code for its language.
+pub type Highlight<'a> = dyn FnMut(&str, &str) -> CodeColours + 'a;
+
 /// One [`LineStyle`] per logical line of `text` (as `lines` splits it).
-/// A span across lines is cut at each line's end.
-pub fn style_lines(text: &str, spans: &[MdSpan]) -> Vec<LineStyle> {
+/// A span across lines is cut at each line's end. Fenced code is coloured by
+/// `highlight`, which the editor caches per block.
+pub fn style_lines(text: &str, spans: &[MdSpan], highlight: &mut Highlight) -> Vec<LineStyle> {
     let lines = lines(text);
     let mut clipped: Vec<Vec<(Range<usize>, MdSpanKind)>> = vec![Vec::new(); lines.len()];
-    for span in spans {
+    let mut parts: Vec<Option<CodePart>> = vec![None; lines.len()];
+    let code_spans = code_blocks(&lines, text, &mut parts, highlight);
+    for span in spans.iter().chain(&code_spans) {
         let first = lines
             .partition_point(|l| l.start <= span.range.start)
             .saturating_sub(1);
@@ -53,8 +73,63 @@ pub fn style_lines(text: &str, spans: &[MdSpan]) -> Vec<LineStyle> {
     lines
         .iter()
         .zip(clipped)
-        .map(|(line, spans)| style_of(line, spans))
+        .zip(parts)
+        .map(|((line, spans), part)| {
+            let mut style = style_of(line, spans);
+            if let Some(part) = part {
+                style.decoration = Some(Decoration::Code(part));
+            }
+            style
+        })
         .collect()
+}
+
+/// Finds the fenced code blocks: marks each line's part of its box in `parts`,
+/// and gives the spans of their colours, in the whole text.
+fn code_blocks(
+    lines: &[Line],
+    text: &str,
+    parts: &mut [Option<CodePart>],
+    highlight: &mut Highlight,
+) -> Vec<MdSpan> {
+    let mut spans = Vec::new();
+    let mut open: Option<(usize, Rc<str>)> = None;
+    let mut finish = |from: usize, language: &str, to: usize, spans: &mut Vec<MdSpan>| {
+        // The code between the fences, highlighted as one piece.
+        if from + 1 < to {
+            let start = lines[from + 1].start;
+            let end = lines[to - 1].start + lines[to - 1].text.len();
+            for (r, kind) in highlight(language, &text[start..end]).iter() {
+                spans.push(MdSpan {
+                    range: start + r.start..start + r.end,
+                    kind: *kind,
+                });
+            }
+        }
+    };
+    for (i, line) in lines.iter().enumerate() {
+        match (line.kind, &open) {
+            (BlockKind::FenceDelimiter, None) => {
+                let info = line.text.trim_start().trim_start_matches(['`', '~']).trim();
+                let language: Rc<str> = info.split_whitespace().next().unwrap_or("").into();
+                parts[i] = Some(CodePart::Open {
+                    language: language.clone(),
+                });
+                open = Some((i, language));
+            }
+            (BlockKind::FenceDelimiter, Some((from, language))) => {
+                parts[i] = Some(CodePart::Close);
+                finish(*from, language, i, &mut spans);
+                open = None;
+            }
+            (BlockKind::Code, Some(_)) => parts[i] = Some(CodePart::Body),
+            _ => {}
+        }
+    }
+    if let Some((from, language)) = open {
+        finish(from, &language, lines.len(), &mut spans);
+    }
+    spans
 }
 
 /// The style of one line from its own spans (offsets in the whole text), as
@@ -146,6 +221,7 @@ mod tests {
         style_lines(
             text,
             &compute_markdown_spans(text, cursor, None, &VaultIndex::default()),
+            &mut |language, code| crate::core::editor::code::highlight(language, code).into(),
         )
     }
 
@@ -192,7 +268,7 @@ mod tests {
             range: 1..5,
             kind: MdSpanKind::Comment,
         }];
-        let s = style_lines(text, &spans);
+        let s = style_lines(text, &spans, &mut |_, _| Rc::from([]));
         assert_eq!(s[0].segments, vec![(1..2, vec![MdSpanKind::Comment])]);
         assert_eq!(s[1].segments, vec![(0..2, vec![MdSpanKind::Comment])]);
     }
@@ -264,7 +340,7 @@ mod tests {
     fn rules_and_quotes_are_decorations() {
         let text = "testo\n\n---\nTitolo\n---\n> uno\n> > due\n>\n* * *";
         let s = styles(text, None);
-        let deco: Vec<_> = s.iter().map(|l| l.decoration).collect();
+        let deco: Vec<_> = s.iter().map(|l| l.decoration.clone()).collect();
         use Decoration::*;
         assert_eq!(
             deco,
@@ -291,7 +367,7 @@ mod tests {
     fn list_items_hide_their_marks_until_the_cursor_touches_them() {
         let text = "- uno\n  - sotto\n3. tre\n- [ ] da fare\n- [x] fatto\n1. [ ] numero";
         let s = styles(text, None);
-        let deco: Vec<_> = s.iter().map(|l| l.decoration).collect();
+        let deco: Vec<_> = s.iter().map(|l| l.decoration.clone()).collect();
         use ListKind::*;
         let list = |level, kind| Some(Decoration::List { level, kind });
         assert_eq!(
@@ -327,6 +403,35 @@ mod tests {
         let at = |c| styles(text, Some(c))[0].clone();
         assert!(at(1).hidden.is_empty() && at(1).decoration.is_none());
         assert_eq!(at(4).hidden, vec![0..2]);
+    }
+
+    #[test]
+    fn a_code_block_is_a_box_with_hidden_fences_and_colours() {
+        let text = "testo\n```swift\nlet a = \"x\"\n```\nfine";
+        let s = styles(text, None);
+        let deco: Vec<_> = s.iter().map(|l| l.decoration.clone()).collect();
+        assert_eq!(
+            deco,
+            vec![
+                None,
+                Some(Decoration::Code(CodePart::Open {
+                    language: "swift".into()
+                })),
+                Some(Decoration::Code(CodePart::Body)),
+                Some(Decoration::Code(CodePart::Close)),
+                None,
+            ]
+        );
+        assert_eq!(s[1].hidden, vec![0..8], "the opening fence hidden");
+        assert_eq!(s[3].hidden, vec![0..3]);
+        assert!(s[2]
+            .segments
+            .iter()
+            .any(|(_, k)| k.contains(&MdSpanKind::CodeKeyword)));
+        assert!(s[2]
+            .segments
+            .iter()
+            .any(|(_, k)| k.contains(&MdSpanKind::CodeString)));
     }
 
     #[test]

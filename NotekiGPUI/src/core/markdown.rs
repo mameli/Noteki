@@ -676,6 +676,13 @@ pub enum MdSpanKind {
     Quote,
     CalloutHeader,
     TaskDone,
+    /// The parts of a code block's code, coloured by its language.
+    CodeComment,
+    CodeString,
+    CodeNumber,
+    CodeKeyword,
+    CodeType,
+    CodeFunction,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -731,6 +738,11 @@ pub fn line_spans(
                 }
             }
             BlockKind::FenceDelimiter | BlockKind::Code => {
+                // A fence is hidden off its block (the editor shows the block's
+                // fences while the cursor is in it).
+                if line.kind == BlockKind::FenceDelimiter && !on_cursor {
+                    push(line.range(), MdSpanKind::SyntaxMarker);
+                }
                 push(line.range(), MdSpanKind::CodeBlock)
             }
             BlockKind::Rule => {

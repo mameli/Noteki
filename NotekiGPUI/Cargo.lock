@@ -4451,6 +4451,8 @@ dependencies = [
  "serde",
  "serde_json",
  "similar",
+ "syntect",
+ "two-face",
  "unicode-segmentation",
 ]
 

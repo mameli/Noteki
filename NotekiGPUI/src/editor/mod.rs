@@ -11,6 +11,9 @@ mod element;
 mod style;
 
 use std::cell::RefCell;
+use std::collections::hash_map::DefaultHasher;
+use std::collections::HashMap;
+use std::hash::{Hash, Hasher};
 use std::ops::Range;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -24,11 +27,14 @@ use gpui_kit::{
 };
 
 use crate::core::editor::buffer::{range_from_utf16, range_to_utf16};
+use crate::core::editor::code;
 use crate::core::editor::lines::edge_scroll;
 use crate::core::editor::movement::{line_range_at, word_range_at};
-use crate::core::editor::styling::{style_line, style_lines, LineStyle};
+use crate::core::editor::styling::{
+    style_line, style_lines, CodeColours, CodePart, Decoration, LineStyle,
+};
 use crate::core::editor::{EditBuffer, Motion};
-use crate::core::markdown::{self, compute_markdown_spans, line_of_offset};
+use crate::core::markdown::{self, compute_markdown_spans, line_of_offset, BlockKind};
 use crate::core::wikilink::VaultIndex;
 use crate::theme::NotekiPalette;
 
@@ -163,6 +169,8 @@ pub struct NoteEditor {
     revision: u64,
     /// The Note's path and the Vault's links, to tell resolved Wikilinks.
     link_context: (Option<String>, Arc<VaultIndex>),
+    /// The colours of the code blocks of the last styling, by language and code.
+    code_colours: HashMap<u64, CodeColours>,
     /// Live preview styles per line with every mark hidden, and the revision.
     base_styles: (Option<u64>, LineStyles),
     /// The same with the cursor's line restyled, and the `(revision, cursor)`.
@@ -209,6 +217,7 @@ impl NoteEditor {
             reveal: false,
             revision: 0,
             link_context: (None, Arc::default()),
+            code_colours: HashMap::new(),
             base_styles: (None, Rc::default()),
             styles: (None, Rc::default()),
             shared: (u64::MAX, SharedString::default()),
@@ -324,36 +333,79 @@ impl NoteEditor {
         self.shared.1.clone()
     }
 
-    /// The Live preview styles of each line, recomputed when the text changes
-    /// or the cursor moves to another line (whose marks are then shown).
+    /// The Live preview styles of each line: every line once per change of
+    /// the text, then only the lines the cursor's position changes.
     fn line_styles(&mut self) -> LineStyles {
         let text = self.buf.text();
         if text.len() > LIVE_PREVIEW_MAX_BYTES {
             return Rc::default();
         }
         let (path, index) = &self.link_context;
-        // Every line with its marks hidden, once per change of the text.
+        // Every line with its marks hidden, once per change of the text. A code
+        // block is highlighted again only when its code or language changed.
         if self.base_styles.0 != Some(self.revision) {
             let spans = compute_markdown_spans(text, None, path.as_deref(), index);
-            let styles = keep_equal(&self.base_styles.1, style_lines(text, &spans));
+            let cache = &mut self.code_colours;
+            let mut used = HashMap::new();
+            let mut highlight = |language: &str, code: &str| {
+                let mut h = DefaultHasher::new();
+                (language, code).hash(&mut h);
+                let key = h.finish();
+                let colours = cache
+                    .remove(&key)
+                    .or_else(|| used.get(&key).cloned())
+                    .unwrap_or_else(|| code::highlight(language, code).into());
+                used.insert(key, Rc::clone(&colours));
+                colours
+            };
+            let styles = style_lines(text, &spans, &mut highlight);
+            *cache = used;
+            let styles = keep_equal(&self.base_styles.1, styles);
             self.base_styles = (Some(self.revision), Rc::new(styles));
         }
-        // Then only the cursor's line again, with the marks of the element
-        // the cursor is in: moving the cursor costs one line, not the Note.
+        // Then the lines the cursor shows marks on: its own (the element it is
+        // in), or a code block's fences while it is in the block. Moving the
+        // cursor costs a line or two, not the Note.
         let cursor = self.buf.cursor();
         let key = (self.revision, cursor);
         if self.styles.0 != Some(key) {
-            let mut styles: Vec<Rc<LineStyle>> = (*self.base_styles.1).clone();
-            if let Some(line) = markdown::lines(text).get(line_of_offset(text, cursor)) {
+            let base = &self.base_styles.1;
+            let mut styles: Vec<Rc<LineStyle>> = (**base).clone();
+            let lines = markdown::lines(text);
+            let i = line_of_offset(text, cursor);
+            let mut restyle = |line: &markdown::Line, in_line: usize| {
                 let mut spans = Vec::new();
-                let in_line = Some(cursor - line.start);
-                markdown::line_spans(line, in_line, path.as_deref(), index, &mut spans);
-                let style = style_line(line, &spans);
+                markdown::line_spans(line, Some(in_line), path.as_deref(), index, &mut spans);
+                let mut style = style_line(line, &spans);
                 if let Some(slot) = styles.get_mut(line.index) {
+                    // A code block's part of the box is the block's, not the line's.
+                    if matches!(slot.decoration, Some(Decoration::Code(_))) {
+                        style.decoration = slot.decoration.clone();
+                        style.segments = slot.segments.clone();
+                    }
                     if **slot != style {
                         *slot = Rc::new(style);
                     }
                 }
+            };
+            match lines.get(i) {
+                Some(line) if matches!(line.kind, BlockKind::Code | BlockKind::FenceDelimiter) => {
+                    let is = |j: usize, open: bool| match &base
+                        .get(j)
+                        .and_then(|s| s.decoration.clone())
+                    {
+                        Some(Decoration::Code(CodePart::Open { .. })) => open,
+                        Some(Decoration::Code(CodePart::Close)) => !open,
+                        _ => false,
+                    };
+                    let first = (0..=i).rev().find(|&j| is(j, true));
+                    let last = (i..lines.len()).find(|&j| is(j, false));
+                    for j in first.into_iter().chain(last) {
+                        restyle(&lines[j], 0);
+                    }
+                }
+                Some(line) => restyle(line, cursor - line.start),
+                None => {}
             }
             self.styles = (Some(key), Rc::new(styles));
         }

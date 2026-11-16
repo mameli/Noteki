@@ -169,7 +169,9 @@ fn main() {
             "editor styles per line, 100 KB note (per keystroke)",
             best(10, || {
                 let spans = compute_markdown_spans(&big, Some(10), Some("x.md"), &vault.index);
-                noteki_gpui::core::editor::styling::style_lines(&big, &spans)
+                noteki_gpui::core::editor::styling::style_lines(&big, &spans, &mut |l, c| {
+                    noteki_gpui::core::editor::code::highlight(l, c).into()
+                })
             }),
             Duration::from_millis(16),
         ),
