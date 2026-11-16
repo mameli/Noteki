@@ -1075,19 +1075,24 @@ impl Element for EditorElement {
                 }
             });
         }
-        for r in state.selection.drain(..) {
-            window.paint_quad(fill(r, palette.selection));
-        }
         let visible = window.content_mask().bounds;
         let layout = &state.layout;
-        for (i, line) in layout.lines.iter().enumerate() {
+        let on_screen = |i: usize, line: &LaidLine| {
             let top = layout.origin.y + layout.top_of(i);
-            if top > visible.bottom() {
-                break;
-            }
-            if top + line.height() < visible.top() {
+            (top <= visible.bottom() && top + line.height() >= visible.top()).then_some(top)
+        };
+        let clip = |cell: &Cell, top: Pixels, line: &LaidLine| ContentMask {
+            bounds: Bounds::new(
+                point(layout.origin.x + cell.x, top),
+                size(cell.room, line.line_height),
+            ),
+        };
+        // Backgrounds first (boxes, rules, inline code), then the selection
+        // over them, then the text: selected code shows as selected.
+        for (i, line) in layout.lines.iter().enumerate() {
+            let Some(top) = on_screen(i, line) else {
                 continue;
-            }
+            };
             paint_decoration(
                 line,
                 (layout.origin.x, top, layout.width),
@@ -1095,22 +1100,11 @@ impl Element for EditorElement {
                 window,
                 cx,
             );
-            paint_image(line, (layout.origin.x, top), input, window, cx);
             for cell in line.cells.iter().flat_map(|c| c.iter()) {
-                // A cell's text never overflows its column: cut at its edge.
-                let x = layout.origin.x + cell.x;
-                let clip = Bounds::new(point(x, top), size(cell.room, line.line_height));
-                window.with_content_mask(Some(ContentMask { bounds: clip }), |window| {
+                let at = point(layout.origin.x + cell.x, top);
+                window.with_content_mask(Some(clip(cell, top, line)), |window| {
                     let _ = cell.shaped.paint_background(
-                        point(x, top),
-                        line.line_height,
-                        TextAlign::Left,
-                        None,
-                        window,
-                        cx,
-                    );
-                    let _ = cell.shaped.paint(
-                        point(x, top),
+                        at,
                         line.line_height,
                         TextAlign::Left,
                         None,
@@ -1119,15 +1113,32 @@ impl Element for EditorElement {
                     );
                 });
             }
-            let at = point(layout.origin.x + line.indent, top);
             let _ = line.shaped.paint_background(
-                at,
+                point(layout.origin.x + line.indent, top),
                 line.line_height,
                 TextAlign::Left,
                 None,
                 window,
                 cx,
             );
+        }
+        for r in state.selection.drain(..) {
+            window.paint_quad(fill(r, palette.selection));
+        }
+        for (i, line) in layout.lines.iter().enumerate() {
+            let Some(top) = on_screen(i, line) else {
+                continue;
+            };
+            paint_image(line, (layout.origin.x, top), input, window, cx);
+            // A cell's text never overflows its column: cut at its edge.
+            for cell in line.cells.iter().flat_map(|c| c.iter()) {
+                let at = point(layout.origin.x + cell.x, top);
+                window.with_content_mask(Some(clip(cell, top, line)), |window| {
+                    let _ =
+                        cell.shaped
+                            .paint(at, line.line_height, TextAlign::Left, None, window, cx);
+                });
+            }
             let _ = line.shaped.paint(
                 point(layout.origin.x + line.indent, top),
                 line.line_height,
