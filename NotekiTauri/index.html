@@ -1,0 +1,67 @@
+<!doctype html>
+<html data-theme="ayu">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Noteki</title>
+  <link rel="stylesheet" href="app.css" />
+</head>
+<body>
+  <div id="app" class="app-shell">
+    <aside id="sidebar" class="sidebar">
+      <div class="sidebar-header">
+        <div class="vault-title-row">
+          <span id="vault-name" class="vault-name">No Vault</span>
+          <button id="btn-open-vault" class="icon-btn" title="Open Vault…">Open…</button>
+        </div>
+        <div class="sidebar-actions">
+          <button id="btn-new-note" class="action-btn" title="New Note (Cmd/Ctrl+N)" disabled>+ New Note</button>
+        </div>
+      </div>
+      <div id="file-tree" class="file-tree" role="tree"></div>
+      <div id="sidebar-footer" class="sidebar-footer">0 notes</div>
+    </aside>
+
+    <div class="main-column">
+      <header class="toolbar">
+        <div class="toolbar-left">
+          <button id="btn-toggle-sidebar" class="icon-btn" title="Toggle Sidebar">Sidebar</button>
+          <span id="active-note-path" class="active-note-path">No note selected</span>
+        </div>
+        <div class="toolbar-right">
+          <span id="save-status" class="save-status"></span>
+          <button id="btn-source-mode" class="pill-btn" title="Toggle Source Mode (Cmd/Ctrl+E)">Live</button>
+          <select id="select-theme" class="toolbar-select" title="Theme">
+            <option value="ayu">Ayu</option>
+            <option value="everforest">Everforest</option>
+            <option value="one-dark-pro">One Dark Pro</option>
+          </select>
+          <select id="select-appearance" class="toolbar-select" title="Appearance">
+            <option value="system">System</option>
+            <option value="light">Light</option>
+            <option value="dark">Dark</option>
+          </select>
+        </div>
+      </header>
+
+      <div id="banner" class="banner hidden">
+        <span id="banner-text" class="banner-text"></span>
+        <div id="banner-actions" class="banner-actions"></div>
+      </div>
+
+      <main class="workspace">
+        <div id="empty-state" class="empty-state">
+          <div class="empty-card">
+            <h2>Noteki Cross-Platform Prototype</h2>
+            <p>Tauri shell + shared CodeMirror 6 Live Preview editor.</p>
+            <button id="btn-empty-open" class="primary-btn">Open Vault…</button>
+          </div>
+        </div>
+        <div id="attachment-view" class="attachment-view hidden"></div>
+        <div id="editor" class="editor-host hidden"></div>
+      </main>
+    </div>
+  </div>
+  <script type="module" src="app.js"></script>
+</body>
+</html>

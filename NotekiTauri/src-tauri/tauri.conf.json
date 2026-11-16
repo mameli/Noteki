@@ -1,0 +1,35 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Noteki",
+  "version": "0.1.0",
+  "identifier": "com.noteki.desktop",
+  "build": {
+    "beforeDevCommand": "node build.mjs",
+    "beforeBuildCommand": "node build.mjs",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Noteki",
+        "width": 1160,
+        "height": 760,
+        "minWidth": 680,
+        "minHeight": 460
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.png"
+    ]
+  }
+}
