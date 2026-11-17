@@ -72,16 +72,45 @@ pub struct Settings {
     pub appearance: AppearanceMode,
     /// The text's size in points (SPEC › Window: 10 to 32, 15 by default).
     pub font_size: f32,
+    /// The text's font family; empty is the system font.
+    pub font_family: String,
+    /// The code's font family (inline and in blocks); empty is the system's monospaced one.
+    pub code_font: String,
+    /// The longest line, in characters (half an em each): 40 to 200.
+    pub line_length: u32,
+    /// Whether lines are limited to `line_length` (kept while off).
+    pub limit_line_length: bool,
+    /// Folders left out of each Vault (by its root), by their path from it.
+    pub excluded_folders: HashMap<String, Vec<String>>,
+    pub daily_note_folder: String,
+    /// moment.js format: `[Daily_]YYYY/YYYY-MM-DD` makes `Daily_2026/2026-11-17.md`.
+    pub daily_note_format: String,
 }
 
 pub const DEFAULT_FONT_SIZE: f32 = 15.;
 pub const MIN_FONT_SIZE: f32 = 10.;
 pub const MAX_FONT_SIZE: f32 = 32.;
+pub const DEFAULT_LINE_LENGTH: u32 = 100;
+pub const MIN_LINE_LENGTH: u32 = 40;
+pub const MAX_LINE_LENGTH: u32 = 200;
 
 impl Settings {
     /// The text size a step larger (`+1`) or smaller (`-1`), within its limits.
     pub fn zoomed(&self, step: f32) -> f32 {
         (self.font_size + step).clamp(MIN_FONT_SIZE, MAX_FONT_SIZE)
+    }
+
+    /// The longest line in characters, if lines are limited.
+    pub fn line_limit(&self) -> Option<u32> {
+        self.limit_line_length
+            .then(|| self.line_length.clamp(MIN_LINE_LENGTH, MAX_LINE_LENGTH))
+    }
+
+    /// The folders left out of the Vault at `root`.
+    pub fn excluded_in(&self, root: &Path) -> &[String] {
+        self.excluded_folders
+            .get(&root.to_string_lossy().to_string())
+            .map_or(&[], Vec::as_slice)
     }
 }
 
@@ -99,6 +128,13 @@ impl Default for Settings {
             theme_name: NotekiThemeName::default(),
             appearance: AppearanceMode::default(),
             font_size: DEFAULT_FONT_SIZE,
+            font_family: String::new(),
+            code_font: String::new(),
+            line_length: DEFAULT_LINE_LENGTH,
+            limit_line_length: true,
+            excluded_folders: HashMap::new(),
+            daily_note_folder: "Journal".into(),
+            daily_note_format: "[Daily_]YYYY/YYYY-MM-DD".into(),
         }
     }
 }
@@ -186,5 +222,37 @@ mod tests {
         assert_eq!(s.zoomed(-1.), 10.);
         let old: Settings = serde_json::from_str("{}").unwrap();
         assert_eq!(old.font_size, 15., "a file from before keeps the default");
+    }
+
+    #[test]
+    fn text_settings_round_trip_and_the_line_limit_is_kept_while_off() {
+        let dir = std::env::temp_dir().join(format!("noteki-settings-text-{}", std::process::id()));
+        let path = dir.join("s.json");
+        let mut s = Settings {
+            font_family: "Georgia".into(),
+            code_font: "Courier".into(),
+            line_length: 72,
+            daily_note_folder: "Diario".into(),
+            ..Default::default()
+        };
+        s.excluded_folders
+            .insert("/v".into(), vec!["Archivio".into()]);
+        save(Some(&path), &s).unwrap();
+        assert_eq!(load(Some(&path)), s);
+        assert_eq!(s.excluded_in(Path::new("/v")), ["Archivio".to_string()]);
+        assert!(s.excluded_in(Path::new("/w")).is_empty());
+        assert_eq!(s.line_limit(), Some(72));
+        s.limit_line_length = false;
+        assert_eq!(s.line_limit(), None);
+        assert_eq!(s.line_length, 72, "kept for when the limit is on again");
+        s.limit_line_length = true;
+        s.line_length = 500;
+        assert_eq!(s.line_limit(), Some(200));
+        let old: Settings = serde_json::from_str("{}").unwrap();
+        assert_eq!(
+            (old.line_limit(), old.daily_note_folder.as_str()),
+            (Some(100), "Journal")
+        );
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

@@ -11,7 +11,7 @@ use gpui_kit::{
     Render, Styled as _, Subscription, Task, Window, WindowBounds, WindowOptions,
 };
 
-use super::AUTOSAVE_DELAY;
+use super::{Settings, AUTOSAVE_DELAY};
 use crate::core::document::{ExternalOutcome, NoteDoc};
 use crate::core::vault::write_note_atomic;
 use crate::editor::{NoteEditor, NoteEditorEvent};
@@ -31,9 +31,10 @@ impl LooseFile {
     pub fn open(
         path: PathBuf,
         palette: NotekiPalette,
-        font_size: gpui_kit::Pixels,
+        settings: &Settings,
         cx: &mut gpui_kit::App,
     ) -> Result<(), String> {
+        let settings = settings.clone();
         let text = std::fs::read_to_string(&path)
             .map_err(|e| format!("Cannot open {}: {e}", path.display()))?;
         let bounds = Bounds::centered(None, size(px(820.), px(760.)), cx);
@@ -44,7 +45,7 @@ impl LooseFile {
             ..Default::default()
         };
         gpui_kit::open_window(options, cx, |window, cx| {
-            cx.new(|cx| Self::new(path, text, palette, font_size, window, cx))
+            cx.new(|cx| Self::new(path, text, palette, &settings, window, cx))
         })
         .map(|_| ())
         .map_err(|e| e.to_string())
@@ -54,14 +55,20 @@ impl LooseFile {
         path: PathBuf,
         text: String,
         palette: NotekiPalette,
-        font_size: gpui_kit::Pixels,
+        settings: &Settings,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
         let key = path.to_string_lossy().to_string();
         let editor = cx.new(|cx| {
             let mut ed = NoteEditor::new(palette, window, cx);
-            ed.set_font_size(font_size, cx);
+            ed.set_font_size(px(settings.font_size), cx);
+            ed.set_text_settings(
+                &settings.font_family,
+                &settings.code_font,
+                settings.line_limit(),
+                cx,
+            );
             ed.open_note(&key, &text, 0, cx);
             ed
         });

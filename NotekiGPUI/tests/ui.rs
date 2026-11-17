@@ -274,6 +274,133 @@ fn files_from_the_finder_go_to_a_tab_files_or_a_window_of_their_own(cx: &mut Tes
     );
 }
 
+// ---- Settings ----
+
+#[gpui_kit::test]
+fn a_shorter_line_length_rewraps_and_is_saved(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let long = "parola ".repeat(60);
+    std::fs::write(f.vault.join("Lunga.md"), &long).unwrap();
+    let abs = f.vault.join("Lunga.md");
+    app(cx, &f, |a, w, cx| {
+        a.handle_fs_changes(&[abs], w, cx);
+        a.open_path("Lunga.md", OpenIn::CurrentTab, w, cx)
+    });
+    frame(cx, &f);
+    let bottom = |cx: &mut TestAppContext| {
+        frame(cx, &f);
+        app(cx, &f, |a, _, cx| {
+            f32::from(
+                a.editor()
+                    .read(cx)
+                    .caret_bounds(long.len())
+                    .unwrap()
+                    .origin
+                    .y,
+            )
+        })
+    };
+    let wide = bottom(cx);
+    app(cx, &f, |a, w, cx| {
+        a.update_settings(|s| s.line_length = 40, w, cx)
+    });
+    let narrow = bottom(cx);
+    assert!(
+        narrow > wide,
+        "more rows at 40 characters: {wide} → {narrow}"
+    );
+    app(cx, &f, |a, w, cx| {
+        a.update_settings(|s| s.limit_line_length = false, w, cx)
+    });
+    assert!(bottom(cx) <= wide, "no limit: as wide as the window");
+    let saved = std::fs::read_to_string(f.dir.join("settings.json")).unwrap();
+    assert!(saved.contains("\"line_length\": 40"), "{saved}");
+}
+
+#[gpui_kit::test]
+fn an_excluded_folder_leaves_the_vault_and_closes_its_tabs(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    app(cx, &f, |a, w, cx| {
+        a.open_path("Daily/2026-11-12.md", OpenIn::NewTab, w, cx)
+    });
+    frame(cx, &f);
+    assert!(app(cx, &f, |a, _, _| a
+        .tabs()
+        .contains("Daily/2026-11-12.md")));
+    let root = app(cx, &f, |a, _, _| a.vault().unwrap().root.clone());
+    let key = root.to_string_lossy().to_string();
+    app(cx, &f, |a, w, cx| {
+        a.update_settings(
+            |s| {
+                s.excluded_folders.insert(key, vec!["daily".into()]);
+            },
+            w,
+            cx,
+        )
+    });
+    frame(cx, &f);
+    let (in_vault, tab) = app(cx, &f, |a, _, _| {
+        (
+            a.vault().unwrap().contains("Daily/2026-11-12.md"),
+            a.tabs().contains("Daily/2026-11-12.md"),
+        )
+    });
+    assert!(
+        !in_vault && !tab,
+        "left out, in any letter case, and its Tab closed"
+    );
+}
+
+#[gpui_kit::test]
+fn the_settings_window_opens_once(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let before = cx.update(|cx| cx.windows().len());
+    app(cx, &f, |a, w, cx| a.open_settings(w, cx));
+    app(cx, &f, |a, w, cx| a.open_settings(w, cx));
+    cx.run_until_parked();
+    let windows = cx.update(|cx| cx.windows());
+    assert_eq!(windows.len(), before + 1);
+    let settings = *windows.iter().find(|w| **w != f.window).unwrap();
+    // Choosing a theme there applies it to the Vault's window and saves it.
+    let click_label = |cx: &mut TestAppContext, label: &str| {
+        use gpui_kit::test::TestQueryExt as _;
+        use gpui_kit::{MouseButton, MouseDownEvent, MouseUpEvent, PlatformInput};
+        cx.update_window(settings, |_, window, cx| {
+            window.render_frame(cx);
+            let at = window.find_by_label(label).bounds().center();
+            window.dispatch_event(
+                PlatformInput::MouseDown(MouseDownEvent {
+                    button: MouseButton::Left,
+                    position: at,
+                    modifiers: Default::default(),
+                    click_count: 1,
+                    first_mouse: false,
+                }),
+                cx,
+            );
+            window.dispatch_event(
+                PlatformInput::MouseUp(MouseUpEvent {
+                    button: MouseButton::Left,
+                    position: at,
+                    modifiers: Default::default(),
+                    click_count: 1,
+                }),
+                cx,
+            );
+        })
+        .unwrap();
+        cx.run_until_parked();
+    };
+    click_label(cx, "Theme: Ayu");
+    click_label(cx, "Everforest");
+    assert_eq!(
+        app(cx, &f, |a, _, _| a.theme_name()),
+        noteki_gpui::theme::NotekiThemeName::Everforest
+    );
+    let saved = std::fs::read_to_string(f.dir.join("settings.json")).unwrap();
+    assert!(saved.to_lowercase().contains("everforest"), "{saved}");
+}
+
 // ---- Saving ----
 
 #[gpui_kit::test]

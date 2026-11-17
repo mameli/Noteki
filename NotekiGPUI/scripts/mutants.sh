@@ -49,6 +49,8 @@ MUTANTS=(
   "src/editor/element.rs|\&\& (Rc::ptr_eq(\&src.style, style) \|\| src.style == *style)|\&\& true|--test ui|a line whose style changed is drawn from the cache, as it was"
   "src/app/loose.rs|if !self.doc.should_save() {|if self.doc.should_save() {|--test ui|a Loose file is never saved"
   "src/core/opening.rs|Some(true) => Opened::Folder(rel),|Some(true) => Opened::File(rel),|--lib|a Vault folder opened from the Finder goes to a Tab"
+  "src/app/mod.rs|while let Some(ix) = inside(self) {|while let Some(ix) = None::<usize> {|--test ui|a folder newly excluded keeps its Tabs open"
+  "src/editor/mod.rs|d.max_w(self.font_size * (chars as f32 * 0.5))|d.max_w(px(820.))|--test ui|the line length setting does not change the width"
 )
 
 # Restore with a fresh mtime: `mv` would keep the backup's older mtime and

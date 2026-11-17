@@ -250,6 +250,11 @@ pub struct NoteEditor {
     over_link: bool,
     /// The text's size, from the settings (⌘+, ⌘−, ⌘0).
     font_size: Pixels,
+    /// The text's and the code's fonts, and the longest line in characters,
+    /// from the settings.
+    font_family: Option<SharedString>,
+    code_font: SharedString,
+    line_limit: Option<u32>,
     /// The Note chosen in the `[[` list, and the link where Esc closed it.
     completion_pick: usize,
     completion_dismissed: Option<usize>,
@@ -319,6 +324,9 @@ impl NoteEditor {
             completion_dismissed: None,
             typed_at: None,
             font_size: px(15.),
+            font_family: None,
+            code_font: element::CODE_FONT.into(),
+            line_limit: Some(100),
             note_key: None,
             histories: HashMap::new(),
             revision: 0,
@@ -465,6 +473,25 @@ impl NoteEditor {
 
     pub fn set_font_size(&mut self, size: Pixels, cx: &mut Context<Self>) {
         self.font_size = size;
+        self.reveal = true;
+        cx.notify();
+    }
+
+    /// The settings' fonts (empty: the system's) and line length.
+    pub fn set_text_settings(
+        &mut self,
+        font_family: &str,
+        code_font: &str,
+        line_limit: Option<u32>,
+        cx: &mut Context<Self>,
+    ) {
+        self.font_family = (!font_family.is_empty()).then(|| font_family.to_string().into());
+        self.code_font = if code_font.is_empty() {
+            element::CODE_FONT.into()
+        } else {
+            code_font.to_string().into()
+        };
+        self.line_limit = line_limit;
         self.reveal = true;
         cx.notify();
     }
@@ -1034,7 +1061,10 @@ impl Render for NoteEditor {
             div().w_full().px_6().py_4().child(
                 div()
                     .w_full()
-                    .max_w(px(820.))
+                    // A character is half an em (SPEC › Window).
+                    .when_some(self.line_limit, |d, chars| {
+                        d.max_w(self.font_size * (chars as f32 * 0.5))
+                    })
                     .mx_auto()
                     .child(EditorElement::new(cx.entity())),
             ),

@@ -6,6 +6,7 @@
 mod loose;
 mod render;
 pub mod settings;
+mod settings_window;
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -77,6 +78,7 @@ actions!(
         FormatCodeAction,
         InsertWikilinkAction,
         FollowLinkUnderCursorAction,
+        OpenSettingsAction,
     ]
 );
 
@@ -116,6 +118,7 @@ pub fn register_keybindings(cx: &mut App) {
         KeyBinding::new("cmd-shift-x", FormatStrikeAction, None),
         KeyBinding::new("ctrl-`", FormatCodeAction, None),
         KeyBinding::new("cmd-shift-k", InsertWikilinkAction, None),
+        KeyBinding::new("cmd-,", OpenSettingsAction, None),
     ]);
     crate::editor::register_keybindings(cx);
 }
@@ -172,6 +175,11 @@ pub struct Vault {
 
 impl Vault {
     pub fn load(root: &Path) -> Result<Self, String> {
+        Self::load_excluding(root, &[])
+    }
+
+    /// Loads the Vault leaving out `excluded` too (paths from its root, any case).
+    pub fn load_excluding(root: &Path, excluded: &[String]) -> Result<Self, String> {
         let root = std::fs::canonicalize(root)
             .map_err(|e| format!("Cannot open {}: {e}", root.display()))?;
         if !root.is_dir() {
@@ -184,7 +192,7 @@ impl Vault {
             notes: Vec::new(),
             corpus: Corpus::default(),
             tag_tree: Vec::new(),
-            excluded: normalize_excluded(&[]),
+            excluded: normalize_excluded(excluded),
         };
         vault.refresh(&HashSet::new())?;
         Ok(vault)
@@ -338,6 +346,7 @@ pub struct NotekiApp {
     pending_fs: HashSet<PathBuf>,
     last_fs_event: Option<Instant>,
     autosave: Option<Task<()>>,
+    settings_window: Option<gpui_kit::AnyWindowHandle>,
 
     _subscriptions: Vec<Subscription>,
 }
@@ -357,6 +366,12 @@ impl NotekiApp {
         let editor = cx.new(|cx| {
             let mut ed = NoteEditor::new(palette, window, cx);
             ed.set_font_size(font_size, cx);
+            ed.set_text_settings(
+                &settings.font_family,
+                &settings.code_font,
+                settings.line_limit(),
+                cx,
+            );
             ed
         });
         let search_input = cx.new(|cx| {
@@ -417,6 +432,7 @@ impl NotekiApp {
             pending_fs: HashSet::new(),
             last_fs_event: None,
             autosave: None,
+            settings_window: None,
             _subscriptions: subscriptions,
         };
 
@@ -613,6 +629,82 @@ impl NotekiApp {
         cx.notify();
     }
 
+    /// ⌘,: the Settings window, brought forward when already open.
+    pub fn open_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(handle) = self.settings_window {
+            if handle.update(cx, |_, w, _| w.activate_window()).is_ok() {
+                return;
+            }
+        }
+        // Opened once this update is over: the new window reads the settings.
+        let (app, main) = (cx.entity(), window.window_handle());
+        cx.defer(move |cx| {
+            let handle = settings_window::SettingsWindow::open(app.clone(), main, cx);
+            app.update(cx, |a, _| a.settings_window = handle);
+        });
+    }
+
+    /// Changes the settings (from the Settings window), saves and applies them
+    /// at once: the theme, the editor's text, the Vault's Excluded folders.
+    pub fn update_settings(
+        &mut self,
+        change: impl FnOnce(&mut Settings),
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let before = self.settings.clone();
+        change(&mut self.settings);
+        let look = (self.settings.theme_name, self.settings.appearance);
+        if look != (before.theme_name, before.appearance) {
+            self.apply_theme(window, cx);
+        }
+        let s = &self.settings;
+        let (family, code, limit) = (s.font_family.clone(), s.code_font.clone(), s.line_limit());
+        let size = gpui_kit::px(
+            s.font_size
+                .clamp(settings::MIN_FONT_SIZE, settings::MAX_FONT_SIZE),
+        );
+        self.editor.update(cx, |ed, cx| {
+            ed.set_font_size(size, cx);
+            ed.set_text_settings(&family, &code, limit, cx);
+        });
+        if let Some(root) = self.vault.as_ref().map(|v| v.root.clone()) {
+            let excluded = self.settings.excluded_in(&root).to_vec();
+            if excluded != before.excluded_in(&root) {
+                self.exclude_folders(&excluded, window, cx);
+            }
+        }
+        self.persist();
+        cx.notify();
+    }
+
+    /// Leaves `excluded` out of the Vault: the Tabs inside close, their Notes
+    /// saved first, since no change on disk would reach them any more.
+    fn exclude_folders(
+        &mut self,
+        excluded: &[String],
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some(vault) = self.vault.as_mut() else {
+            return;
+        };
+        vault.excluded = normalize_excluded(excluded);
+        let root = vault.root.clone();
+        let set = vault.excluded.clone();
+        let inside = |app: &Self| {
+            app.tabs
+                .iter()
+                .position(|t| crate::core::vault::is_in_excluded_folder(&root, &t.path, &set))
+        };
+        while let Some(ix) = inside(self) {
+            self.close_tab(ix, window, cx);
+        }
+        self.refresh_vault(&HashSet::new(), cx);
+        self.refresh_outline();
+        self.persist_session();
+    }
+
     /// ⌘+ (`step` 1), ⌘− (−1), ⌘0 (`None`): the text's size, remembered.
     pub(crate) fn zoom(&mut self, step: Option<f32>, cx: &mut Context<Self>) {
         self.settings.font_size = match step {
@@ -650,7 +742,9 @@ impl NotekiApp {
         cx: &mut Context<Self>,
     ) -> Result<(), String> {
         self.flush_all();
-        let vault = match Vault::load(root) {
+        let canonical = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
+        let excluded = self.settings.excluded_in(&canonical).to_vec();
+        let vault = match Vault::load_excluding(root, &excluded) {
             Ok(v) => v,
             Err(e) => {
                 self.set_error(e.clone());
@@ -963,8 +1057,7 @@ impl NotekiApp {
                 cx.notify();
             }
             Opened::Loose(path) => {
-                let font = gpui_kit::px(self.settings.font_size);
-                if let Err(e) = loose::LooseFile::open(path, self.palette, font, cx) {
+                if let Err(e) = loose::LooseFile::open(path, self.palette, &self.settings, cx) {
                     self.set_error(e);
                     cx.notify();
                 }
@@ -1792,7 +1885,10 @@ impl NotekiApp {
 
     pub(crate) fn open_daily_note(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some(vault) = &self.vault else { return };
-        let rel = today_daily_note_path("Daily", "YYYY-MM-DD");
+        let rel = today_daily_note_path(
+            &self.settings.daily_note_folder,
+            &self.settings.daily_note_format,
+        );
         let result = if vault.contains(&rel) {
             Ok(rel)
         } else {

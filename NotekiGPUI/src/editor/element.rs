@@ -48,7 +48,8 @@ const CHECKBOX: Pixels = px(14.);
 const CODE_PAD: Pixels = px(12.);
 const CODE_RADIUS: Pixels = px(6.);
 /// Code is drawn in the system's monospaced font.
-const CODE_FONT: &str = "Menlo";
+/// The code's font when the settings name none.
+pub(super) const CODE_FONT: &str = "Menlo";
 /// A table cell's text is this far from its column's edges.
 const CELL_PAD: Pixels = px(8.);
 /// A column is never wider than about 40 characters (ADR 0008), in ems.
@@ -308,6 +309,7 @@ pub(super) struct ShapeInput {
     styles: LineStyles,
     palette: NotekiPalette,
     font: Font,
+    code_font: SharedString,
     font_size: Pixels,
     cache: Rc<RefCell<ShapeCache>>,
 }
@@ -327,6 +329,7 @@ struct FrameKey {
 #[derive(Clone, PartialEq)]
 struct Look {
     font: Font,
+    code_font: SharedString,
     font_size: Pixels,
     palette: NotekiPalette,
 }
@@ -364,6 +367,7 @@ fn shape(
 ) -> (Rc<Vec<LaidLine>>, Rc<LineTops>) {
     let look = Look {
         font: input.font.clone(),
+        code_font: input.code_font.clone(),
         font_size: input.font_size,
         palette: input.palette,
     };
@@ -1011,7 +1015,7 @@ fn runs_for(input: &ShapeInput, line: &Range<usize>, style: &LineStyle) -> Vec<T
         .map(|(r, _)| r.clone())
         .collect();
     let code_font = Font {
-        family: CODE_FONT.into(),
+        family: input.code_font.clone(),
         ..input.font.clone()
     };
     // Cut the line at every layer's and hidden range's ends; each shown piece
@@ -1132,7 +1136,14 @@ impl Element for EditorElement {
             marked: ed.buf.marked(),
             styles,
             palette: ed.palette,
-            font: style.font(),
+            font: match &ed.font_family {
+                Some(family) => Font {
+                    family: family.clone(),
+                    ..style.font()
+                },
+                None => style.font(),
+            },
+            code_font: ed.code_font.clone(),
             font_size: ed.font_size,
             cache: ed.shape_cache.clone(),
         };
@@ -1375,6 +1386,7 @@ pub fn shape_for_bench(
         styles: Rc::default(),
         palette: NotekiPalette::for_theme(crate::theme::NotekiThemeName::default(), false),
         font,
+        code_font: CODE_FONT.into(),
         font_size,
     };
     px(shape(&input, width, ts).1.total())

@@ -115,6 +115,28 @@ pub fn is_in_excluded_folder(root: &Path, rel_path: &str, excluded: &HashSet<Str
     false
 }
 
+/// The path from `root` of a folder the user chose to leave out (SPEC ›
+/// Vault: inside the Vault and not already left out), or why it cannot be.
+pub fn folder_to_exclude(
+    root: &Path,
+    chosen: &Path,
+    excluded: &[String],
+) -> Result<String, String> {
+    let chosen = fs::canonicalize(chosen).unwrap_or_else(|_| chosen.to_path_buf());
+    let rel = chosen
+        .strip_prefix(root)
+        .map_err(|_| "Choose a folder inside the Vault".to_string())?
+        .to_string_lossy()
+        .to_string();
+    if rel.is_empty() || !chosen.is_dir() {
+        return Err("Choose a folder inside the Vault".into());
+    }
+    if is_in_excluded_folder(root, &rel, &normalize_excluded(excluded)) {
+        return Err(format!("{rel} is already left out"));
+    }
+    Ok(rel)
+}
+
 fn compare_names(a: &str, b: &str) -> std::cmp::Ordering {
     a.to_lowercase()
         .cmp(&b.to_lowercase())
@@ -619,6 +641,33 @@ pub fn relative_path_from_disk(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_folder_to_leave_out_is_inside_the_vault_and_not_left_out_yet() {
+        let root = std::env::temp_dir().join(format!("noteki-exclude-{}", std::process::id()));
+        std::fs::create_dir_all(root.join("Archivio/Vecchio")).unwrap();
+        std::fs::create_dir_all(root.join(".obsidian")).unwrap();
+        let root = std::fs::canonicalize(&root).unwrap();
+        assert_eq!(
+            super::folder_to_exclude(&root, &root.join("Archivio"), &[]),
+            Ok("Archivio".into())
+        );
+        assert!(
+            super::folder_to_exclude(&root, &root, &[]).is_err(),
+            "the Vault itself"
+        );
+        assert!(
+            super::folder_to_exclude(&root, &std::env::temp_dir(), &[]).is_err(),
+            "outside"
+        );
+        assert!(super::folder_to_exclude(&root, &root.join(".obsidian"), &[]).is_err());
+        let ex = vec!["archivio".to_string()];
+        assert!(
+            super::folder_to_exclude(&root, &root.join("Archivio/Vecchio"), &ex).is_err(),
+            "inside one left out, any case"
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
     use super::*;
 
     #[test]

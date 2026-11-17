@@ -108,6 +108,9 @@ impl Render for NotekiApp {
                     cx,
                 )
             }))
+            .on_action(cx.listener(|this, _: &OpenSettingsAction, window, cx| {
+                this.open_settings(window, cx)
+            }))
             .on_action(
                 cx.listener(|this, _: &DailyNoteAction, window, cx| {
                     this.open_daily_note(window, cx)
@@ -1497,6 +1500,9 @@ impl NotekiApp {
             }),
             ("Light / dark / system", AssetIcon::Sun, |a, w, cx| {
                 a.cycle_appearance(w, cx)
+            }),
+            ("Settings…", AssetIcon::Settings, |a, w, cx| {
+                a.open_settings(w, cx)
             }),
             ("Open vault…", AssetIcon::FolderOpen, |a, w, cx| {
                 a.pick_vault(w, cx)
