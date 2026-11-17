@@ -812,7 +812,7 @@ impl NotekiApp {
         let before = self.settings.clone();
         change(&mut self.settings);
         self.apply_settings(&before, window, cx);
-        self.persist();
+        self.persist(); // the settings are remembered
         // The other windows take them too.
         let shared = self.settings.clone();
         for other in self.other_windows(cx) {
