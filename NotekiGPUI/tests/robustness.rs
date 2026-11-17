@@ -634,3 +634,27 @@ fn editor_display_map_never_puts_an_offset_inside_a_hidden_mark() {
         }
     }
 }
+
+#[test]
+fn link_completion_query_is_a_valid_range_before_the_cursor() {
+    use noteki_gpui::core::editor::completion::link_query;
+    let mut rng = Rng(0xED17_0004);
+    for _ in 0..cases() {
+        let mut text = gen_text(&mut rng, 30);
+        let at = (0..=rng.below(text.len() + 1).min(text.len()))
+            .rev()
+            .find(|&i| text.is_char_boundary(i))
+            .unwrap();
+        text.insert_str(at, "[[");
+        for cursor in (0..=text.len()).filter(|&c| text.is_char_boundary(c)) {
+            if let Some(q) = link_query(&text, cursor) {
+                assert_slice(&text, &q.range, "link name");
+                assert!(
+                    q.range.start <= cursor && q.range.start >= 2,
+                    "{q:?} at {cursor} in {text:?}"
+                );
+                assert_eq!(&text[q.range.start - 2..q.range.start], "[[");
+            }
+        }
+    }
+}

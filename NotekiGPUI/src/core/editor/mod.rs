@@ -4,6 +4,7 @@
 
 pub mod buffer;
 pub mod code;
+pub mod completion;
 pub mod display;
 pub mod find;
 pub mod format;

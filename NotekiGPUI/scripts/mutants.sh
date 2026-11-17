@@ -40,6 +40,7 @@ MUTANTS=(
   "src/core/editor/buffer.rs|        if !self.extra.is_empty() \&\& self.marked.is_none() {|        if false {|--lib --test ui|typing with several selections changes only the main one"
   "src/app/mod.rs|self.persist(); // the text size is remembered|// mutant|--test ui|the text size is not remembered"
   "src/app/render.rs|middle.update(cx, \|app, cx\| app.close_tab(ix, window, cx));|let _ = (\&middle, window);|--test ui|a middle click does not close the Tab"
+  "src/core/editor/completion.rs|        format!(\"{link}]]\")|        link.to_string()|--lib --test ui|choosing a Note in the [[ list leaves the link open"
   "src/editor/element.rs|end = prev_grapheme(text, end).max(start);|end = end.max(start);|--test ui|⌘→ lands after the space a row wraps at"
   "src/editor/element.rs|\&\& (Rc::ptr_eq(\&src.style, style) \|\| src.style == *style)|\&\& true|--test ui|a line whose style changed is drawn from the cache, as it was"
 )

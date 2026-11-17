@@ -1742,3 +1742,34 @@ fn the_mouse_side_buttons_and_cmd_alt_arrows_go_back_and_forward(cx: &mut TestAp
     press(cx, &f, "cmd-alt-left");
     assert_eq!(active(cx), Some("Ideas.md".into()));
 }
+
+// ---- [[ completion ----
+
+#[gpui_kit::test]
+fn typing_double_brackets_offers_notes_and_return_writes_the_link(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    editor_with(cx, &f, "Vedi ", 5);
+    type_in_editor(cx, &f, "[[Rea");
+    frame(cx, &f);
+    assert!(
+        ui(cx, &f, |w, _| w.try_find("link-completion").is_some()),
+        "the list opens"
+    );
+    press(cx, &f, "enter");
+    assert_eq!(editor_state(cx, &f), ("Vedi [[Reading list]]".into(), 21));
+    frame(cx, &f);
+    assert!(
+        ui(cx, &f, |w, _| w.try_find("link-completion").is_none()),
+        "and closes"
+    );
+    // Esc closes it; a click into a link does not open it.
+    type_in_editor(cx, &f, " [[Ide");
+    press(cx, &f, "escape");
+    frame(cx, &f);
+    assert!(ui(cx, &f, |w, _| w.try_find("link-completion").is_none()));
+    press(cx, &f, "enter");
+    assert!(
+        editor_state(cx, &f).0.ends_with("[[Ide\n"),
+        "Return is a new line again"
+    );
+}

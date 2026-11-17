@@ -9,6 +9,7 @@
 
 mod element;
 mod find_bar;
+mod link_completion;
 mod style;
 
 use std::cell::RefCell;
@@ -68,6 +69,7 @@ actions!(
         DeleteToLineEnd,
         DeleteToParagraphEnd,
         Newline,
+        TabKey,
         Left,
         Right,
         Up,
@@ -127,6 +129,7 @@ pub fn register_keybindings(cx: &mut App) {
         KeyBinding::new("cmd-delete", DeleteToLineEnd, c),
         KeyBinding::new("ctrl-k", DeleteToParagraphEnd, c),
         KeyBinding::new("enter", Newline, c),
+        KeyBinding::new("tab", TabKey, c),
         KeyBinding::new("shift-enter", Newline, c),
         KeyBinding::new("left", Left, c),
         KeyBinding::new("right", Right, c),
@@ -198,6 +201,8 @@ pub struct LinkContext {
     pub path: Option<String>,
     pub index: Arc<VaultIndex>,
     pub root: Option<std::path::PathBuf>,
+    /// The Notes `[[` offers, the most recently opened first.
+    pub completions: Rc<Vec<crate::core::wikilink::LinkCompletion>>,
 }
 
 /// The Live preview style of each line, shared with the element.
@@ -230,6 +235,12 @@ pub struct NoteEditor {
     over_link: bool,
     /// The text's size, from the settings (⌘+, ⌘−, ⌘0).
     font_size: Pixels,
+    /// The Note chosen in the `[[` list, and the link where Esc closed it.
+    completion_pick: usize,
+    completion_dismissed: Option<usize>,
+    /// The `(revision, cursor)` after the last edit: the list shows only while
+    /// typing, not when the cursor is moved or clicked into a link.
+    typed_at: Option<(u64, usize)>,
     /// The find bar, while it is open (⌘F).
     find: Option<find_bar::FindBar>,
     /// The Note shown, and the undo histories of the others.
@@ -289,6 +300,9 @@ impl NoteEditor {
             reveal: false,
             over_link: false,
             find: None,
+            completion_pick: 0,
+            completion_dismissed: None,
+            typed_at: None,
             font_size: px(15.),
             note_key: None,
             histories: HashMap::new(),
@@ -451,7 +465,9 @@ impl NoteEditor {
         if text.len() > LIVE_PREVIEW_MAX_BYTES {
             return Rc::default();
         }
-        let LinkContext { path, index, root } = &self.link_context;
+        let LinkContext {
+            path, index, root, ..
+        } = &self.link_context;
         // Every line with its marks hidden, once per change of the text. A code
         // block is highlighted again only when its code or language changed.
         if self.base_styles.0 != Some(self.revision) {
@@ -588,9 +604,12 @@ impl NoteEditor {
 
     fn edited(&mut self, changed: bool, cx: &mut Context<Self>) {
         self.goal_x = None;
+        // The `[[` list starts at its first Note again as the name changes.
+        self.completion_pick = 0;
         self.wake(cx);
         if changed {
             self.revision += 1;
+            self.typed_at = Some((self.revision, self.buf.cursor()));
             cx.emit(NoteEditorEvent::Changed);
         }
     }
@@ -829,11 +848,12 @@ handlers! {
     DeleteToLineStart => |ed, cx| ed.delete_row(false, cx);
     DeleteToLineEnd => |ed, cx| ed.delete_row(true, cx);
     DeleteToParagraphEnd => |ed, cx| ed.delete(Motion::LineEnd, cx);
-    Newline => |ed, cx| ed.replace_selection("\n", cx);
+    Newline => |ed, cx| if !ed.accept_completion(cx) { ed.replace_selection("\n", cx) };
+    TabKey => |ed, cx| if !ed.accept_completion(cx) { ed.replace_selection("\t", cx) };
     Left => |ed, cx| ed.motion(Motion::Left, false, cx);
     Right => |ed, cx| ed.motion(Motion::Right, false, cx);
-    Up => |ed, cx| ed.vertical(true, false, cx);
-    Down => |ed, cx| ed.vertical(false, false, cx);
+    Up => |ed, cx| if !ed.completion_move(-1, cx) { ed.vertical(true, false, cx) };
+    Down => |ed, cx| if !ed.completion_move(1, cx) { ed.vertical(false, false, cx) };
     WordLeft => |ed, cx| ed.motion(Motion::WordLeft, false, cx);
     WordRight => |ed, cx| ed.motion(Motion::WordRight, false, cx);
     LineStart => |ed, cx| ed.row_motion(false, false, cx);
@@ -864,6 +884,9 @@ handlers! {
     Outdent => |ed, cx| ed.format(Format::Lines(LineFormat::Outdent), cx);
     SelectNextOccurrence => |ed, cx| { ed.buf.select_next_occurrence(); ed.wake(cx) };
     SingleSelection => |ed, cx| {
+        if ed.dismiss_completion(cx) {
+            return;
+        }
         let main = ed.buf.selection();
         ed.buf.set_selection(main.anchor, main.head);
         ed.wake(cx)
@@ -891,6 +914,7 @@ handlers! {
 impl Render for NoteEditor {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let find_bar = self.render_find_bar(cx);
+        let completion = self.render_completion(cx);
         let root = div()
             .id("note-editor")
             .key_context(CONTEXT)
@@ -934,6 +958,7 @@ impl Render for NoteEditor {
             .flex_col()
             .children(find_bar)
             .child(div().flex_1().min_h_0().child(editor))
+            .children(completion)
     }
 }
 

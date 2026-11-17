@@ -765,10 +765,13 @@ impl NotekiApp {
             .as_ref()
             .map(|v| v.index.clone())
             .unwrap_or_default();
+        let offered = index.link_completions(&self.recent_notes);
+        let completions = offered.recent.into_iter().chain(offered.others).collect();
         let context = LinkContext {
             path: self.editor_path.clone(),
             index,
             root: self.vault.as_ref().map(|v| v.root.clone()),
+            completions: std::rc::Rc::new(completions),
         };
         self.editor
             .update(cx, |ed, cx| ed.set_link_context(context, cx));
