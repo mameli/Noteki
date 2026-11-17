@@ -2305,6 +2305,43 @@ fn the_sidebar_shortcuts_are_the_swift_apps(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
+fn every_shortcut_is_one_a_mac_keyboard_can_send(cx: &mut TestAppContext) {
+    let _f = fixture(cx);
+    // macOS gives ⇧ with a key that is not a letter as the shifted character:
+    // ⇧⌘] arrives as ⌘}, never as `cmd-shift-]`.
+    let unreachable: Vec<String> = cx.update(|cx| {
+        let keymap = cx.key_bindings();
+        let keymap = keymap.borrow();
+        keymap
+            .bindings()
+            .flat_map(|b| b.keystrokes())
+            .filter(|k| {
+                let key = k.key();
+                k.modifiers().shift
+                    && key.chars().count() == 1
+                    && !key.chars().all(|c| c.is_ascii_alphabetic())
+            })
+            .map(|k| format!("{:?}+{}", k.modifiers(), k.key()))
+            .collect()
+    });
+    assert!(unreachable.is_empty(), "{unreachable:?}");
+}
+
+#[gpui_kit::test]
+fn shift_cmd_brackets_change_tab_as_the_mac_sends_them(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    app(cx, &f, |a, w, cx| a.open_path("Ideas.md", OpenIn::NewTab, w, cx));
+    app(cx, &f, |a, w, cx| {
+        a.open_path("Reading list.md", OpenIn::NewTab, w, cx)
+    });
+    let active = |cx: &mut TestAppContext| app(cx, &f, |a, _, _| a.active_path().map(str::to_string));
+    press(cx, &f, "cmd-{");
+    assert_eq!(active(cx).as_deref(), Some("Ideas.md"));
+    press(cx, &f, "cmd-}");
+    assert_eq!(active(cx).as_deref(), Some("Reading list.md"));
+}
+
+#[gpui_kit::test]
 fn the_menu_bar_has_settings_under_the_apps_name(cx: &mut TestAppContext) {
     cx.update(noteki_gpui::app::set_app_menus);
     let menus = cx.update(|cx| cx.get_menus()).expect("a menu bar");

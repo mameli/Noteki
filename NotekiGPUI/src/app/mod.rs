@@ -106,12 +106,13 @@ pub fn register_keybindings(cx: &mut App) {
         KeyBinding::new("cmd-w", CloseTabAction, None),
         KeyBinding::new("cmd-shift-t", ReopenClosedTabAction, None),
         KeyBinding::new("ctrl-tab", NextTabAction, None),
-        KeyBinding::new("cmd-shift-]", NextTabAction, None),
+        // macOS gives ⇧⌘] as ⌘}: a `shift-]` binding is never pressed.
+        KeyBinding::new("cmd-}", NextTabAction, None),
         KeyBinding::new("ctrl-shift-tab", PrevTabAction, None),
-        KeyBinding::new("cmd-shift-[", PrevTabAction, None),
-        KeyBinding::new("cmd-=", ZoomIn, None),
+        KeyBinding::new("cmd-{", PrevTabAction, None),
+        // The first is the one the menu shows: ⌘+, as the Swift app's.
         KeyBinding::new("cmd-+", ZoomIn, None),
-        KeyBinding::new("cmd-shift-=", ZoomIn, None),
+        KeyBinding::new("cmd-=", ZoomIn, None),
         KeyBinding::new("cmd--", ZoomOut, None),
         KeyBinding::new("cmd-0", ZoomReset, None),
         KeyBinding::new("cmd-alt-left", NavigateBackAction, None),
