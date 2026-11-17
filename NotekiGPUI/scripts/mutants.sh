@@ -47,6 +47,8 @@ MUTANTS=(
   "src/core/markdown.rs|\&\& !(p + 1 < to \&\& b[p + 1].is_ascii_digit())|\&\& true|--lib|a dollar followed by a digit closes a formula"
   "src/editor/element.rs|end = prev_grapheme(text, end).max(start);|end = end.max(start);|--test ui|⌘→ lands after the space a row wraps at"
   "src/editor/element.rs|\&\& (Rc::ptr_eq(\&src.style, style) \|\| src.style == *style)|\&\& true|--test ui|a line whose style changed is drawn from the cache, as it was"
+  "src/app/loose.rs|if !self.doc.should_save() {|if self.doc.should_save() {|--test ui|a Loose file is never saved"
+  "src/core/opening.rs|Some(true) => Opened::Folder(rel),|Some(true) => Opened::File(rel),|--lib|a Vault folder opened from the Finder goes to a Tab"
 )
 
 # Restore with a fresh mtime: `mv` would keep the backup's older mtime and

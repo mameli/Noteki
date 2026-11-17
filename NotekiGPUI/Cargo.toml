@@ -30,6 +30,8 @@ dirs = "6"
 chrono = "0.4"
 # Same version GPUI Kit's TextView parses with: used to pre-flight the Reader (see core::markdown::reader_guard).
 markdown = "=1.0.0"
+# Files the Finder asks to open, handed to the window (already built in by GPUI).
+async-channel = "2"
 
 [dev-dependencies]
 gpui-kit = { version = "0.10.0", features = ["syntect", "test-support"] }

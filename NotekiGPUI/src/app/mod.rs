@@ -3,6 +3,7 @@
 //! The rules (saving, merging, tabs, links) live in `crate::core` and are
 //! unit-tested there; this module wires them to GPUI and the file system.
 
+mod loose;
 mod render;
 pub mod settings;
 
@@ -30,6 +31,7 @@ use crate::core::index::{
 use crate::core::markdown::{
     self, line_of_offset, preprocess_for_reader, set_task_checked, Link, ReaderLink,
 };
+use crate::core::opening::{route, Opened};
 use crate::core::tabs::{rename_target, OpenIn, Tabs};
 use crate::core::vault::{
     create_empty_note, create_folder, make_copy, move_to_trash, new_note_path_for_link,
@@ -501,6 +503,12 @@ impl NotekiApp {
         self.settings.view_mode
     }
 
+    /// The path selected in Files.
+    pub fn selected_in_files(&self, cx: &App) -> Option<String> {
+        let tree = self.file_tree.read(cx);
+        tree.selected_item().map(|i| i.id.to_string())
+    }
+
     pub fn expanded_folders(&self) -> &HashSet<String> {
         &self.expanded_folders
     }
@@ -928,6 +936,61 @@ impl NotekiApp {
         }
         self.show_active(window, cx);
         true
+    }
+
+    /// A file or folder the system asks to open (the Finder, Takku, `open`).
+    pub fn open_external(&mut self, path: &Path, window: &mut Window, cx: &mut Context<Self>) {
+        let path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+        let opened = {
+            let vault = self.vault.as_ref();
+            route(vault.map(|v| v.root.as_path()), &path, |rel| {
+                let v = vault?;
+                v.contains(rel).then(|| v.is_folder(rel))
+            })
+        };
+        match opened {
+            Opened::File(rel) => {
+                self.open_path(&rel, OpenIn::NewTab, window, cx);
+            }
+            Opened::Folder(rel) => {
+                let id = SharedString::from(rel);
+                self.settings.left_sidebar_open = true;
+                self.file_tree.update(cx, |tree, cx| {
+                    tree.reveal_item(&id, ScrollStrategy::Nearest, cx);
+                    let ix = tree.index_of(&id);
+                    tree.set_selected_index(ix, cx);
+                });
+                cx.notify();
+            }
+            Opened::Loose(path) => {
+                let font = gpui_kit::px(self.settings.font_size);
+                if let Err(e) = loose::LooseFile::open(path, self.palette, font, cx) {
+                    self.set_error(e);
+                    cx.notify();
+                }
+            }
+            Opened::OtherFolder(folder) if self.vault.is_none() => {
+                let _ = self.open_vault(&folder, window, cx);
+            }
+            Opened::OtherFolder(folder) => {
+                let name = folder.file_name().map(|n| n.to_string_lossy().to_string());
+                let answer = window.prompt(
+                    gpui_kit::PromptLevel::Info,
+                    &format!("Open “{}” as the Vault?", name.unwrap_or_default()),
+                    Some("The Vault open now closes."),
+                    &["Open as Vault", "Cancel"],
+                    cx,
+                );
+                cx.spawn_in(window, async move |this, cx| {
+                    if answer.await == Ok(0) {
+                        let _ = this
+                            .update_in(cx, |app, window, cx| app.open_vault(&folder, window, cx));
+                    }
+                })
+                .detach();
+            }
+            Opened::Nothing => {}
+        }
     }
 
     fn remember_cursor(&mut self, cx: &App) {

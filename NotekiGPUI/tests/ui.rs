@@ -222,6 +222,58 @@ fn clicking_a_note_in_the_tree_opens_it(cx: &mut TestAppContext) {
     );
 }
 
+#[gpui_kit::test]
+fn files_from_the_finder_go_to_a_tab_files_or_a_window_of_their_own(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let tabs = app(cx, &f, |a, _, _| a.tabs().len());
+    let ideas = f.vault.join("Ideas.md");
+    app(cx, &f, |a, w, cx| a.open_external(&ideas, w, cx));
+    frame(cx, &f);
+    assert_eq!(
+        app(cx, &f, |a, _, _| (
+            a.active_path().map(str::to_string),
+            a.tabs().len()
+        )),
+        (Some("Ideas.md".into()), tabs + 1),
+        "a new Tab, the others kept"
+    );
+
+    let daily = f.vault.join("Daily");
+    app(cx, &f, |a, w, cx| a.open_external(&daily, w, cx));
+    frame(cx, &f);
+    assert_eq!(
+        app(cx, &f, |a, _, cx| a.selected_in_files(cx)).as_deref(),
+        Some("Daily")
+    );
+
+    // A Markdown file outside the Vault: a Loose file, saved where it is.
+    let loose = f.dir.join("Fuori.md");
+    std::fs::write(&loose, "fuori").unwrap();
+    let before = cx.update(|cx| cx.windows().len());
+    app(cx, &f, |a, w, cx| a.open_external(&loose, w, cx));
+    cx.run_until_parked();
+    let windows = cx.update(|cx| cx.windows());
+    assert_eq!(windows.len(), before + 1, "a window of its own");
+    let window = *windows.iter().find(|w| **w != f.window).unwrap();
+    cx.update_window(window, |_, window, cx| window.render_frame(cx))
+        .unwrap();
+    cx.update_window(window, |_, window, cx| window.input("Ecco ", cx))
+        .unwrap();
+    cx.run_until_parked();
+    assert_eq!(
+        std::fs::read_to_string(&loose).unwrap(),
+        "fuori",
+        "saved too early"
+    );
+    wait_autosave(cx);
+    assert_eq!(std::fs::read_to_string(&loose).unwrap(), "Ecco fuori");
+    assert_eq!(
+        app(cx, &f, |a, _, _| a.tabs().len()),
+        tabs + 1,
+        "nothing added to the Vault's window"
+    );
+}
+
 // ---- Saving ----
 
 #[gpui_kit::test]
