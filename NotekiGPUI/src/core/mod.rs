@@ -4,6 +4,7 @@ pub mod attachment;
 pub mod document;
 pub mod editor;
 pub mod embeds;
+pub mod export;
 pub mod frontmatter;
 pub mod index;
 pub mod markdown;

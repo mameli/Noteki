@@ -4,7 +4,14 @@
 
 **Blocked by:** none
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] One self-contained file; links to Notes as text
-- [ ] Tests: the HTML of the test note without GPUI
+- [x] One self-contained file; links to Notes as text
+- [x] Tests: the HTML of the test note without GPUI
+
+## Comments
+
+- `core::export::note_html` builds the page from the Reader's preprocessing and the same `markdown` crate (GFM). The Frontmatter and Comments, inline and across lines, are left out. A line break is kept as one. Wikilinks become `<span class="wikilink">` with their name or Alias. The Vault's images, embedded or by relative path, become `data:` addresses. The CSS is light and fixed.
+- `javascript:`/`vbscript:`/`data:` link addresses are emptied: our own schemes need `allow_dangerous_protocol`, so we neutralize them ourselves (mutant-checked).
+- "Export as HTML…" is in the Command palette. The save dialog opens in Downloads with `Note.html`; nothing is written in the Vault unless chosen there. Not in a Loose file's window (YAGNI).
+- Math stays as written and Mermaid as code (no KaTeX/Mermaid without WebKit). PDF and Print are out of scope.

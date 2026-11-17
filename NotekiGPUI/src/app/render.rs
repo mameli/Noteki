@@ -1502,6 +1502,9 @@ impl NotekiApp {
             ("Light / dark / system", AssetIcon::Sun, |a, w, cx| {
                 a.cycle_appearance(w, cx)
             }),
+            ("Export as HTML…", AssetIcon::Download, |a, _, cx| {
+                a.export_html(cx)
+            }),
             ("New window", AssetIcon::SquarePlus, |a, _, cx| {
                 a.open_another_window(cx)
             }),

@@ -402,6 +402,32 @@ fn the_settings_window_opens_once(cx: &mut TestAppContext) {
     assert!(saved.to_lowercase().contains("everforest"), "{saved}");
 }
 
+// ---- Export ----
+
+#[gpui_kit::test]
+fn export_as_html_writes_one_page_with_the_image_inside(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    app(cx, &f, |a, w, cx| {
+        a.open_path("Welcome.md", OpenIn::CurrentTab, w, cx)
+    });
+    app(cx, &f, |a, _, cx| a.export_html(cx));
+    let target = f.dir.join("Welcome.html");
+    let chosen = target.clone();
+    cx.simulate_new_path_selection(move |_| Some(chosen));
+    cx.run_until_parked();
+    let html = std::fs::read_to_string(&target).unwrap();
+    assert!(
+        html.contains("<h1>Welcome to Noteki</h1>"),
+        "{}",
+        &html[..html.len().min(400)]
+    );
+    assert!(
+        html.contains("src=\"data:image/png;base64,"),
+        "the Vault's image put in"
+    );
+    assert!(!html.contains("noteki-link:") && !html.contains("noteki-embed:"));
+}
+
 // ---- Windows ----
 
 /// The Noteki view of every window open but `except`.

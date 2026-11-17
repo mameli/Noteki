@@ -39,7 +39,7 @@ use crate::core::vault::{
     normalize_excluded, read_note, rename_item, scan_vault, today_daily_note_path,
     validate_item_name, write_note_atomic, AttachmentKind, VaultItem,
 };
-use crate::core::wikilink::{folder_of, ResolvedItem, VaultIndex};
+use crate::core::wikilink::{folder_of, note_name, ResolvedItem, VaultIndex};
 use crate::editor::{Format, LineFormat, LinkContext, NoteEditor, NoteEditorEvent, Wrap};
 use crate::theme::{apply_noteki_theme, AppearanceMode, NotekiPalette, NotekiThemeName};
 
@@ -79,6 +79,7 @@ actions!(
         InsertWikilinkAction,
         FollowLinkUnderCursorAction,
         OpenSettingsAction,
+        ExportHtmlAction,
         NewWindowAction,
     ]
 );
@@ -512,6 +513,45 @@ impl NotekiApp {
             .filter(|a| a.entity_id() != me)
             .filter(|a| cx.windows().contains(&a.read(cx).window)) // not closed
             .collect()
+    }
+
+    /// *Export as HTML…*: the Note in front as one page standing alone,
+    /// saved where the user says (never in the Vault unasked).
+    pub fn export_html(&mut self, cx: &mut Context<Self>) {
+        let (Some(path), Some(vault)) = (self.editor_path.clone(), &self.vault) else {
+            return;
+        };
+        let Some(doc) = self.docs.get(&path) else {
+            return;
+        };
+        let root = vault.root.clone();
+        let folder = root.join(folder_of(&path));
+        let title = note_name(&path).to_string();
+        let html =
+            crate::core::export::note_html(doc.text(), &title, Some(&path), &vault.index, |src| {
+                let mime = crate::core::export::image_mime(src)?;
+                // A path of the Vault, or one relative to the Note.
+                let file = [root.join(src), folder.join(src)]
+                    .into_iter()
+                    .find(|f| f.starts_with(&root) && f.is_file())?;
+                Some((std::fs::read(file).ok()?, mime))
+            });
+        let dir = dirs::download_dir().unwrap_or_else(|| root.clone());
+        let rx = cx.prompt_for_new_path(&dir, Some(&format!("{title}.html")));
+        cx.spawn(async move |this, cx| {
+            let Ok(Ok(Some(target))) = rx.await else {
+                return;
+            };
+            let result = std::fs::write(&target, html);
+            let _ = this.update(cx, |app, cx| {
+                match result {
+                    Ok(()) => app.set_info(format!("Exported {}", target.display())),
+                    Err(e) => app.set_error(format!("Could not export: {e}")),
+                }
+                cx.notify();
+            });
+        })
+        .detach();
     }
 
     /// ⇧⌘N: another window of this Vault, with its own Tabs (ADR 0010).
