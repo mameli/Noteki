@@ -21,7 +21,7 @@ scripts/eval.sh --mutants      # plus the mutation check of the tests
 | `src/core/document.rs` | `NoteDoc`: saving, Merge, Conflict, Deleted (SPEC › External changes) | no |
 | `src/core/tabs.rs` | Tabs, per-tab Back/Forward, closed tabs, rename/remove | no |
 | `src/core/editor/` | The editor's rules: text with selection and composed text, movement by grapheme/word/line, UTF-16 for macOS input, line geometry for lines of different heights, Live preview styles and Heading levels per line, the display map (marks hidden by Live preview), code colours (syntect), tables, undo history, format commands | no |
-| `src/core/merge.rs`, `frontmatter.rs`, `embeds.rs` | Ported from the Tauri prototype / NotekiCore | no |
+| `src/core/merge.rs`, `frontmatter.rs`, `embeds.rs` | Merge, Frontmatter and embeds, ported from NotekiCore | no |
 | `src/editor/` | `NoteEditor`, Noteki's own editor element: shapes and paints each line on its own, keys, mouse, native text input (replaces GPUI Kit's `Editor`, see `.scratch/gpui-editor/`) | yes |
 | `src/app/mod.rs` | `NotekiApp`: state, file watching, wiring of `core` to GPUI | yes |
 | `src/app/render.rs` | All drawing, with stable element IDs for UI tests | yes |
