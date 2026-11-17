@@ -364,31 +364,38 @@ impl NotekiApp {
         );
         let pane = self.settings.left_pane;
         let tab = |id: &'static str,
-                   label: &'static str,
+                   tip: &'static str,
                    icon: AssetIcon,
                    p: LeftPane,
                    cx: &mut Context<Self>| {
-            let b = Button::new(id).label(label).icon(Icon::new(icon)).xsmall();
+            let b = Button::new(id).icon(Icon::new(icon)).small().tooltip(tip);
             let b = if pane == p { b.primary() } else { b.ghost() };
             b.on_click(cx.listener(move |this, _, _, cx| this.show_left_pane(p, cx)))
         };
         let tabs = h_flex()
+            .justify_center()
             .px_2()
             .py_1()
-            .gap_1()
+            .gap_2()
             .border_b_1()
             .border_color(border)
             .child(tab(
                 "pane-files",
-                "Files",
+                "Files (⌃⌘1)",
                 AssetIcon::Folder,
                 LeftPane::Files,
                 cx,
             ))
-            .child(tab("pane-tags", "Tags", AssetIcon::Tag, LeftPane::Tags, cx))
+            .child(tab(
+                "pane-tags",
+                "Tags (⌃⌘2)",
+                AssetIcon::Tag,
+                LeftPane::Tags,
+                cx,
+            ))
             .child(tab(
                 "pane-search",
-                "Search",
+                "Search (⇧⌘F)",
                 AssetIcon::Search,
                 LeftPane::Search,
                 cx,
@@ -462,7 +469,7 @@ impl NotekiApp {
             )
             .child(div().flex_1())
             .when_some(active.clone(), |row, path| {
-                let (p1, p2, p3) = (path.clone(), path.clone(), path);
+                let (p1, p3) = (path.clone(), path);
                 row.child(
                     button("rename-active", AssetIcon::Pencil, "Rename").on_click(cx.listener(
                         move |this, _, window, cx| {
@@ -476,14 +483,6 @@ impl NotekiApp {
                             )
                         },
                     )),
-                )
-                .child(
-                    button("duplicate-active", AssetIcon::Copy, "Make a copy").on_click(
-                        cx.listener(move |this, _, window, cx| {
-                            let r = this.duplicate(&p2, window, cx).map(|_| ());
-                            this.report(r);
-                        }),
-                    ),
                 )
                 .child(
                     button("trash-active", AssetIcon::Trash, "Move to Trash").on_click(
