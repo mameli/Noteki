@@ -223,6 +223,23 @@ fn clicking_a_note_in_the_tree_opens_it(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
+fn a_middle_click_on_a_note_opens_it_in_a_new_tab(cx: &mut TestAppContext) {
+    use gpui_kit::test::ClickOptions;
+    let f = fixture(cx);
+    let tabs = app(cx, &f, |a, _, _| a.tabs().len());
+    let middle = ClickOptions::new().with_button(gpui_kit::MouseButton::Middle);
+    ui(cx, &f, |window, cx| {
+        window.within("file-tree").click_with_options(5usize, middle, cx)
+    }); // Ideas.md
+    frame(cx, &f);
+    assert_eq!(app(cx, &f, |a, _, _| a.tabs().len()), tabs + 1);
+    assert_eq!(
+        app(cx, &f, |a, _, _| a.active_path().map(str::to_string)).as_deref(),
+        Some("Ideas.md")
+    );
+}
+
+#[gpui_kit::test]
 fn files_from_the_finder_go_to_a_tab_files_or_a_window_of_their_own(cx: &mut TestAppContext) {
     let f = fixture(cx);
     let tabs = app(cx, &f, |a, _, _| a.tabs().len());

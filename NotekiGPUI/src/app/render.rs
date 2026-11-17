@@ -533,18 +533,7 @@ impl NotekiApp {
                         ),
                 )
                 // Folders expand through the tree itself; only files open on click.
-                .when(!is_folder, |li| {
-                    li.on_click(move |ev: &ClickEvent, window, cx| {
-                        let mode = if ev.modifiers().platform {
-                            OpenIn::NewTab
-                        } else {
-                            OpenIn::CurrentTab
-                        };
-                        entity.update(cx, |app, cx| {
-                            app.open_path(&id, mode, window, cx);
-                        });
-                    })
-                })
+                .when(!is_folder, |li| opens_note(li, entity, id, None))
         });
 
         let menu_app = cx.entity();
@@ -656,21 +645,12 @@ impl NotekiApp {
                         .child(v_flex().gap(px(1.)).children(
                             selected_notes.into_iter().enumerate().map(|(ix, path)| {
                                 let name = note_name(&path);
-                                ListItem::new(("tag-note", ix))
+                                let item = ListItem::new(("tag-note", ix))
                                     .rounded(px(5.))
                                     .py(px(2.))
                                     .px_2()
-                                    .child(div().text_sm().truncate().child(name))
-                                    .on_click(cx.listener(
-                                        move |this, ev: &ClickEvent, window, cx| {
-                                            let mode = if ev.modifiers().platform {
-                                                OpenIn::NewTab
-                                            } else {
-                                                OpenIn::CurrentTab
-                                            };
-                                            this.open_path(&path, mode, window, cx);
-                                        },
-                                    ))
+                                    .child(div().text_sm().truncate().child(name));
+                                opens_note(item, cx.entity(), path, None)
                             }),
                         )),
                 )
@@ -700,7 +680,7 @@ impl NotekiApp {
                 .children(self.search_results.iter().enumerate().map(|(ix, r)| {
                     let path = r.path.clone();
                     v_flex()
-                        .child(
+                        .child(opens_note(
                             ListItem::new(("result", ix))
                                 .rounded(px(5.))
                                 .py(px(2.))
@@ -722,19 +702,14 @@ impl NotekiApp {
                                                 .text_color(muted)
                                                 .child(r.total_line_matches.to_string()),
                                         ),
-                                )
-                                .on_click(cx.listener(move |this, ev: &ClickEvent, window, cx| {
-                                    let mode = if ev.modifiers().platform {
-                                        OpenIn::NewTab
-                                    } else {
-                                        OpenIn::CurrentTab
-                                    };
-                                    this.open_path(&path, mode, window, cx);
-                                })),
-                        )
+                                ),
+                            cx.entity(),
+                            path,
+                            None,
+                        ))
                         .children(r.lines.iter().enumerate().map(|(lx, m)| {
                             let (path, line) = (r.path.clone(), m.line);
-                            ListItem::new(("result-line", ix * 1000 + lx))
+                            let item = ListItem::new(("result-line", ix * 1000 + lx))
                                 .rounded(px(4.))
                                 .py(px(1.))
                                 .pl_4()
@@ -749,17 +724,8 @@ impl NotekiApp {
                                                 .child(line.to_string()),
                                         )
                                         .child(div().text_xs().truncate().child(m.text.clone())),
-                                )
-                                .on_click(cx.listener(move |this, ev: &ClickEvent, window, cx| {
-                                    let mode = if ev.modifiers().platform {
-                                        OpenIn::NewTab
-                                    } else {
-                                        OpenIn::CurrentTab
-                                    };
-                                    if this.open_path(&path, mode, window, cx) {
-                                        this.jump_to_line(line, window, cx);
-                                    }
-                                }))
+                                );
+                            opens_note(item, cx.entity(), path, Some(line))
                         }))
                 }))
                 .into_any_element()
@@ -859,7 +825,7 @@ impl NotekiApp {
                 .gap_1()
                 .children(self.backlinks.iter().enumerate().map(|(ix, b)| {
                     let (path, line) = (b.source_path.clone(), b.line);
-                    ListItem::new(("backlink", ix))
+                    let item = ListItem::new(("backlink", ix))
                         .rounded(px(6.))
                         .p_2()
                         .child(
@@ -878,17 +844,8 @@ impl NotekiApp {
                                         .truncate()
                                         .child(b.snippet.clone()),
                                 ),
-                        )
-                        .on_click(cx.listener(move |this, ev: &ClickEvent, window, cx| {
-                            let mode = if ev.modifiers().platform {
-                                OpenIn::NewTab
-                            } else {
-                                OpenIn::CurrentTab
-                            };
-                            if this.open_path(&path, mode, window, cx) {
-                                this.jump_to_line(line, window, cx);
-                            }
-                        }))
+                        );
+                    opens_note(item, cx.entity(), path, Some(line))
                 }))
                 .into_any_element(),
         };
@@ -1435,6 +1392,34 @@ impl NotekiApp {
             cx,
         );
     }
+}
+
+/// A row that opens `path` (at `line`) in the Tab in front, or in a new Tab
+/// with a ⌘-click or a middle click, as in a browser.
+fn opens_note(
+    item: ListItem,
+    app: Entity<NotekiApp>,
+    path: String,
+    line: Option<usize>,
+) -> ListItem {
+    let open = std::rc::Rc::new(move |mode: OpenIn, window: &mut Window, cx: &mut App| {
+        app.update(cx, |a, cx| {
+            if a.open_path(&path, mode, window, cx) {
+                if let Some(line) = line {
+                    a.jump_to_line(line, window, cx);
+                }
+            }
+        })
+    });
+    let middle = open.clone();
+    item.on_click(move |ev: &ClickEvent, window, cx| {
+        let new_tab = ev.modifiers().platform;
+        open(if new_tab { OpenIn::NewTab } else { OpenIn::CurrentTab }, window, cx)
+    })
+    .on_mouse_down(MouseButton::Middle, move |_, window, cx| {
+        cx.stop_propagation();
+        middle(OpenIn::NewTab, window, cx)
+    })
 }
 
 fn flatten_tags<'a>(nodes: &'a [TagNode], depth: usize, out: &mut Vec<(usize, &'a TagNode)>) {
