@@ -945,10 +945,10 @@ impl NotekiApp {
             } else {
                 tab.path.rsplit('/').next().unwrap_or(&tab.path).to_string()
             };
+            // No mark while typing: the Note is saved a second after, and a dot
+            // that comes and goes at each pause only distracts.
             if doc.is_some_and(|d| d.has_conflict() || d.is_deleted()) {
                 label = format!("⚠ {label}");
-            } else if doc.is_some_and(NoteDoc::is_dirty) {
-                label = format!("• {label}");
             }
             let (entity, middle, path) = (entity.clone(), entity.clone(), tab.path.clone());
             let menu_app = entity.clone();
