@@ -405,70 +405,88 @@ pub fn search_vault(corpus: &Corpus, query: &str) -> Vec<SearchResult> {
     if tokens.words.is_empty() && tokens.tags.is_empty() && tokens.paths.is_empty() {
         return Vec::new();
     }
+    let words = &tokens.words;
 
-    let mut results = Vec::new();
-    for note in corpus.iter() {
-        let lower_path = note.path.to_lowercase();
-        if !tokens.paths.iter().all(|p| lower_path.contains(p)) {
-            continue;
-        }
-        if !tokens.tags.is_empty() {
+    // Which Notes match, and in what order; their lines only for those shown.
+    let mut found: Vec<(&NoteText, bool)> = corpus
+        .iter()
+        .filter(|note| {
+            let lower_path = note.path.to_lowercase();
+            tokens.paths.iter().all(|p| lower_path.contains(p))
+        })
+        .filter(|note| {
+            if tokens.tags.is_empty() {
+                return true;
+            }
             let note_tags: Vec<String> = extract_note_tags(&note.text)
                 .iter()
                 .map(|t| t.to_lowercase())
                 .collect();
-            let all = tokens.tags.iter().all(|q| {
+            tokens.tags.iter().all(|q| {
                 let prefix = format!("{q}/");
                 note_tags.iter().any(|t| t == q || t.starts_with(&prefix))
-            });
-            if !all {
-                continue;
+            })
+        })
+        .filter_map(|note| {
+            let in_name = |w: &String| contains_folded(&note.name, w);
+            if !words.iter().all(|w| in_name(w) || contains_folded(&note.text, w)) {
+                return None;
             }
-        }
-        let lower_name = note.name.to_lowercase();
-        let lower_text = note.text.to_lowercase();
-        if !tokens
-            .words
-            .iter()
-            .all(|w| lower_name.contains(w) || lower_text.contains(w))
-        {
-            continue;
-        }
-        let name_matched =
-            !tokens.words.is_empty() && tokens.words.iter().all(|w| lower_name.contains(w));
+            Some((note, !words.is_empty() && words.iter().all(in_name)))
+        })
+        .collect();
+    found.sort_by_cached_key(|(note, name_matched)| (!name_matched, note.path.to_lowercase()));
+    found.truncate(MAX_SEARCH_RESULTS);
 
-        let mut lines = Vec::new();
-        let mut total_line_matches = 0usize;
-        if !tokens.words.is_empty() {
-            for (idx, line) in note.text.lines().enumerate() {
-                let lower_line = line.to_lowercase();
-                if tokens.words.iter().any(|w| lower_line.contains(w)) {
-                    total_line_matches += 1;
-                    if lines.len() < MAX_LINES_PER_RESULT {
-                        lines.push(SearchLineMatch {
-                            line: idx + 1,
-                            text: trim_snippet(line.trim(), 100),
-                        });
+    found
+        .into_iter()
+        .map(|(note, name_matched)| {
+            let mut lines = Vec::new();
+            let mut total_line_matches = 0usize;
+            if !words.is_empty() {
+                for (idx, line) in note.text.lines().enumerate() {
+                    if words.iter().any(|w| contains_folded(line, w)) {
+                        total_line_matches += 1;
+                        if lines.len() < MAX_LINES_PER_RESULT {
+                            lines.push(SearchLineMatch {
+                                line: idx + 1,
+                                text: trim_snippet(line.trim(), 100),
+                            });
+                        }
                     }
                 }
             }
-        }
-        results.push(SearchResult {
-            path: note.path.clone(),
-            name: note.name.clone(),
-            name_matched,
-            lines,
-            total_line_matches,
-        });
-    }
+            SearchResult {
+                path: note.path.clone(),
+                name: note.name.clone(),
+                name_matched,
+                lines,
+                total_line_matches,
+            }
+        })
+        .collect()
+}
 
-    results.sort_by(|a, b| {
-        b.name_matched
-            .cmp(&a.name_matched)
-            .then_with(|| a.path.to_lowercase().cmp(&b.path.to_lowercase()))
-    });
-    results.truncate(MAX_SEARCH_RESULTS);
-    results
+/// Whether `hay` holds `needle` (already lowercase), case ignored. An ASCII
+/// needle, the usual query, is found without lowering all of `hay`.
+fn contains_folded(hay: &str, needle: &str) -> bool {
+    if !needle.is_ascii() {
+        return hay.to_lowercase().contains(needle);
+    }
+    let (hay, needle) = (hay.as_bytes(), needle.as_bytes());
+    let Some((&first, _)) = needle.split_first() else {
+        return true;
+    };
+    let mut at = 0;
+    while let Some(i) = memchr::memchr2(first, first.to_ascii_uppercase(), &hay[at..]) {
+        let start = at + i;
+        match hay.get(start..start + needle.len()) {
+            Some(window) if window.eq_ignore_ascii_case(needle) => return true,
+            Some(_) => at = start + 1,
+            None => return false,
+        }
+    }
+    false
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -689,6 +707,19 @@ mod tests {
         let idx = VaultIndex::from_tree(&tree);
         let bl = find_backlinks(&c, "T.md", &idx);
         assert_eq!(bl.iter().map(|b| b.line).collect::<Vec<_>>(), vec![1, 6]);
+    }
+
+    #[test]
+    fn contains_folded_ignores_case_without_lowering_the_text() {
+        assert!(contains_folded("Il Progetto", "progetto"));
+        assert!(contains_folded("perché ALPHA", "alpha"));
+        assert!(contains_folded("aab", "ab"), "a false start before the match");
+        assert!(contains_folded("Straße", "straße"));
+        assert!(contains_folded("ÈLA", "èla"));
+        assert!(contains_folded("x", ""));
+        assert!(!contains_folded("ab", "abc"));
+        assert!(!contains_folded("a b", "ab"));
+        assert!(!contains_folded("", "a"));
     }
 
     #[test]

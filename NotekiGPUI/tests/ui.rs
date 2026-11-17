@@ -2257,3 +2257,21 @@ fn shortcuts_work_as_soon_as_the_window_opens(cx: &mut TestAppContext) {
         Some("Ideas.md".to_string())
     );
 }
+
+#[gpui_kit::test]
+fn a_search_result_line_opens_its_note_there(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    press(cx, &f, "cmd-shift-f");
+    frame(cx, &f);
+    ui(cx, &f, |window, cx| window.input("what ships", cx));
+    frame(cx, &f);
+    assert_eq!(app(cx, &f, |a, _, _| a.search_results().len()), 1);
+    ui(cx, &f, |window, cx| window.click(("search-row", 1usize), cx));
+    frame(cx, &f);
+    let (path, cursor, text) = app(cx, &f, |a, _, cx| {
+        let ed = a.editor().read(cx);
+        (a.active_path().map(str::to_string), ed.cursor(), ed.text().to_string())
+    });
+    assert_eq!(path.as_deref(), Some("Projects/Launch plan.md"));
+    assert!(text[cursor..].starts_with("From the"), "{:?}", &text[cursor..]);
+}

@@ -39,5 +39,5 @@ The rules live in `core` and are tested there; `app` only connects them to the w
 | Demo vault | `cargo test --test demo_vault` | On the real `docs/demo-vault`: every wikilink resolves, the HTML conversion parses and every link in it works; tags, backlinks, outline, search |
 | UI | `cargo test --test ui` | The real `NotekiApp` in a headless GPUI window: typing and autosave timing, reload/merge/conflict/deleted banners, followed rename, links, tree, rename/trash, session restore, CRLF |
 | Performance | `cargo run --release --example perf` | Budgets on a 5,000-note synthetic vault |
-| Keystroke timing | `cargo test --release --test keystroke_timing -- --ignored --nocapture` | Time per keystroke and per idle frame of the real `NotekiApp` on a 100 KB Note (informational, no budget) |
+| Keystroke timing | `cargo test --release --test keystroke_timing -- --ignored --nocapture` | Time per keystroke and per idle frame of the real `NotekiApp` on a 100 KB Note, and per key typed in Search on 5,000 Notes (informational, no budget) |
 | Mutation | `scripts/mutants.sh` | The tests catch each fixed bug when it is put back |

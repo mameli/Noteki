@@ -103,3 +103,68 @@ fn keystroke_timing(cx: &mut TestAppContext) {
     );
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// Time per keystroke in the Search pane on a 5,000-Note vault, results drawn.
+///
+///     cargo test --release --test keystroke_timing search -- --ignored --nocapture
+#[gpui_kit::test]
+#[ignore]
+fn search_timing(cx: &mut TestAppContext) {
+    let dir = std::env::temp_dir().join(format!("noteki-st-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    for f in 0..50 {
+        std::fs::create_dir_all(dir.join(format!("vault/folder {f}"))).unwrap();
+    }
+    let para = "Una riga di testo di una nota sul progetto, con **grassetto** e [[link]] e #area/3.\n";
+    for i in 0..5000 {
+        let text: String = (0..16).map(|l| format!("{l} {para}")).collect();
+        std::fs::write(dir.join(format!("vault/folder {}/Note {i}.md", i % 50)), text).unwrap();
+    }
+    let config = AppConfig {
+        settings_path: Some(dir.join("s.json")),
+        vault: Some(dir.join("vault")),
+        watch: false,
+        trash_dir: Some(dir.join("t")),
+        slot: 0,
+    };
+    let (window, app) = cx.update(|cx| {
+        gpui_kit::init(cx);
+        register_keybindings(cx);
+        let options = WindowOptions {
+            window_bounds: Some(WindowBounds::Windowed(Bounds {
+                origin: Point::default(),
+                size: size(px(1280.), px(800.)),
+            })),
+            ..Default::default()
+        };
+        gpui_kit::open_window(options, cx, |window, cx| {
+            cx.new(|cx| NotekiApp::new(config, window, cx))
+        })
+        .unwrap()
+    });
+    cx.run_until_parked();
+    cx.update_window(window, |_, w, cx| {
+        w.press("cmd-shift-f", cx);
+        w.render_frame(cx)
+    })
+    .unwrap();
+    cx.run_until_parked();
+    for key in ["p", "r", "o", "g"] {
+        let t = Instant::now();
+        cx.update_window(window, |_, w, cx| {
+            w.input(key, cx);
+        })
+        .unwrap();
+        cx.run_until_parked();
+        let typed = t.elapsed();
+        cx.update_window(window, |_, w, cx| w.render_frame(cx))
+            .unwrap();
+        let found = cx.read(|cx| app.read(cx).search_results().len());
+        println!(
+            "typed {key:?}: {found} results, {:.1} ms to search, {:.1} ms with the frame",
+            typed.as_secs_f64() * 1e3,
+            t.elapsed().as_secs_f64() * 1e3
+        );
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}

@@ -16,7 +16,7 @@ use gpui_kit::component::{
 };
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    div, hsla, px, AnyElement, AppContext as _, ClickEvent, Context, Hsla,
+    div, hsla, px, uniform_list, AnyElement, AppContext as _, ClickEvent, Context, Hsla,
     InteractiveElement as _, IntoElement, ParentElement as _, Render, Role, SharedString,
     StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, Window,
 };
@@ -675,17 +675,31 @@ impl NotekiApp {
                 .child("No results")
                 .into_any_element()
         } else {
-            v_flex()
-                .gap_2()
-                .children(self.search_results.iter().enumerate().map(|(ix, r)| {
-                    let path = r.path.clone();
-                    v_flex()
-                        .child(opens_note(
-                            ListItem::new(("result", ix))
-                                .rounded(px(5.))
-                                .py(px(2.))
-                                .px_2()
-                                .child(
+            // One row per Note and per line found, all as tall: only the rows
+            // in view are drawn, however many results (300 Notes, 10 lines each).
+            let rows: Vec<(usize, Option<usize>)> = self
+                .search_results
+                .iter()
+                .enumerate()
+                .flat_map(|(ix, r)| {
+                    std::iter::once((ix, None)).chain((0..r.lines.len()).map(move |l| (ix, Some(l))))
+                })
+                .collect();
+            let entity = cx.entity();
+            uniform_list("search-list", rows.len(), move |range, _, cx| {
+                let muted = cx.theme().muted_foreground;
+                let results = &entity.read(cx).search_results;
+                range
+                    .map(|row| {
+                        let (ix, line) = rows[row];
+                        let r = &results[ix];
+                        let item = ListItem::new(("search-row", row))
+                            .h(px(24.))
+                            .rounded(px(4.))
+                            .pr_2();
+                        match line {
+                            None => {
+                                let item = item.px_2().child(
                                     h_flex()
                                         .w_full()
                                         .justify_between()
@@ -702,33 +716,31 @@ impl NotekiApp {
                                                 .text_color(muted)
                                                 .child(r.total_line_matches.to_string()),
                                         ),
-                                ),
-                            cx.entity(),
-                            path,
-                            None,
-                        ))
-                        .children(r.lines.iter().enumerate().map(|(lx, m)| {
-                            let (path, line) = (r.path.clone(), m.line);
-                            let item = ListItem::new(("result-line", ix * 1000 + lx))
-                                .rounded(px(4.))
-                                .py(px(1.))
-                                .pl_4()
-                                .pr_2()
-                                .child(
+                                );
+                                opens_note(item, entity.clone(), r.path.clone(), None)
+                            }
+                            Some(l) => {
+                                let m = &r.lines[l];
+                                let item = item.pl_4().child(
                                     h_flex()
                                         .gap_1p5()
                                         .child(
                                             div()
                                                 .text_xs()
                                                 .text_color(muted)
-                                                .child(line.to_string()),
+                                                .child(m.line.to_string()),
                                         )
                                         .child(div().text_xs().truncate().child(m.text.clone())),
                                 );
-                            opens_note(item, cx.entity(), path, Some(line))
-                        }))
-                }))
-                .into_any_element()
+                                opens_note(item, entity.clone(), r.path.clone(), Some(m.line))
+                            }
+                        }
+                    })
+                    .collect::<Vec<_>>()
+            })
+            .track_scroll(&self.search_scroll)
+            .size_full()
+            .into_any_element()
         };
         v_flex()
             .size_full()
@@ -745,9 +757,10 @@ impl NotekiApp {
                     .id("search-results")
                     .flex_1()
                     .min_h_0()
-                    .overflow_y_scrollbar()
+                    .relative()
                     .p_2()
-                    .child(body),
+                    .child(body)
+                    .vertical_scrollbar(&self.search_scroll),
             )
     }
 

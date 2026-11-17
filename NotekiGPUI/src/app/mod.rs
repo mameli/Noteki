@@ -19,7 +19,7 @@ use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::component::tree::{TreeEvent, TreeItem, TreeState};
 use gpui_kit::{
     actions, App, AppContext as _, Context, Entity, FocusHandle, Focusable, KeyBinding,
-    ScrollStrategy, SharedString, Subscription, Task, Window,
+    ScrollStrategy, SharedString, Subscription, Task, UniformListScrollHandle, Window,
 };
 
 use crate::core::attachment;
@@ -360,6 +360,7 @@ pub struct NotekiApp {
     selected_tag: Option<String>,
     search_input: Entity<InputState>,
     search_results: Vec<SearchResult>,
+    search_scroll: UniformListScrollHandle,
 
     editor: Entity<NoteEditor>,
 
@@ -450,6 +451,7 @@ impl NotekiApp {
             selected_tag: None,
             search_input,
             search_results: Vec::new(),
+            search_scroll: UniformListScrollHandle::new(),
             editor,
             outline: Vec::new(),
             backlinks: Vec::new(),

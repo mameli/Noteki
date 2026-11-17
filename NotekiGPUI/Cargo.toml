@@ -28,8 +28,10 @@ two-face = { version = "0.4.5", default-features = false }
 imagesize = "0.13"
 dirs = "6"
 chrono = "0.4"
-# Same version GPUI Kit's TextView parses with: used to pre-flight the Reader (see core::markdown::reader_guard).
+# Export as HTML (see core::export).
 markdown = "=1.0.0"
+# Search without lowering every Note at each key (already built in by regex).
+memchr = "2"
 # Files the Finder asks to open, handed to the window (already built in by GPUI).
 async-channel = "2"
 
