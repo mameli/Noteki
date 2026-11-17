@@ -2221,3 +2221,48 @@ fn cmd_k_makes_a_link_and_cmd_slash_a_comment(cx: &mut TestAppContext) {
     press(cx, &f, "cmd-z cmd-z");
     assert_eq!(editor_state(cx, &f).0, "vedi sito");
 }
+
+// ---- Keyboard-only dialogs ----
+
+#[gpui_kit::test]
+fn quick_open_takes_the_keyboard_at_once(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    editor_with(cx, &f, "", 0);
+    press(cx, &f, "cmd-o");
+    frame(cx, &f);
+    ui(cx, &f, |window, cx| window.input("Launch plan", cx));
+    frame(cx, &f);
+    press(cx, &f, "enter");
+    frame(cx, &f);
+    assert_eq!(
+        app(cx, &f, |a, _, _| a.active_path().map(str::to_string)),
+        Some("Projects/Launch plan.md".to_string())
+    );
+}
+
+#[gpui_kit::test]
+fn the_command_palette_takes_the_keyboard_at_once(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    editor_with(cx, &f, "", 0);
+    let tabs = app(cx, &f, |a, _, _| a.tabs().len());
+    press(cx, &f, "cmd-shift-p");
+    frame(cx, &f);
+    ui(cx, &f, |window, cx| window.input("Close tab", cx));
+    frame(cx, &f);
+    press(cx, &f, "enter");
+    frame(cx, &f);
+    assert_eq!(app(cx, &f, |a, _, _| a.tabs().len()), tabs - 1);
+}
+
+#[gpui_kit::test]
+fn the_name_prompt_takes_the_keyboard_at_once(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    editor_with(cx, &f, "", 0);
+    press(cx, &f, "cmd-n");
+    frame(cx, &f);
+    ui(cx, &f, |window, cx| window.input("Zeta", cx));
+    frame(cx, &f);
+    press(cx, &f, "enter");
+    frame(cx, &f);
+    assert!(f.vault.join("Zeta.md").exists());
+}

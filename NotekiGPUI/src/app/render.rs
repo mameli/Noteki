@@ -1331,7 +1331,7 @@ impl NotekiApp {
             PromptKind::Rename => ("Rename", "Rename"),
         };
         let entity = cx.entity();
-        input.update(cx, |s, cx| s.focus(window, cx));
+        let field = input.clone();
         window.open_dialog(cx, move |dialog, _, _| {
             let (input_ok, entity, target) = (input.clone(), entity.clone(), target.clone());
             dialog
@@ -1349,6 +1349,8 @@ impl NotekiApp {
                     true
                 })
         });
+        // The dialog takes focus as it opens; typing goes to the name at once.
+        field.update(cx, |s, cx| s.focus(window, cx));
     }
 
     fn open_command_dialog(
@@ -1362,6 +1364,7 @@ impl NotekiApp {
         let state = cx.new(|cx| CommandState::new(window, cx));
         let entity = cx.entity();
         let on_pick = std::rc::Rc::new(on_pick);
+        let query = state.clone();
         window.open_dialog(cx, move |dialog, _, _| {
             let (entity, on_pick) = (entity.clone(), on_pick.clone());
             dialog.width(px(540.)).close_button(false).p_0().child(
@@ -1377,6 +1380,8 @@ impl NotekiApp {
                     .on_cancel(|window, cx| window.close_dialog(cx)),
             )
         });
+        // The dialog takes focus as it opens; typing goes to the query at once.
+        query.update(cx, |s, cx| s.focus(window, cx));
     }
 
     pub(crate) fn open_quick_switcher(
