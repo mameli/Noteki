@@ -1829,3 +1829,52 @@ fn the_frontmatter_is_a_properties_table_until_the_cursor_enters_it(cx: &mut Tes
     });
     assert_eq!(editor_state(cx, &f).1, at("testo"));
 }
+
+// ---- Pasted and dropped images ----
+
+#[gpui_kit::test]
+fn a_pasted_image_is_saved_next_to_the_note_and_embedded(cx: &mut TestAppContext) {
+    use gpui_kit::{ClipboardItem, Image, ImageFormat};
+    let f = fixture(cx);
+    editor_with(cx, &f, "prima ", 6);
+    let png = std::fs::read(f.vault.join("Media/noteki.png")).unwrap();
+    cx.write_to_clipboard(ClipboardItem::new_image(&Image::from_bytes(
+        ImageFormat::Png,
+        png,
+    )));
+    press(cx, &f, "cmd-v");
+    let text = editor_state(cx, &f).0;
+    assert!(text.starts_with("prima ![[Pasted image "), "{text}");
+    let name = text.trim_start_matches("prima ![[").trim_end_matches("]]");
+    assert!(
+        f.vault.join(name).is_file(),
+        "saved next to Ideas.md: {name}"
+    );
+}
+
+#[gpui_kit::test]
+fn a_dropped_image_file_is_copied_next_to_the_note_and_embedded(cx: &mut TestAppContext) {
+    use gpui_kit::{ExternalPaths, FileDropEvent, PlatformInput};
+    let f = fixture(cx);
+    editor_with(cx, &f, "testo", 5);
+    let source = f.dir.join("Schermata.png");
+    std::fs::copy(f.vault.join("Media/noteki.png"), &source).unwrap();
+    let at = point_at(cx, &f, 5);
+    let position = gpui_kit::point(px(at.0), px(at.1));
+    ui(cx, &f, |window, cx| {
+        window.dispatch_event(
+            PlatformInput::FileDrop(FileDropEvent::Entered {
+                position,
+                paths: ExternalPaths(vec![source.clone()].into()),
+            }),
+            cx,
+        );
+        window.dispatch_event(
+            PlatformInput::FileDrop(FileDropEvent::Submit { position }),
+            cx,
+        );
+    });
+    frame(cx, &f);
+    assert_eq!(editor_state(cx, &f).0, "testo![[Schermata.png]]");
+    assert!(f.vault.join("Schermata.png").is_file());
+}

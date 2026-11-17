@@ -1,5 +1,6 @@
 //! GPUI-free logic: everything here is plain Rust and unit-tested.
 
+pub mod attachment;
 pub mod document;
 pub mod editor;
 pub mod embeds;

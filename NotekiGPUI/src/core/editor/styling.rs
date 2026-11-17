@@ -168,7 +168,9 @@ pub fn style_lines(text: &str, spans: &[MdSpan], cx: Context) -> Vec<LineStyle> 
                     PropertyLine::Row {
                         key, value, marks, ..
                     } => outside(&[key.clone(), value.clone()], len, marks),
-                    PropertyLine::Item { value, .. } => outside(std::slice::from_ref(value), len, &[]),
+                    PropertyLine::Item { value, .. } => {
+                        outside(std::slice::from_ref(value), len, &[])
+                    }
                 };
                 let chips: Vec<Range<usize>> = match &p {
                     PropertyLine::Row { tags, .. } => tags.clone(),

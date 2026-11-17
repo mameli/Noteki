@@ -20,6 +20,7 @@ use gpui_kit::{
     ScrollStrategy, SharedString, Subscription, Task, Window,
 };
 
+use crate::core::attachment;
 use crate::core::document::{ExternalOutcome, NoteDoc};
 use crate::core::editor::lines::logical_lines;
 use crate::core::index::{
@@ -757,6 +758,67 @@ impl NotekiApp {
         self.update_link_context(cx);
     }
 
+    /// Saves an Attachment next to the Note in front (under a free name) and
+    /// embeds it at the cursor. Its path in the Vault.
+    fn attach_bytes(
+        &mut self,
+        name: &str,
+        bytes: &[u8],
+        cx: &mut Context<Self>,
+    ) -> Result<(), String> {
+        let (Some(vault), Some(note)) = (&self.vault, &self.editor_path) else {
+            return Err("No Note to paste the image into".into());
+        };
+        let folder = vault.root.join(folder_of(note));
+        let path = attachment::free_path(&folder, name, |p| p.exists());
+        std::fs::write(&path, bytes).map_err(|e| format!("Could not save the image: {e}"))?;
+        self.embed_attachments(&[path], cx);
+        Ok(())
+    }
+
+    /// Copies dropped image files next to the Note in front and embeds them
+    /// where they were dropped; other files are left alone.
+    fn attach_files(&mut self, paths: &[PathBuf], cx: &mut Context<Self>) -> Result<(), String> {
+        let (Some(vault), Some(note)) = (&self.vault, &self.editor_path) else {
+            return Ok(());
+        };
+        let folder = vault.root.join(folder_of(note));
+        let mut copied = Vec::new();
+        for p in paths.iter().filter(|p| attachment::is_image(p)) {
+            let name = p
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("image.png");
+            let to = attachment::free_path(&folder, name, |q| q.exists());
+            std::fs::copy(p, &to).map_err(|e| format!("Could not copy {name}: {e}"))?;
+            copied.push(to);
+        }
+        self.embed_attachments(&copied, cx);
+        Ok(())
+    }
+
+    /// `![[name]]` for each new Attachment at the cursor, and the Vault told.
+    fn embed_attachments(&mut self, paths: &[PathBuf], cx: &mut Context<Self>) {
+        if paths.is_empty() {
+            return;
+        }
+        let Some(vault) = &self.vault else { return };
+        let rel: HashSet<String> = paths
+            .iter()
+            .filter_map(|p| p.strip_prefix(&vault.root).ok())
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect();
+        let embeds: Vec<String> = paths
+            .iter()
+            .filter_map(|p| p.file_name()?.to_str().map(|n| format!("![[{n}]]")))
+            .collect();
+        self.refresh_vault(&rel, cx);
+        self.update_link_context(cx);
+        let text = embeds.join("\n");
+        self.editor
+            .update(cx, |ed, cx| ed.replace_selection(&text, cx));
+    }
+
     /// Tells the editor the Note it shows and the Vault's links (Live preview
     /// draws an unresolved Wikilink faded).
     fn update_link_context(&mut self, cx: &mut Context<Self>) {
@@ -1065,6 +1127,18 @@ impl NotekiApp {
     ) {
         match event {
             NoteEditorEvent::Changed => {}
+            NoteEditorEvent::PasteImage { bytes, extension } => {
+                let name =
+                    attachment::pasted_image_name(chrono::Local::now().naive_local(), extension);
+                let r = self.attach_bytes(&name, bytes, cx);
+                self.report(r);
+                return;
+            }
+            NoteEditorEvent::DropFiles(paths) => {
+                let r = self.attach_files(paths, cx);
+                self.report(r);
+                return;
+            }
             NoteEditorEvent::OpenLink { link, new_tab } => {
                 match link {
                     Link::Url(url) => cx.open_url(url),

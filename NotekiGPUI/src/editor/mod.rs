@@ -214,6 +214,13 @@ pub enum NoteEditorEvent {
     Changed,
     /// A click on a link: the app opens it (⌘-click: in a new Tab).
     OpenLink { link: Link, new_tab: bool },
+    /// An image pasted: the app saves it next to the Note and embeds it.
+    PasteImage {
+        bytes: Vec<u8>,
+        extension: &'static str,
+    },
+    /// Files dropped on the text, the cursor where they were dropped.
+    DropFiles(Vec<std::path::PathBuf>),
 }
 
 pub struct NoteEditor {
@@ -951,7 +958,18 @@ handlers! {
         }
     };
     Paste => |ed, cx| {
-        if let Some(text) = cx.read_from_clipboard().and_then(|i| i.text()) {
+        let Some(item) = cx.read_from_clipboard() else { return };
+        // An image (a screenshot): saved next to the Note, embedded at the cursor.
+        let image = item.entries().iter().find_map(|e| match e {
+            gpui_kit::ClipboardEntry::Image(img) => Some(img.clone()),
+            _ => None,
+        });
+        if let (Some(img), None) = (image, item.text()) {
+            cx.emit(NoteEditorEvent::PasteImage {
+                bytes: img.bytes.clone(),
+                extension: image_extension(img.format),
+            });
+        } else if let Some(text) = item.text() {
             ed.replace_selection(&text, cx);
         }
     };
@@ -980,6 +998,16 @@ impl Render for NoteEditor {
                 }),
             )
             .on_mouse_down(MouseButton::Left, cx.listener(Self::on_mouse_down))
+            .on_drop(
+                cx.listener(|ed, paths: &gpui_kit::ExternalPaths, window, cx| {
+                    // The cursor where the files were dropped, then the app copies them.
+                    if let Some(layout) = &ed.layout {
+                        let at = layout.offset_for_point(ed.buf.text(), window.mouse_position());
+                        ed.buf.move_to(at, false);
+                    }
+                    cx.emit(NoteEditorEvent::DropFiles(paths.paths().to_vec()));
+                }),
+            )
             .on_action(cx.listener(|ed, _: &OpenFind, window, cx| ed.open_find(window, cx)))
             .on_action(
                 cx.listener(|ed, _: &FindNext, window, cx| ed.find_step(true, false, window, cx)),
@@ -1137,4 +1165,18 @@ fn keep_equal(prev: &[Rc<LineStyle>], new: Vec<LineStyle>) -> Vec<Rc<LineStyle>>
             _ => Rc::new(s),
         })
         .collect()
+}
+
+fn image_extension(format: gpui_kit::ImageFormat) -> &'static str {
+    use gpui_kit::ImageFormat::*;
+    match format {
+        Png => "png",
+        Jpeg => "jpg",
+        Webp => "webp",
+        Gif => "gif",
+        Svg => "svg",
+        Bmp => "bmp",
+        Tiff => "tiff",
+        _ => "png",
+    }
 }

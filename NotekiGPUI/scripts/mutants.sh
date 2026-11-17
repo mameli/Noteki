@@ -43,6 +43,7 @@ MUTANTS=(
   "src/core/editor/completion.rs|        format!(\"{link}]]\")|        link.to_string()|--lib --test ui|choosing a Note in the [[ list leaves the link open"
   "src/core/editor/styling.rs|\"warning\" \| \"caution\" \| \"attention\" => Self::Orange,|\"caution\" \| \"attention\" => Self::Orange,|--lib|a warning callout is drawn as a note"
   "src/editor/mod.rs|                        restyle(l, at);|                        let _ = (l, at);|--test ui|the Frontmatter stays a table with the cursor in it"
+  "src/core/attachment.rs|    if !exists(\&first) {|    if true {|--lib|a pasted image overwrites a file already there"
   "src/editor/element.rs|end = prev_grapheme(text, end).max(start);|end = end.max(start);|--test ui|⌘→ lands after the space a row wraps at"
   "src/editor/element.rs|\&\& (Rc::ptr_eq(\&src.style, style) \|\| src.style == *style)|\&\& true|--test ui|a line whose style changed is drawn from the cache, as it was"
 )
