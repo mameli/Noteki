@@ -45,6 +45,11 @@ pub fn span_style(kind: MdSpanKind, p: &NotekiPalette) -> HighlightStyle {
             font_style: Some(FontStyle::Italic),
             ..Default::default()
         },
+        MdSpanKind::TagChip => HighlightStyle {
+            color: Some(p.link),
+            background_color: Some(gpui_kit::hsla(p.link.h, p.link.s, p.link.l, 0.15)),
+            ..Default::default()
+        },
         MdSpanKind::Footnote => HighlightStyle {
             color: Some(p.link),
             font_weight: Some(FontWeight::MEDIUM),

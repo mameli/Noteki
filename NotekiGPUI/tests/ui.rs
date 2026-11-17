@@ -1795,3 +1795,37 @@ fn footnotes_setext_headings_and_callouts(cx: &mut TestAppContext) {
         "at the definition: {cursor}"
     );
 }
+
+#[gpui_kit::test]
+fn the_frontmatter_is_a_properties_table_until_the_cursor_enters_it(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let text = "---\ntitle: Una nota\ndate: 2026-11-17\n---\ntesto";
+    let at = |s: &str| text.find(s).unwrap();
+    editor_with(cx, &f, text, text.len());
+    let h = heights(cx, &f);
+    let (title, date) = (
+        caret_at(cx, &f, at("Una")).0,
+        caret_at(cx, &f, at("2026")).0,
+    );
+    assert_eq!(title, date, "values in one column");
+    // Into the Frontmatter: the YAML, nothing changes height.
+    app(cx, &f, |a, _, cx| {
+        a.editor()
+            .clone()
+            .update(cx, |ed, cx| ed.set_selected_range(5..5, cx))
+    });
+    assert_ne!(
+        caret_at(cx, &f, at("Una")).0,
+        caret_at(cx, &f, at("2026")).0
+    );
+    assert_eq!(heights(cx, &f), h);
+    // A Note opens with the cursor after its Frontmatter.
+    std::fs::write(f.vault.join("Props.md"), text).unwrap();
+    app(cx, &f, |a, w, cx| {
+        a.handle_fs_changes(&[f.vault.join("Props.md")], w, cx)
+    });
+    app(cx, &f, |a, w, cx| {
+        a.open_path("Props.md", OpenIn::NewTab, w, cx)
+    });
+    assert_eq!(editor_state(cx, &f).1, at("testo"));
+}

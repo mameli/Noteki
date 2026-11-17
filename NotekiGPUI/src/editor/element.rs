@@ -20,6 +20,7 @@ use gpui_kit::{
 use crate::core::editor::display::{shown_text, to_buffer, to_display};
 use crate::core::editor::lines::{logical_lines, scroll_to_reveal, LineTops};
 use crate::core::editor::movement::prev_grapheme;
+use crate::core::editor::properties::PropertyLine;
 use crate::core::editor::styling::{CalloutColor, CodePart, Decoration, LineStyle};
 use crate::core::editor::table::{Align, RowKind, Table, TableRow};
 use crate::core::markdown::{ListKind, MdSpanKind};
@@ -52,6 +53,8 @@ const CODE_FONT: &str = "Menlo";
 const CELL_PAD: Pixels = px(8.);
 /// A column is never wider than about 40 characters (ADR 0008), in ems.
 const MAX_COLUMN_EMS: f32 = 22.;
+/// The Properties table's key column, in ems.
+const PROPERTY_KEY_EMS: f32 = 9.;
 /// A table's delimiter row, drawn as the line under its header.
 const DELIMITER_ROW: Pixels = px(2.);
 
@@ -610,6 +613,43 @@ fn paint_decoration(
                 ));
             }
         }
+        Some(Decoration::Property(p)) => {
+            // A box like a code block's, "Properties" at its top.
+            let r = px(6.);
+            let (top_r, bottom_r) = match p {
+                PropertyLine::Top => (r, px(0.)),
+                PropertyLine::Bottom => (px(0.), r),
+                _ => (px(0.), px(0.)),
+            };
+            window.paint_quad(
+                fill(
+                    Bounds::new(point(left, top), size(width, line.height())),
+                    palette.code_bg,
+                )
+                .corner_radii(Corners {
+                    top_left: top_r,
+                    top_right: top_r,
+                    bottom_left: bottom_r,
+                    bottom_right: bottom_r,
+                }),
+            );
+            if *p == PropertyLine::Top {
+                let label: SharedString = "Properties".into();
+                let run = text_run(label.len(), &input.font, palette.syntax, Default::default());
+                let shaped =
+                    window
+                        .text_system()
+                        .shape_line(label, input.font_size * 0.85, &[run], None);
+                let _ = shaped.paint(
+                    point(left + CELL_PAD, top),
+                    line.line_height,
+                    TextAlign::Left,
+                    None,
+                    window,
+                    cx,
+                );
+            }
+        }
         // Painted after the text, in `paint`.
         Some(Decoration::Image(_)) | None => {}
     }
@@ -769,6 +809,39 @@ fn shape_line(
     ts: &WindowTextSystem,
     columns: &mut HashMap<*const Table, Rc<[Pixels]>>,
 ) -> LaidLine {
+    // A Properties row: its key and value as two cells, the key column fixed.
+    if let Some(Decoration::Property(p)) = &style.decoration {
+        let key_col = input.font_size * PROPERTY_KEY_EMS;
+        let line_height = input.font_size * LINE_HEIGHT;
+        let cells = match p {
+            PropertyLine::Row { key, value, .. } => vec![key.clone(), value.clone()],
+            PropertyLine::Item { value, .. } => vec![value.start..value.start, value.clone()],
+            PropertyLine::Top | PropertyLine::Bottom => Vec::new(),
+        };
+        let cells = (!cells.is_empty()).then(|| {
+            let row = TableRow {
+                table: Rc::new(Table {
+                    align: vec![Align::Left, Align::Left],
+                    rows: Vec::new(),
+                }),
+                kind: RowKind::Body,
+                cells,
+            };
+            table_cells(input, &range, style, &row, &[key_col, width - key_col], ts)
+        });
+        return LaidLine {
+            range,
+            line_height,
+            hidden: style.hidden.clone().into(),
+            shaped: Rc::default(),
+            indent: px(0.),
+            decoration: style.decoration.clone(),
+            text_height: line_height,
+            image: None,
+            cells,
+            columns: None,
+        };
+    }
     if let Some(Decoration::Table(row)) = &style.decoration {
         let widths = columns
             .entry(Rc::as_ptr(&row.table))

@@ -11,6 +11,7 @@ pub mod format;
 pub mod history;
 pub mod lines;
 pub mod movement;
+pub mod properties;
 pub mod styling;
 pub mod table;
 

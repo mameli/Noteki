@@ -4,6 +4,7 @@
 use std::ops::Range;
 use std::rc::Rc;
 
+use crate::core::editor::properties::{property_lines, PropertyLine};
 use crate::core::editor::table::{tables, RowKind, TableRow};
 use crate::core::markdown::{
     callout_marks, image_embed, is_setext_candidate, lines, list_item, parse_atx_heading,
@@ -42,6 +43,8 @@ pub enum Decoration {
     Image(Image),
     /// A table's row, drawn as its cells in their columns (ADR 0008).
     Table(TableRow),
+    /// A line of the Frontmatter drawn as the Properties table.
+    Property(PropertyLine),
     /// A callout's line: a quote drawn as a box in its type's colour.
     Callout {
         depth: u8,
@@ -118,6 +121,10 @@ pub fn style_lines(text: &str, spans: &[MdSpan], cx: Context) -> Vec<LineStyle> 
         rows[i] = Some(row);
     }
     comment_lines(&lines, &mut clipped);
+    let mut props: Vec<Option<PropertyLine>> = vec![None; lines.len()];
+    for (i, p) in property_lines(text, &lines) {
+        props[i] = Some(p);
+    }
     let callouts = callouts(&lines);
     let setext = setext_headings(&lines);
     for span in spans.iter().chain(&code_spans) {
@@ -152,6 +159,27 @@ pub fn style_lines(text: &str, spans: &[MdSpan], cx: Context) -> Vec<LineStyle> 
             }
             if let Some(callout) = callouts[i].clone() {
                 style.decoration = Some(callout);
+            }
+            if let Some(p) = props[i].clone() {
+                // Only the keys and values show, in their columns; the Tags as chips.
+                let len = line.text.len();
+                style.hidden = match &p {
+                    PropertyLine::Top | PropertyLine::Bottom => vec![0..len],
+                    PropertyLine::Row {
+                        key, value, marks, ..
+                    } => outside(&[key.clone(), value.clone()], len, marks),
+                    PropertyLine::Item { value, .. } => outside(std::slice::from_ref(value), len, &[]),
+                };
+                let chips: Vec<Range<usize>> = match &p {
+                    PropertyLine::Row { tags, .. } => tags.clone(),
+                    PropertyLine::Item { value, tag: true } => vec![value.clone()],
+                    _ => Vec::new(),
+                };
+                style
+                    .segments
+                    .extend(chips.into_iter().map(|r| (r, vec![MdSpanKind::TagChip])));
+                style.segments.sort_by_key(|(r, _)| r.start);
+                style.decoration = Some(Decoration::Property(p));
             }
             if let Some(part) = part {
                 style.decoration = Some(Decoration::Code(part));

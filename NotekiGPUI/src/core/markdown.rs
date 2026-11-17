@@ -814,6 +814,8 @@ pub enum MdSpanKind {
     TaskDone,
     /// A footnote's label, in a reference `[^1]` or a definition `[^1]:`.
     Footnote,
+    /// A Tag of the Properties table's `tags` row, drawn as a chip.
+    TagChip,
     /// The parts of a code block's code, coloured by its language.
     CodeComment,
     CodeString,

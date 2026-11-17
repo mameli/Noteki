@@ -33,7 +33,7 @@ use crate::core::editor::code;
 use crate::core::editor::format::{format_lines, toggle_wrap};
 pub use crate::core::editor::format::{LineFormat, Wrap};
 use crate::core::editor::history::History;
-use crate::core::editor::lines::edge_scroll;
+use crate::core::editor::lines::{edge_scroll, logical_lines};
 use crate::core::editor::movement::{line_range_at, word_range_at};
 use crate::core::editor::styling::{
     style_line, style_lines, CodeColours, CodePart, Context as StyleContext, Decoration, Image,
@@ -355,6 +355,15 @@ impl NoteEditor {
             self.histories.insert(previous, leaving);
         }
         let history = self.histories.remove(key).unwrap_or_default();
+        // SPEC: a Note shows with the cursor at the start of its text, after
+        // the Frontmatter (which then shows as the Properties table).
+        let cursor = if cursor == 0 {
+            crate::core::frontmatter::frontmatter_end_line(text)
+                .and_then(|end| logical_lines(text).get(end).map(|l| l.start))
+                .unwrap_or(0)
+        } else {
+            cursor
+        };
         self.buf.set_text(text, cursor, history);
         self.goal_x = None;
         self.layout = None;
@@ -562,6 +571,23 @@ impl NoteEditor {
                     let last = (i..lines.len()).find(|&j| is(j, false));
                     for j in first.into_iter().chain(last) {
                         restyle(&lines[j], 0);
+                    }
+                }
+                // In the Properties table: the whole Frontmatter shows as YAML.
+                Some(line)
+                    if matches!(
+                        line.kind,
+                        BlockKind::Frontmatter | BlockKind::FrontmatterDelimiter
+                    ) =>
+                {
+                    for l in lines.iter().take_while(|l| {
+                        matches!(
+                            l.kind,
+                            BlockKind::Frontmatter | BlockKind::FrontmatterDelimiter
+                        )
+                    }) {
+                        let at = if l.index == i { cursor - l.start } else { 0 };
+                        restyle(l, at);
                     }
                 }
                 Some(line) => restyle(line, cursor - line.start),
