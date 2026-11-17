@@ -83,6 +83,7 @@ actions!(
         ShowOutlineAction,
         ShowBacklinksAction,
         SearchInVaultAction,
+        TrashSelectedAction,
     ]
 );
 
@@ -124,6 +125,13 @@ pub fn register_keybindings(cx: &mut App) {
         KeyBinding::new("ctrl-`", FormatCodeAction, None),
         KeyBinding::new("cmd-shift-k", InsertWikilinkAction, None),
         KeyBinding::new("cmd-,", OpenSettingsAction, None),
+        // As in the Finder, only while Files has the keyboard: in the editor ⌘⌫
+        // deletes to the start of the line.
+        KeyBinding::new(
+            "cmd-backspace",
+            TrashSelectedAction,
+            Some(gpui_kit::base::tree_key_context()),
+        ),
     ]);
     crate::editor::register_keybindings(cx);
 }

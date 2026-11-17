@@ -87,6 +87,13 @@ impl Render for NotekiApp {
                     this.show_search(window, cx)
                 }),
             )
+            .on_action(cx.listener(|this, _: &TrashSelectedAction, window, cx| {
+                if let Some(path) = this.selected_in_files(cx) {
+                    let r = this.trash(&path, window, cx);
+                    this.report(r);
+                    cx.notify();
+                }
+            }))
             .on_action(cx.listener(|this, _: &OpenQuickSwitcher, window, cx| {
                 this.open_quick_switcher(OpenIn::CurrentTab, window, cx)
             }))

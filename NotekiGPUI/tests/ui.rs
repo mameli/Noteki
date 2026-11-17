@@ -223,6 +223,23 @@ fn clicking_a_note_in_the_tree_opens_it(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
+fn cmd_backspace_trashes_the_note_selected_in_files_only(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    // In the editor it deletes to the start of the line, as before.
+    editor_with(cx, &f, "uno due", 7);
+    press(cx, &f, "cmd-backspace");
+    assert_eq!(editor_state(cx, &f).0, "");
+    assert!(f.vault.join("Ideas.md").exists());
+    ui(cx, &f, |window, cx| {
+        window.within("file-tree").click(5usize, cx)
+    }); // Ideas.md
+    frame(cx, &f);
+    press(cx, &f, "cmd-backspace");
+    assert!(!f.vault.join("Ideas.md").exists());
+    assert!(f.dir.join("Trash/Ideas.md").is_file());
+}
+
+#[gpui_kit::test]
 fn a_middle_click_on_a_note_opens_it_in_a_new_tab(cx: &mut TestAppContext) {
     use gpui_kit::test::ClickOptions;
     let f = fixture(cx);
