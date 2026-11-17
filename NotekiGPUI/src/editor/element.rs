@@ -20,7 +20,7 @@ use gpui_kit::{
 use crate::core::editor::display::{shown_text, to_buffer, to_display};
 use crate::core::editor::lines::{logical_lines, scroll_to_reveal, LineTops};
 use crate::core::editor::movement::prev_grapheme;
-use crate::core::editor::styling::{CodePart, Decoration, LineStyle};
+use crate::core::editor::styling::{CalloutColor, CodePart, Decoration, LineStyle};
 use crate::core::editor::table::{Align, RowKind, Table, TableRow};
 use crate::core::markdown::{ListKind, MdSpanKind};
 use crate::theme::NotekiPalette;
@@ -455,6 +455,33 @@ fn paint_decoration(
                 ));
             }
         }
+        Some(Decoration::Callout {
+            depth,
+            color,
+            header,
+        }) => {
+            // A box in the type's colour, its bar on the left; rounded at the top.
+            let c = callout_color(*color, palette);
+            let bg = gpui_kit::hsla(c.h, c.s, c.l, 0.1);
+            let radius = if *header { px(4.) } else { px(0.) };
+            window.paint_quad(
+                fill(
+                    Bounds::new(point(left, top), size(width, line.height())),
+                    bg,
+                )
+                .corner_radii(Corners {
+                    top_left: radius,
+                    top_right: radius,
+                    bottom_left: px(0.),
+                    bottom_right: px(0.),
+                }),
+            );
+            let x = left + QUOTE_INDENT * f32::from(depth.saturating_sub(1));
+            window.paint_quad(fill(
+                Bounds::new(point(x, top), size(QUOTE_BAR, line.height())),
+                c,
+            ));
+        }
         Some(Decoration::List { level, kind }) => {
             let x = left + LIST_INDENT * f32::from(*level);
             // Centred on the first row.
@@ -616,6 +643,18 @@ fn paint_image(
     }
 }
 
+/// A callout type's colour in the theme.
+fn callout_color(color: CalloutColor, p: &NotekiPalette) -> Hsla {
+    match color {
+        CalloutColor::Blue => p.link,
+        CalloutColor::Green => p.string,
+        CalloutColor::Orange => p.accent,
+        CalloutColor::Red => p.error,
+        CalloutColor::Purple => p.keyword,
+        CalloutColor::Gray => p.syntax,
+    }
+}
+
 /// Where a task's checkbox is drawn, for a list item at `x` whose first row's
 /// middle is at `mid`.
 fn checkbox_bounds(x: Pixels, mid: Pixels) -> Bounds<Pixels> {
@@ -770,7 +809,9 @@ fn shape_line(
         None => (input.font_size, input.font_size * LINE_HEIGHT),
     };
     let indent = match &style.decoration {
-        Some(Decoration::Quote { depth }) => QUOTE_INDENT * f32::from(*depth),
+        Some(Decoration::Quote { depth } | Decoration::Callout { depth, .. }) => {
+            QUOTE_INDENT * f32::from(*depth)
+        }
         Some(Decoration::List { level, .. }) => LIST_INDENT * f32::from(*level) + LIST_MARKER,
         Some(Decoration::Code(_)) => CODE_PAD,
         _ => px(0.),

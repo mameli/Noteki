@@ -1,8 +1,6 @@
 //! Live-preview styles: how each Markdown span is drawn in the editor.
 
-use gpui_kit::{
-    hsla, px, FontStyle, FontWeight, HighlightStyle, StrikethroughStyle, UnderlineStyle,
-};
+use gpui_kit::{px, FontStyle, FontWeight, HighlightStyle, StrikethroughStyle, UnderlineStyle};
 
 use crate::core::markdown::MdSpanKind;
 use crate::theme::NotekiPalette;
@@ -45,6 +43,11 @@ pub fn span_style(kind: MdSpanKind, p: &NotekiPalette) -> HighlightStyle {
         },
         MdSpanKind::Italic => HighlightStyle {
             font_style: Some(FontStyle::Italic),
+            ..Default::default()
+        },
+        MdSpanKind::Footnote => HighlightStyle {
+            color: Some(p.link),
+            font_weight: Some(FontWeight::MEDIUM),
             ..Default::default()
         },
         MdSpanKind::Strikethrough | MdSpanKind::TaskDone => HighlightStyle {
@@ -118,10 +121,9 @@ pub fn span_style(kind: MdSpanKind, p: &NotekiPalette) -> HighlightStyle {
             font_style: Some(FontStyle::Italic),
             ..Default::default()
         },
+        // The callout's box gives it its colour (`element::callout_color`).
         MdSpanKind::CalloutHeader => HighlightStyle {
-            color: Some(p.link),
             font_weight: Some(FontWeight::SEMIBOLD),
-            background_color: Some(hsla(p.link.h, p.link.s, p.link.l, 0.1)),
             ..Default::default()
         },
     }

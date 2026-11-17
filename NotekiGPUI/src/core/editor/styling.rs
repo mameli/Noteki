@@ -6,8 +6,8 @@ use std::rc::Rc;
 
 use crate::core::editor::table::{tables, RowKind, TableRow};
 use crate::core::markdown::{
-    image_embed, lines, list_item, parse_atx_heading, quote_prefix, BlockKind, Line, ListKind,
-    MdSpan, MdSpanKind,
+    callout_marks, image_embed, is_setext_candidate, lines, list_item, parse_atx_heading,
+    quote_prefix, BlockKind, Line, ListKind, MdSpan, MdSpanKind,
 };
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -42,6 +42,37 @@ pub enum Decoration {
     Image(Image),
     /// A table's row, drawn as its cells in their columns (ADR 0008).
     Table(TableRow),
+    /// A callout's line: a quote drawn as a box in its type's colour.
+    Callout {
+        depth: u8,
+        color: CalloutColor,
+        header: bool,
+    },
+}
+
+/// The colours of Obsidian's callout types, as the theme draws them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CalloutColor {
+    Blue,
+    Green,
+    Orange,
+    Red,
+    Purple,
+    Gray,
+}
+
+impl CalloutColor {
+    /// Obsidian's types and aliases; any other type is a note's (blue).
+    pub fn of(ty: &str) -> Self {
+        match ty.to_lowercase().as_str() {
+            "tip" | "hint" | "important" | "success" | "check" | "done" => Self::Green,
+            "question" | "help" | "faq" | "warning" | "caution" | "attention" => Self::Orange,
+            "failure" | "fail" | "missing" | "danger" | "error" | "bug" => Self::Red,
+            "example" => Self::Purple,
+            "quote" | "cite" => Self::Gray,
+            _ => Self::Blue,
+        }
+    }
 }
 
 /// An image of the Vault, as the editor draws it.
@@ -86,6 +117,9 @@ pub fn style_lines(text: &str, spans: &[MdSpan], cx: Context) -> Vec<LineStyle> 
     for (i, row) in tables(&lines) {
         rows[i] = Some(row);
     }
+    comment_lines(&lines, &mut clipped);
+    let callouts = callouts(&lines);
+    let setext = setext_headings(&lines);
     for span in spans.iter().chain(&code_spans) {
         let first = lines
             .partition_point(|l| l.start <= span.range.start)
@@ -97,13 +131,28 @@ pub fn style_lines(text: &str, spans: &[MdSpan], cx: Context) -> Vec<LineStyle> 
             push_clipped(&mut clipped[i], line, span);
         }
     }
+    for (i, level) in setext.iter().enumerate() {
+        if let Some(level) = level {
+            // Drawn as a Heading; its underline as written, not as marks
+            // (`====` is no highlight).
+            clipped[i].push((0..lines[i].text.len(), MdSpanKind::Heading(*level)));
+            clipped[i + 1].clear();
+        }
+    }
     lines
         .iter()
         .zip(clipped)
         .zip(parts)
         .zip(rows)
-        .map(|(((line, spans), part), row)| {
+        .enumerate()
+        .map(|(i, (((line, spans), part), row))| {
             let mut style = style_of(line, spans);
+            if let Some(level) = setext[i] {
+                style.heading = Some(level);
+            }
+            if let Some(callout) = callouts[i].clone() {
+                style.decoration = Some(callout);
+            }
             if let Some(part) = part {
                 style.decoration = Some(Decoration::Code(part));
             } else if let Some(row) = row {
@@ -126,6 +175,90 @@ pub fn style_lines(text: &str, spans: &[MdSpan], cx: Context) -> Vec<LineStyle> 
             style
         })
         .collect()
+}
+
+/// A Comment across lines: from a line with an unpaired `%%` to the next.
+/// The lines between are Comments; the `%%` that open and close are hidden.
+fn comment_lines(lines: &[Line], clipped: &mut [Vec<(Range<usize>, MdSpanKind)>]) {
+    let mut open = false;
+    for (i, line) in lines.iter().enumerate() {
+        if line.kind != BlockKind::Text {
+            continue;
+        }
+        let marks: Vec<usize> = line.text.match_indices("%%").map(|(p, _)| p).collect();
+        let len = line.text.len();
+        let spans = &mut clipped[i];
+        match (open, marks.len() % 2 == 1) {
+            (false, true) => {
+                let p = *marks.last().unwrap_or(&0);
+                spans.push((p..p + 2, MdSpanKind::SyntaxMarker));
+                spans.push((p + 2..len, MdSpanKind::Comment));
+                open = true;
+            }
+            (true, false) => spans.push((0..len, MdSpanKind::Comment)),
+            (true, true) => {
+                let q = marks[0];
+                spans.push((0..q, MdSpanKind::Comment));
+                spans.push((q..q + 2, MdSpanKind::SyntaxMarker));
+                open = false;
+            }
+            (false, false) => {}
+        }
+        spans.retain(|(r, _)| r.start < r.end);
+    }
+}
+
+/// The callouts: a quote whose first line starts with `[!type]`, and the
+/// quote lines under it.
+fn callouts(lines: &[Line]) -> Vec<Option<Decoration>> {
+    let mut out = vec![None; lines.len()];
+    let mut color = None;
+    for (i, line) in lines.iter().enumerate() {
+        let quote = (line.kind == BlockKind::Text)
+            .then(|| quote_prefix(line.text))
+            .flatten();
+        let Some((depth, prefix)) = quote else {
+            color = None;
+            continue;
+        };
+        let header = callout_marks(&line.text[prefix..])
+            .map(|(ty, _)| CalloutColor::of(&line.text[prefix + ty.start..prefix + ty.end]));
+        if header.is_some() {
+            color = header;
+        }
+        if let Some(color) = color {
+            out[i] = Some(Decoration::Callout {
+                depth,
+                color,
+                header: header.is_some(),
+            });
+        }
+    }
+    out
+}
+
+/// The setext Headings: a paragraph line underlined with `===` (level 1) or
+/// `---` (level 2). The underline stays as written (SPEC).
+fn setext_headings(lines: &[Line]) -> Vec<Option<u8>> {
+    let mut out = vec![None; lines.len()];
+    for (i, pair) in lines.windows(2).enumerate() {
+        let (text, under) = (&pair[0], &pair[1]);
+        if text.kind != BlockKind::Text || under.kind != BlockKind::Text {
+            continue;
+        }
+        let u = under.text.trim();
+        let level = if u.len() >= 2 && u.bytes().all(|b| b == b'=') {
+            1
+        } else if u.len() >= 2 && u.bytes().all(|b| b == b'-') {
+            2
+        } else {
+            continue;
+        };
+        if is_setext_candidate(text.text.trim_start()) {
+            out[i] = Some(level);
+        }
+    }
+    out
 }
 
 /// What of a line `len` long is outside `cells`, merged with what `hidden`
@@ -545,6 +678,41 @@ mod tests {
         assert_eq!(s[0].hidden, vec![0..2, 6..11, 15..19]);
         assert_eq!(s[1].hidden, vec![0..text.lines().nth(1).unwrap().len()]);
         assert_eq!(s[2].hidden, vec![0..2, 3..6, 7..9]);
+    }
+
+    #[test]
+    fn callouts_setext_headings_and_comments_across_lines() {
+        let text =
+            "> [!warning] Attento\n> sotto\n\nTitolo\n===\n%% inizio\nnascosto\nfine %% dopo";
+        let s = styles(text, None);
+        let color = |i: usize| match s[i].decoration {
+            Some(Decoration::Callout { color, header, .. }) => Some((color, header)),
+            _ => None,
+        };
+        assert_eq!(color(0), Some((CalloutColor::Orange, true)));
+        assert_eq!(color(1), Some((CalloutColor::Orange, false)));
+        assert_eq!(
+            s[0].hidden,
+            vec![0..13],
+            "`> [!warning] ` hidden, the title shown"
+        );
+        assert_eq!(s[3].heading, Some(1), "a setext Heading");
+        assert!(s[4].heading.is_none(), "its underline stays as written");
+        assert_eq!(s[5].hidden, vec![0..2]);
+        assert!(s[6]
+            .segments
+            .iter()
+            .all(|(_, k)| k.contains(&MdSpanKind::Comment)));
+        assert_eq!(s[7].hidden, vec![5..7]);
+        let under = styles("x\n\nTitolo\n========\n", None);
+        assert!(
+            under[3].segments.is_empty() && under[3].hidden.is_empty(),
+            "{:?}",
+            under[3]
+        );
+        // Without a title, the type shows.
+        let untitled = styles("> [!tip]\n> x", None);
+        assert_eq!(untitled[0].hidden, vec![0..4, 7..8]);
     }
 
     #[test]

@@ -651,6 +651,85 @@ pub fn image_embed(line: &str) -> Option<&str> {
     Some(dest.trim_start_matches('<').trim_end_matches('>'))
 }
 
+/// A callout's `[!type]` (with a `-` or `+` and the space after) at the start
+/// of a quote's text: the type's range and where the marks end.
+pub fn callout_marks(after_quote: &str) -> Option<(Range<usize>, usize)> {
+    let rest = after_quote.strip_prefix("[!")?;
+    let close = rest.find(']')?;
+    let ty = &rest[..close];
+    if ty.is_empty() || ty.contains(char::is_whitespace) {
+        return None;
+    }
+    let mut end = 2 + close + 1;
+    if after_quote[end..].starts_with(['-', '+']) {
+        end += 1;
+    }
+    if after_quote[end..].starts_with(' ') {
+        end += 1;
+    }
+    Some((2..2 + close, end))
+}
+
+/// A footnote in a line: `[^label]` (a reference) or, at the line's start,
+/// `[^label]:` (a definition).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Footnote {
+    pub range: Range<usize>,
+    pub label: Range<usize>,
+    pub definition: bool,
+}
+
+pub fn footnotes(line: &str) -> Vec<Footnote> {
+    let code: Vec<Range<usize>> = inline_tokens(line)
+        .into_iter()
+        .filter(|t| t.kind == InlineKind::Code)
+        .map(|t| t.range)
+        .collect();
+    let mut out = Vec::new();
+    let mut from = 0;
+    while let Some(i) = line[from..].find("[^").map(|i| from + i) {
+        from = i + 2;
+        let Some(len) = line[i + 2..].find(']') else {
+            break;
+        };
+        let label = i + 2..i + 2 + len;
+        if label.is_empty() || line[label.clone()].contains(char::is_whitespace) {
+            continue;
+        }
+        if code.iter().any(|c| c.start <= i && i < c.end) {
+            continue;
+        }
+        let definition = i == 0 && line[label.end + 1..].starts_with(':');
+        let end = label.end + 1 + usize::from(definition);
+        out.push(Footnote {
+            range: i..end,
+            label,
+            definition,
+        });
+        from = end;
+    }
+    out
+}
+
+/// A click on a footnote goes to the other end: from a reference to its
+/// definition, from a definition to its first reference. The offset to go to.
+pub fn footnote_target(text: &str, offset: usize) -> Option<usize> {
+    let all: Vec<(usize, Footnote)> = lines(text)
+        .into_iter()
+        .filter(|l| l.kind == BlockKind::Text)
+        .flat_map(|l| footnotes(l.text).into_iter().map(move |f| (l.start, f)))
+        .collect();
+    let (start, here) = all
+        .iter()
+        .find(|(s, f)| s + f.range.start <= offset && offset <= s + f.range.end)?;
+    let label = &text[start + here.label.start..start + here.label.end];
+    all.iter()
+        .find(|(s, f)| {
+            f.definition != here.definition && &text[s + f.label.start..s + f.label.end] == label
+        })
+        .map(|(s, f)| s + f.range.end)
+}
+
 /// A link of the text, as a click opens it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Link {
@@ -733,6 +812,8 @@ pub enum MdSpanKind {
     Quote,
     CalloutHeader,
     TaskDone,
+    /// A footnote's label, in a reference `[^1]` or a definition `[^1]:`.
+    Footnote,
     /// The parts of a code block's code, coloured by its language.
     CodeComment,
     CodeString,
@@ -825,9 +906,22 @@ pub fn line_spans(
                     } else {
                         MdSpanKind::Quote
                     };
-                    // SPEC: a quote's `>`s show only on the cursor's line.
+                    // SPEC: a quote's `>`s show only on the cursor's line, and a
+                    // callout's `[!type]` with them: its title shows, or its type.
                     if !on_cursor {
                         push(s..s + prefix, MdSpanKind::SyntaxMarker);
+                        if let Some((ty, end)) = callout_marks(&line.text[prefix..]) {
+                            let titled = !line.text[prefix + end..].trim().is_empty();
+                            if titled {
+                                push(s + prefix..s + prefix + end, MdSpanKind::SyntaxMarker);
+                            } else {
+                                push(s + prefix..s + prefix + ty.start, MdSpanKind::SyntaxMarker);
+                                push(
+                                    s + prefix + ty.end..s + prefix + end,
+                                    MdSpanKind::SyntaxMarker,
+                                );
+                            }
+                        }
                     }
                     push(s + prefix..s + line.text.len(), kind);
                 } else if let Some(item) = list_item(line.text) {
@@ -925,6 +1019,17 @@ pub fn line_spans(
                         }
                         InlineKind::Tag => push(r(tok.range.clone()), MdSpanKind::Tag),
                     }
+                }
+                for f in footnotes(line.text) {
+                    let shown = cursor.is_some_and(|c| f.range.start <= c && c <= f.range.end);
+                    if !shown {
+                        push(
+                            s + f.range.start..s + f.label.start,
+                            MdSpanKind::SyntaxMarker,
+                        );
+                        push(s + f.label.end..s + f.range.end, MdSpanKind::SyntaxMarker);
+                    }
+                    push(s + f.label.start..s + f.label.end, MdSpanKind::Footnote);
                 }
             }
         }
@@ -1221,6 +1326,27 @@ mod tests {
         assert_eq!(image_embed("![](<Media/a.png>)"), Some("Media/a.png"));
         assert_eq!(image_embed("testo ![[x.png]]"), None);
         assert_eq!(image_embed("![[a]] e ![[b]]"), None);
+    }
+
+    #[test]
+    fn callout_marks_and_footnotes() {
+        assert_eq!(callout_marks("[!warning]- Attento"), Some((2..9, 12)));
+        assert_eq!(callout_marks("[!note]"), Some((2..6, 7)));
+        assert_eq!(callout_marks("[! note]"), None);
+        let f = footnotes("Testo[^1] e `[^no]` e [^nota].");
+        assert_eq!(f.len(), 2);
+        assert_eq!(f[0].range, 5..9);
+        assert!(!f[0].definition);
+        let d = footnotes("[^1]: la nota");
+        assert!(d[0].definition && d[0].range == (0..5));
+        let t = "Vedi[^1].\n\n[^1]: la nota";
+        let def = footnote_target(t, 6).unwrap();
+        assert_eq!(
+            &t[def..def + 3],
+            " la",
+            "the reference goes to its definition"
+        );
+        assert_eq!(footnote_target(t, 12), Some(8), "and back to the reference");
     }
 
     #[test]

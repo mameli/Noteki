@@ -534,8 +534,14 @@ impl NoteEditor {
                             style.decoration = slot.decoration.clone();
                             style.segments = slot.segments.clone();
                         }
-                        Some(Decoration::Image(_)) => style.decoration = slot.decoration.clone(),
+                        Some(Decoration::Image(_) | Decoration::Callout { .. }) => {
+                            style.decoration = slot.decoration.clone()
+                        }
                         _ => {}
+                    }
+                    // A setext Heading is one through the line under it.
+                    if style.heading.is_none() {
+                        style.heading = slot.heading;
                     }
                     if **slot != style {
                         *slot = Rc::new(style);
@@ -691,6 +697,20 @@ impl NoteEditor {
                     new_tab: ev.modifiers.platform,
                 });
                 return;
+            }
+            // A footnote goes to its definition, a definition to its reference
+            // (unless the cursor is in it: then the click only moves it).
+            let c = self.buf.cursor();
+            let editing = markdown::footnote_target(self.buf.text(), c).is_some()
+                && markdown::footnote_target(self.buf.text(), offset)
+                    == markdown::footnote_target(self.buf.text(), c);
+            if let Some(target) = markdown::footnote_target(self.buf.text(), offset) {
+                if !editing {
+                    self.buf.move_to(target, false);
+                    self.goal_x = None;
+                    self.wake(cx);
+                    return;
+                }
             }
         }
         let unit = match ev.click_count {

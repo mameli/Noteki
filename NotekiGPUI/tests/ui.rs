@@ -1773,3 +1773,25 @@ fn typing_double_brackets_offers_notes_and_return_writes_the_link(cx: &mut TestA
         "Return is a new line again"
     );
 }
+
+#[gpui_kit::test]
+fn footnotes_setext_headings_and_callouts(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let text = "Titolo\n===\n> [!tip] Consiglio\n> testo\nVedi[^1].\n\n[^1]: la nota";
+    editor_with(cx, &f, text, text.len());
+    let h = heights(cx, &f);
+    assert!(h[0] > h[1], "the setext Heading is larger: {h:?}");
+    let left = caret_at(cx, &f, text.find("Vedi").unwrap()).0;
+    assert!(
+        caret_at(cx, &f, text.find("testo").unwrap()).0 > left,
+        "the callout's text is indented"
+    );
+    // A click on the reference goes to the definition.
+    let at = point_at(cx, &f, text.find("[^1].").unwrap() + 2);
+    click(cx, &f, at, 1);
+    let cursor = editor_state(cx, &f).1;
+    assert!(
+        text[cursor..].starts_with(" la nota"),
+        "at the definition: {cursor}"
+    );
+}
