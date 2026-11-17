@@ -103,6 +103,15 @@ impl NoteEditor {
         self.find_step(true, true, window, cx);
     }
 
+    /// ⌥⌘F: the bar, with the keyboard in the replace field.
+    pub fn open_replace(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.open_find(window, cx);
+        if let Some(bar) = &self.find {
+            bar.replace_input
+                .update(cx, |input, cx| input.focus(window, cx));
+        }
+    }
+
     /// Esc: closes the bar, back to the text.
     pub fn close_find(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.find = None;

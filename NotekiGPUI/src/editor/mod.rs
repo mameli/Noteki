@@ -107,6 +107,7 @@ actions!(
         Undo,
         Redo,
         OpenFind,
+        OpenReplace,
         SelectNextOccurrence,
         SingleSelection,
         FindNext,
@@ -176,6 +177,7 @@ pub fn register_keybindings(cx: &mut App) {
         KeyBinding::new("cmd-]", Indent, c),
         KeyBinding::new("cmd-[", Outdent, c),
         KeyBinding::new("cmd-f", OpenFind, c),
+        KeyBinding::new("alt-cmd-f", OpenReplace, c),
         KeyBinding::new("cmd-d", SelectNextOccurrence, c),
         KeyBinding::new("escape", SingleSelection, c),
         KeyBinding::new("cmd-g", FindNext, c),
@@ -1051,6 +1053,7 @@ impl Render for NoteEditor {
                 }),
             )
             .on_action(cx.listener(|ed, _: &OpenFind, window, cx| ed.open_find(window, cx)))
+            .on_action(cx.listener(|ed, _: &OpenReplace, window, cx| ed.open_replace(window, cx)))
             .on_action(
                 cx.listener(|ed, _: &FindNext, window, cx| ed.find_step(true, false, window, cx)),
             )

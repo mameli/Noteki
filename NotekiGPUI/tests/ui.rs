@@ -1845,6 +1845,18 @@ fn replace_all_is_one_undo_step(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
+fn alt_cmd_f_opens_find_with_the_keyboard_in_replace(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    editor_with(cx, &f, "uno due uno", 1);
+    press(cx, &f, "alt-cmd-f");
+    frame(cx, &f);
+    // The query is the word at the cursor; what is typed goes to Replace.
+    ui(cx, &f, |w, cx| w.input("1", cx));
+    ui(cx, &f, |w, cx| w.click("replace-all", cx));
+    assert_eq!(editor_state(cx, &f).0, "1 due 1");
+}
+
+#[gpui_kit::test]
 fn cmd_d_selects_the_occurrences_and_typing_changes_them_all(cx: &mut TestAppContext) {
     let f = fixture(cx);
     editor_with(cx, &f, "uno due uno tre uno", 1);
