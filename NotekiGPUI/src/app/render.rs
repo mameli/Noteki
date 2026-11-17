@@ -10,20 +10,18 @@ use gpui_kit::component::list::ListItem;
 use gpui_kit::component::resizable::{h_resizable, resizable_panel};
 use gpui_kit::component::scroll::ScrollableElement as _;
 use gpui_kit::component::tab::{Tab, TabBar};
-use gpui_kit::component::text::{FrontmatterPlugin, MarkdownExtensions, TextView};
 use gpui_kit::component::tree::tree;
 use gpui_kit::component::{
     h_flex, v_flex, ActiveTheme as _, Icon, Sizable as _, StyledExt as _, TitleBar, WindowExt as _,
 };
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::{
-    div, hsla, px, AnyElement, AppContext as _, ClickEvent, Context, Hsla, ImageSource,
+    div, hsla, px, AnyElement, AppContext as _, ClickEvent, Context, Hsla,
     InteractiveElement as _, IntoElement, ParentElement as _, Render, Role, SharedString,
     StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, Window,
 };
 
 use super::*;
-use crate::core::markdown::{percent_decode, EMBED_SCHEME};
 use crate::core::vault::resolve_vault_path;
 use crate::core::wikilink::note_name;
 use gpui_kit::component::menu::{ContextMenuExt as _, PopupMenu, PopupMenuItem};
@@ -78,10 +76,6 @@ impl Render for NotekiApp {
             .on_action(cx.listener(|this, _: &SwitchSearchPane, window, cx| {
                 this.show_left_pane(LeftPane::Search, cx);
                 this.search_input.update(cx, |s, cx| s.focus(window, cx));
-            }))
-            .on_action(cx.listener(|this, _: &ToggleViewMode, _, cx| {
-                let next = this.view_mode().next();
-                this.set_view_mode(next, cx)
             }))
             .on_action(cx.listener(|this, _: &OpenQuickSwitcher, window, cx| {
                 this.open_quick_switcher(OpenIn::CurrentTab, window, cx)
@@ -194,7 +188,6 @@ impl NotekiApp {
     // ---- Chrome ----
 
     fn render_title_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let border = cx.theme().border;
         let (can_back, can_fwd) = self
             .tabs
             .active()
@@ -235,14 +228,14 @@ impl NotekiApp {
                             .on_click(cx.listener(|this, _, _, cx| this.toggle_left_sidebar(cx))),
                         )
                         .child(
-                            icon_button("nav-back", AssetIcon::ArrowLeft, "Back (⌘[)")
+                            icon_button("nav-back", AssetIcon::ArrowLeft, "Back (⌥⌘←)")
                                 .disabled(!can_back)
                                 .on_click(cx.listener(|this, _, window, cx| {
                                     this.navigate(true, window, cx)
                                 })),
                         )
                         .child(
-                            icon_button("nav-forward", AssetIcon::ArrowRight, "Forward (⌘])")
+                            icon_button("nav-forward", AssetIcon::ArrowRight, "Forward (⌥⌘→)")
                                 .disabled(!can_fwd)
                                 .on_click(cx.listener(|this, _, window, cx| {
                                     this.navigate(false, window, cx)
@@ -290,32 +283,10 @@ impl NotekiApp {
                     h_flex()
                         .items_center()
                         .gap_1()
-                        .child(self.render_view_mode_buttons(cx))
-                        .child(div().w(px(1.)).h(px(16.)).mx_1().bg(border))
                         .child(
-                            Button::new("theme")
-                                .label(self.settings.theme_name.label())
-                                .icon(Icon::new(AssetIcon::Palette))
-                                .ghost()
-                                .small()
-                                .tooltip("Theme")
-                                .on_click(
-                                    cx.listener(|this, _, window, cx| this.cycle_theme(window, cx)),
-                                ),
-                        )
-                        .child(
-                            Button::new("appearance")
-                                .label(self.settings.appearance.label())
-                                .icon(Icon::new(if self.palette.dark {
-                                    AssetIcon::Moon
-                                } else {
-                                    AssetIcon::Sun
-                                }))
-                                .ghost()
-                                .small()
-                                .tooltip("Light / Dark")
+                            icon_button("settings", AssetIcon::Settings, "Settings (⌘,)")
                                 .on_click(cx.listener(|this, _, window, cx| {
-                                    this.cycle_appearance(window, cx)
+                                    this.open_settings(window, cx)
                                 })),
                         )
                         .child(
@@ -328,30 +299,6 @@ impl NotekiApp {
                         ),
                 ),
         )
-    }
-
-    fn render_view_mode_buttons(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let modes = [
-            (ViewMode::Live, "view-live", "Live", AssetIcon::Pencil),
-            (ViewMode::Split, "view-split", "Split", AssetIcon::Columns2),
-            (
-                ViewMode::Reader,
-                "view-reader",
-                "Reader",
-                AssetIcon::BookOpen,
-            ),
-        ];
-        h_flex()
-            .gap(px(2.))
-            .children(modes.into_iter().map(|(mode, id, label, icon)| {
-                let b = Button::new(id).label(label).icon(Icon::new(icon)).xsmall();
-                let b = if self.view_mode() == mode {
-                    b.primary()
-                } else {
-                    b.ghost()
-                };
-                b.on_click(cx.listener(move |this, _, _, cx| this.set_view_mode(mode, cx)))
-            }))
     }
 
     fn render_status_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -973,14 +920,7 @@ impl NotekiApp {
             (Some(path), Some(TabKind::Attachment(kind))) => {
                 self.render_attachment(&path, kind, cx).into_any_element()
             }
-            (Some(_), Some(TabKind::Note)) => match self.view_mode() {
-                ViewMode::Live => self.render_editor(),
-                ViewMode::Reader => self.render_reader(cx),
-                ViewMode::Split => h_resizable("split")
-                    .child(resizable_panel().child(self.render_editor()))
-                    .child(resizable_panel().child(self.render_reader(cx)))
-                    .into_any_element(),
-            },
+            (Some(_), Some(TabKind::Note)) => self.render_editor(),
             _ => self.render_no_tab(cx).into_any_element(),
         };
         v_flex()
@@ -1143,42 +1083,6 @@ impl NotekiApp {
             .test_support()
             .size_full()
             .child(self.editor.clone())
-            .into_any_element()
-    }
-
-    fn render_reader(&self, cx: &mut Context<Self>) -> AnyElement {
-        let Some((path, md)) = self.reader_markdown.clone() else {
-            return div().into_any_element();
-        };
-        let Some(vault) = &self.vault else {
-            return div().into_any_element();
-        };
-        let (root, index) = (vault.root.clone(), vault.index.clone());
-        let (links, tasks) = (cx.entity(), cx.entity());
-        let source = path.clone();
-        let view = TextView::markdown(SharedString::from(format!("reader-{path}")), md)
-            .markdown_extensions(MarkdownExtensions::default().frontmatter())
-            .plugin(FrontmatterPlugin::new())
-            .scrollable(true)
-            .selectable(true)
-            .on_link_click(move |url, ev, window, cx| {
-                let (url, new_tab) = (url.to_string(), ev.modifiers().platform);
-                links.update(cx, |app, cx| {
-                    app.follow_reader_link(&url, new_tab, window, cx)
-                });
-            })
-            .on_task_toggle(move |ev, window, cx| {
-                let (offset, checked) = (ev.marker_range().start, ev.checked());
-                tasks.update(cx, |app, cx| app.toggle_task(offset, checked, window, cx));
-            })
-            .image_source(move |uri| reader_image_source(uri.as_ref(), &root, &index, &source));
-        div()
-            .id("reader")
-            .test_support()
-            .size_full()
-            .px_8()
-            .py_6()
-            .child(div().size_full().max_w(px(760.)).mx_auto().child(view))
             .into_any_element()
     }
 
@@ -1484,17 +1388,6 @@ impl NotekiApp {
             ("Numbered list", AssetIcon::Pencil, |a, w, cx| {
                 a.format(Format::Lines(LineFormat::Numbered), w, cx)
             }),
-            ("Live preview", AssetIcon::Pencil, |a, _, cx| {
-                a.set_view_mode(ViewMode::Live, cx)
-            }),
-            (
-                "Split: editor and reader",
-                AssetIcon::Columns2,
-                |a, _, cx| a.set_view_mode(ViewMode::Split, cx),
-            ),
-            ("Reader", AssetIcon::BookOpen, |a, _, cx| {
-                a.set_view_mode(ViewMode::Reader, cx)
-            }),
             ("Toggle left sidebar", AssetIcon::PanelLeft, |a, _, cx| {
                 a.toggle_left_sidebar(cx)
             }),
@@ -1542,33 +1435,6 @@ impl NotekiApp {
             window,
             cx,
         );
-    }
-}
-
-/// Where the Reader loads an image from: our embeds, vault-relative Markdown
-/// images (`%20` read as a space, found as a wikilink is), or the web.
-fn reader_image_source(
-    uri: &str,
-    root: &std::path::Path,
-    index: &VaultIndex,
-    source: &str,
-) -> ImageSource {
-    if uri.starts_with("http://") || uri.starts_with("https://") || uri.starts_with("data:") {
-        return ImageSource::from(uri.to_string());
-    }
-    let path = match uri.strip_prefix(EMBED_SCHEME) {
-        Some(p) => percent_decode(p),
-        None => {
-            let target = percent_decode(uri);
-            match index.resolve(&target, Some(source)) {
-                Some(ResolvedItem::Attachment { path, .. }) => path,
-                _ => target,
-            }
-        }
-    };
-    match resolve_vault_path(root, &path) {
-        Ok(abs) => ImageSource::from(abs),
-        Err(_) => ImageSource::from(uri.to_string()),
     }
 }
 

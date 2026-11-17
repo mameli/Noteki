@@ -1,7 +1,7 @@
 //! Bugs found in the first prototype, reproduced before they were fixed.
 use noteki_gpui::core::index::extract_note_tags;
 use noteki_gpui::core::markdown::{
-    compute_markdown_spans, preprocess_for_reader as preprocess_markdown_for_reader,
+    compute_markdown_spans, preprocess_for_html,
 };
 use noteki_gpui::core::wikilink::VaultIndex;
 
@@ -14,9 +14,9 @@ fn backslash_before_multibyte_char_does_not_panic() {
 }
 
 #[test]
-fn reader_wikilink_with_spaces_is_a_markdown_link() {
+fn html_wikilink_with_spaces_is_a_markdown_link() {
     let index = VaultIndex::default();
-    let md = preprocess_markdown_for_reader("See [[Launch plan]].", None, &index);
+    let md = preprocess_for_html("See [[Launch plan]].", None, &index);
     let ast = markdown::to_mdast(&md, &markdown::ParseOptions::gfm()).unwrap();
     let mut found = false;
     fn walk(n: &markdown::mdast::Node, found: &mut bool) {

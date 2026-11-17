@@ -11,8 +11,7 @@ use gpui_kit::{
     px, size, AnyWindowHandle, App, AppContext as _, Bounds, Context, Entity, Point,
     TestAppContext, Window, WindowBounds, WindowOptions,
 };
-use noteki_gpui::app::{register_keybindings, AppConfig, NotekiApp, ViewMode, AUTOSAVE_DELAY};
-use noteki_gpui::core::markdown::reader_can_parse;
+use noteki_gpui::app::{register_keybindings, AppConfig, NotekiApp, AUTOSAVE_DELAY};
 use noteki_gpui::core::tabs::OpenIn;
 
 // ---- Fixtures ----
@@ -356,7 +355,7 @@ fn an_excluded_folder_leaves_the_vault_and_closes_its_tabs(cx: &mut TestAppConte
 fn the_settings_window_opens_once(cx: &mut TestAppContext) {
     let f = fixture(cx);
     let before = cx.update(|cx| cx.windows().len());
-    app(cx, &f, |a, w, cx| a.open_settings(w, cx));
+    ui(cx, &f, |w, cx| w.click("settings", cx));
     app(cx, &f, |a, w, cx| a.open_settings(w, cx));
     cx.run_until_parked();
     let windows = cx.update(|cx| cx.windows());
@@ -704,19 +703,13 @@ fn a_rename_by_another_app_is_followed(cx: &mut TestAppContext) {
     assert!(ui(cx, &f, |w, _| w.try_find("deleted-banner").is_none()));
 }
 
-// ---- Links and Reader ----
+// ---- Links ----
 
 #[gpui_kit::test]
-fn reader_links_open_notes_and_back_returns(cx: &mut TestAppContext) {
+fn links_open_notes_and_back_returns(cx: &mut TestAppContext) {
     let f = fixture(cx);
-    app(cx, &f, |a, _, cx| a.set_view_mode(ViewMode::Reader, cx));
-    frame(cx, &f);
-    assert!(app(cx, &f, |a, _, _| a
-        .reader_markdown()
-        .unwrap()
-        .contains("(noteki-link:Launch%20plan)")));
     app(cx, &f, |a, w, cx| {
-        a.follow_reader_link("noteki-link:Launch%20plan", false, w, cx)
+        a.follow_link("Launch plan", None, false, w, cx)
     });
     frame(cx, &f);
     assert_eq!(
@@ -751,54 +744,6 @@ fn following_an_unresolved_link_creates_an_empty_note_next_to_the_source(cx: &mu
     });
     assert!(status(cx, &f).contains("Cannot create"));
 }
-
-#[gpui_kit::test]
-fn reader_checkbox_toggles_the_right_task(cx: &mut TestAppContext) {
-    let f = fixture(cx);
-    app(cx, &f, |a, w, cx| {
-        a.open_path("Reading list.md", OpenIn::CurrentTab, w, cx)
-    });
-    app(cx, &f, |a, _, cx| a.set_view_mode(ViewMode::Reader, cx));
-    let md = app(cx, &f, |a, _, _| a.reader_markdown().unwrap().to_string());
-    let marker = md.find("[ ] *Gödel").unwrap();
-    app(cx, &f, |a, w, cx| a.toggle_task(marker, true, w, cx));
-    let text = read(&f, "Reading list.md");
-    assert!(text.contains("- [x] *Gödel, Escher, Bach*"), "{text}");
-    assert!(
-        text.contains("- [ ] *The Design of Everyday Things*"),
-        "{text}"
-    );
-}
-
-#[gpui_kit::test]
-fn a_note_that_crashes_the_markdown_parser_still_opens_in_the_reader(cx: &mut TestAppContext) {
-    let f = fixture(cx);
-    std::fs::write(f.vault.join("Crash.md"), "1. ```\n-").unwrap();
-    app(cx, &f, |a, w, cx| {
-        a.handle_fs_changes(&[f.vault.join("Crash.md")], w, cx)
-    });
-    app(cx, &f, |a, w, cx| {
-        a.open_path("Crash.md", OpenIn::CurrentTab, w, cx)
-    });
-    app(cx, &f, |a, _, cx| a.set_view_mode(ViewMode::Reader, cx));
-    frame(cx, &f); // would panic inside GPUI's TextView without the guard
-    let md = app(cx, &f, |a, _, _| a.reader_markdown().unwrap().to_string());
-    assert!(md.contains("cannot be shown in the Reader") && reader_can_parse(&md));
-}
-
-#[gpui_kit::test]
-fn split_view_renders_editor_and_reader(cx: &mut TestAppContext) {
-    let f = fixture(cx);
-    ui(cx, &f, |w, cx| w.click("view-split", cx));
-    frame(cx, &f);
-    assert!(ui(cx, &f, |w, _| w.find("reader").visible()
-        && w.find("editor-pane").visible()));
-    ui(cx, &f, |w, cx| w.click("view-live", cx));
-    frame(cx, &f);
-    assert!(ui(cx, &f, |w, _| w.try_find("reader").is_none()));
-}
-
-// ---- Files ----
 
 #[gpui_kit::test]
 fn rename_and_trash_follow_open_tabs(cx: &mut TestAppContext) {
@@ -868,23 +813,20 @@ fn tabs_are_restored_when_the_vault_reopens(cx: &mut TestAppContext) {
     app(cx, &f, |a, w, cx| {
         a.open_path("Projects/Launch plan.md", OpenIn::NewTab, w, cx)
     });
-    app(cx, &f, |a, _, cx| a.set_view_mode(ViewMode::Split, cx));
 
     let (window, app2) = open_app(cx, &f.dir, &f.vault);
     cx.run_until_parked();
-    let (tabs, active, mode) = cx
+    let (tabs, active) = cx
         .update_window(window, |_, _, cx| {
             let a = app2.read(cx);
             (
                 a.tabs().iter().map(|t| t.path.clone()).collect::<Vec<_>>(),
                 a.active_path().map(str::to_string),
-                a.view_mode(),
             )
         })
         .unwrap();
     assert_eq!(tabs, vec!["Welcome.md", "Projects/Launch plan.md"]);
     assert_eq!(active.as_deref(), Some("Projects/Launch plan.md"));
-    assert_eq!(mode, ViewMode::Split);
 }
 
 #[gpui_kit::test]

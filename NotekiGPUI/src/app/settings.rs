@@ -24,29 +24,6 @@ pub enum RightPane {
     Backlinks,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "lowercase")]
-pub enum ViewMode {
-    #[default]
-    Live,
-    Split,
-    Reader,
-}
-
-impl ViewMode {
-    pub fn next(self) -> Self {
-        match self {
-            Self::Live => Self::Split,
-            Self::Split => Self::Reader,
-            Self::Reader => Self::Live,
-        }
-    }
-
-    pub fn shows_reader(self) -> bool {
-        !matches!(self, Self::Live)
-    }
-}
-
 /// What is restored when a vault is opened again.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -67,7 +44,6 @@ pub struct Settings {
     pub right_sidebar_open: bool,
     pub left_pane: LeftPane,
     pub right_pane: RightPane,
-    pub view_mode: ViewMode,
     pub theme_name: NotekiThemeName,
     pub appearance: AppearanceMode,
     /// The text's size in points (SPEC › Window: 10 to 32, 15 by default).
@@ -124,7 +100,6 @@ impl Default for Settings {
             right_sidebar_open: true,
             left_pane: LeftPane::default(),
             right_pane: RightPane::default(),
-            view_mode: ViewMode::default(),
             theme_name: NotekiThemeName::default(),
             appearance: AppearanceMode::default(),
             font_size: DEFAULT_FONT_SIZE,
@@ -259,7 +234,7 @@ mod tests {
     fn old_files_with_missing_fields_load() {
         let s: Settings =
             serde_json::from_str(r#"{"vault_path":"/x","view_mode":"reader"}"#).unwrap();
-        assert_eq!(s.view_mode, ViewMode::Reader);
+        assert_eq!(s.vault_path.as_deref(), Some("/x"), "an old field is ignored");
         assert!(s.left_sidebar_open);
     }
 
@@ -313,13 +288,11 @@ mod tests {
             font_size: 22.,
             line_length: 60,
             left_sidebar_open: false,
-            view_mode: ViewMode::Reader,
             ..Default::default()
         };
         a.adopt_shared(&b);
         assert_eq!((a.font_size, a.line_length), (22., 60));
         assert!(a.left_sidebar_open);
-        assert_eq!(a.view_mode, ViewMode::Live);
     }
 
     #[test]

@@ -12,7 +12,7 @@ use noteki_gpui::app::Vault;
 use noteki_gpui::core::index::{
     build_tag_tree, extract_outline, find_backlinks, quick_switcher_rank, search_vault,
 };
-use noteki_gpui::core::markdown::{compute_markdown_spans, preprocess_for_reader};
+use noteki_gpui::core::markdown::{compute_markdown_spans, preprocess_for_html};
 
 use gpui_kit::{font, px, TextSystem, WindowTextSystem};
 use std::sync::Arc;
@@ -208,9 +208,9 @@ fn main() {
             Duration::from_millis(8),
         ),
         (
-            "reader markdown, 100 KB note",
+            "export markdown, 100 KB note",
             best(10, || {
-                preprocess_for_reader(&big, Some("x.md"), &vault.index)
+                preprocess_for_html(&big, Some("x.md"), &vault.index)
             }),
             Duration::from_millis(30),
         ),

@@ -1,5 +1,5 @@
 //! Golden checks on `docs/demo-vault`, the vault shipped with the repository.
-//! They read the real files, so a regression in scanning, links, the Reader
+//! They read the real files, so a regression in scanning, links, the HTML
 //! conversion or the indexes shows up here as a concrete note and line.
 
 use std::path::PathBuf;
@@ -8,22 +8,13 @@ use markdown::mdast::Node;
 use noteki_gpui::app::Vault;
 use noteki_gpui::core::index::{extract_outline, find_backlinks, search_vault};
 use noteki_gpui::core::markdown::{
-    parse_reader_link, percent_decode, preprocess_for_reader, wikilinks, ReaderLink, EMBED_SCHEME,
-    LINK_SCHEME,
+    percent_decode, preprocess_for_html, wikilinks, EMBED_SCHEME, LINK_SCHEME,
 };
 use noteki_gpui::core::wikilink::{ResolvedItem, Wikilink};
 
 fn demo() -> Vault {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../docs/demo-vault");
     Vault::load(&root).expect("demo vault loads")
-}
-
-fn reader_options() -> markdown::ParseOptions {
-    let mut o = markdown::ParseOptions::gfm();
-    o.constructs.frontmatter = true;
-    o.constructs.math_text = true;
-    o.constructs.math_flow = true;
-    o
 }
 
 fn collect<'a>(node: &'a Node, links: &mut Vec<&'a str>, images: &mut Vec<&'a str>) {
@@ -78,11 +69,11 @@ fn every_wikilink_of_the_demo_resolves() {
 }
 
 #[test]
-fn reader_turns_every_wikilink_into_a_working_link() {
+fn html_turns_every_wikilink_into_a_working_link() {
     let v = demo();
     for note in v.corpus.iter() {
-        let md = preprocess_for_reader(&note.text, Some(&note.path), &v.index);
-        let ast = markdown::to_mdast(&md, &reader_options())
+        let md = preprocess_for_html(&note.text, Some(&note.path), &v.index);
+        let ast = markdown::to_mdast(&md, &markdown::ParseOptions::gfm())
             .unwrap_or_else(|e| panic!("{}: {e}", note.path));
         let (mut links, mut images) = (Vec::new(), Vec::new());
         collect(&ast, &mut links, &mut images);
@@ -98,13 +89,12 @@ fn reader_turns_every_wikilink_into_a_working_link() {
         assert_eq!(
             ours.len(),
             expected_links,
-            "{}: links in reader {links:?}\n{md}",
+            "{}: links in the HTML {links:?}\n{md}",
             note.path
         );
         for url in ours {
-            let ReaderLink::Vault { target, .. } = parse_reader_link(url) else {
-                panic!("{url} is not a vault link")
-            };
+            let body = url.strip_prefix(LINK_SCHEME).unwrap();
+            let target = percent_decode(body.split('#').next().unwrap());
             assert!(
                 v.index.resolve(&target, Some(&note.path)).is_some(),
                 "{}: {url} → {target} does not resolve",
@@ -129,7 +119,7 @@ fn reader_turns_every_wikilink_into_a_working_link() {
 fn welcome_embeds_the_logo_with_alt_text_not_its_width() {
     let v = demo();
     let text = v.corpus.get("Welcome.md").unwrap();
-    let md = preprocess_for_reader(text, Some("Welcome.md"), &v.index);
+    let md = preprocess_for_html(text, Some("Welcome.md"), &v.index);
     assert!(
         md.contains("![noteki.png](noteki-embed:Media/noteki.png)"),
         "{md}"

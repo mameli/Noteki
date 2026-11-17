@@ -11,9 +11,8 @@ cd "$(dirname "$0")/.."
 # file | text to replace | replacement | test target (cargo test args) | what it simulates
 MUTANTS=(
   "src/core/markdown.rs|b'\\\\' if i + 1 < to \\&\\& b[i + 1].is_ascii_punctuation() =>|b'\\\\' if i + 1 < to =>|--lib|a backslash before a letter is taken as an escape and hidden (\\pi in a formula)"
-  "src/core/markdown.rs|b'-' \| b'.' \| b'_' \| b'~' \| b'/'|b'-' \| b'.' \| b'_' \| b'~' \| b'/' \| b' '|--test demo_vault --test regressions|baseline bug: wikilinks with spaces are not links in the Reader"
+  "src/core/markdown.rs|b'-' \| b'.' \| b'_' \| b'~' \| b'/'|b'-' \| b'.' \| b'_' \| b'~' \| b'/' \| b' '|--test demo_vault --test regressions|baseline bug: wikilinks with spaces are not links in the HTML"
   "src/core/markdown.rs|if after < to \&\& b[after] == b'*' \&\& single_star_in_double|if single_star_in_double|--test robustness|fuzzer-found bug: emphasis scan lands inside a multi-byte char"
-  "src/core/markdown.rs|if reader_can_parse(\&md) {|if true {|--test ui|no guard: markdown-rs panic reaches GPUI's TextView"
   "src/core/document.rs|self.is_dirty() \&\& self.conflict.is_none() \&\& !self.deleted|self.is_dirty() \&\& self.conflict.is_none()|--lib --test ui|autosave recreates a note deleted by another app"
   "src/core/tabs.rs|Some(a) if a > index => Some(a - 1),|Some(a) if a > index => Some(a),|--lib --test robustness|closing a tab on the left activates the wrong tab"
   "src/core/index.rs|if note.path == target_path {|if false {|--lib --test demo_vault|a note lists itself among its backlinks"

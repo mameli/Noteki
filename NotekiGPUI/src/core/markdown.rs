@@ -1,8 +1,8 @@
-//! Markdown scanning shared by the live editor, the Reader, and the vault indexes.
+//! Markdown scanning shared by the live editor, Export, and the vault indexes.
 //!
 //! Everything here works on UTF-8 byte offsets and only ever advances by whole
 //! characters, so ranges are always valid `str` slice boundaries (the editor's
-//! decorations and the Reader's task toggles rely on that).
+//! decorations rely on that).
 
 use std::ops::Range;
 
@@ -335,26 +335,7 @@ pub fn task_state(line: &str) -> Option<bool> {
     task_marker(line).map(|(_, checked)| checked)
 }
 
-/// Sets the checkbox on the 0-based line `line_index` to `checked`. Returns the
-/// new text, or `None` when that line is not a task (or already in that state).
-pub fn set_task_checked(text: &str, line_index: usize, checked: bool) -> Option<String> {
-    let line = lines(text).into_iter().find(|l| l.index == line_index)?;
-    if line.kind != BlockKind::Text {
-        return None;
-    }
-    let (marker, was_checked) = task_marker(line.text)?;
-    if was_checked == checked {
-        return None;
-    }
-    let at = line.start + marker + 1;
-    let mut out = String::with_capacity(text.len());
-    out.push_str(&text[..at]);
-    out.push(if checked { 'x' } else { ' ' });
-    out.push_str(&text[at + 1..]);
-    Some(out)
-}
-
-/// 0-based line containing byte `offset` (clamped to the text).
+/// 0-based line containing byte/// 0-based line containing byte `offset` (clamped to the text).
 pub fn line_of_offset(text: &str, offset: usize) -> usize {
     let mut end = offset.min(text.len());
     while !text.is_char_boundary(end) {
@@ -1084,10 +1065,10 @@ pub fn line_spans(
 }
 
 // ---------------------------------------------------------------------------
-// Reader
+// HTML for Export
 // ---------------------------------------------------------------------------
 
-/// URL scheme for wikilinks in the Reader: `noteki-link:<target>#<heading>`.
+/// URL scheme for wikilinks in the HTML: `noteki-link:<target>#<heading>`.
 pub const LINK_SCHEME: &str = "noteki-link:";
 /// URL scheme for embedded vault images: `noteki-embed:<vault path>`.
 pub const EMBED_SCHEME: &str = "noteki-embed:";
@@ -1125,85 +1106,6 @@ pub fn percent_decode(s: &str) -> String {
     String::from_utf8_lossy(&out).into_owned()
 }
 
-/// A link clicked in the Reader.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ReaderLink {
-    /// A note or attachment of the vault (`heading` for `[[Note#Heading]]`).
-    Vault {
-        target: String,
-        heading: Option<String>,
-    },
-    /// Anything with another scheme (`https:`, `mailto:`…).
-    External(String),
-}
-
-/// Interprets a URL from the Reader: our own wikilinks, relative Markdown links
-/// to vault files (`[x](Other%20note.md)`), or external URLs.
-pub fn parse_reader_link(url: &str) -> ReaderLink {
-    let body = match url.strip_prefix(LINK_SCHEME) {
-        Some(rest) => rest,
-        None if url.contains(':') => return ReaderLink::External(url.to_string()),
-        None => url,
-    };
-    let (target, heading) = match body.split_once('#') {
-        Some((t, h)) => (
-            percent_decode(t),
-            Some(percent_decode(h)).filter(|h| !h.is_empty()),
-        ),
-        None => (percent_decode(body), None),
-    };
-    let target = target.trim_start_matches("./").to_string();
-    ReaderLink::Vault { target, heading }
-}
-
-/// The parse options GPUI Kit's `TextView` uses for
-/// `MarkdownExtensions::default().frontmatter()` (gpui-base 0.10, `markdown_ext.rs`).
-fn reader_parse_options() -> ::markdown::ParseOptions {
-    let mut o = ::markdown::ParseOptions::gfm();
-    o.constructs.frontmatter = true;
-    o.constructs.math_text = true;
-    o.constructs.math_flow = true;
-    o
-}
-
-/// Whether the Reader's parser (markdown-rs 1.0.0) survives `md`.
-///
-/// markdown-rs panics on some valid input (for example ``"1. ```\n-"``), and
-/// GPUI Kit does not guard its `TextView`: such a note would crash the app the
-/// moment it is shown in the Reader.
-pub fn reader_can_parse(md: &str) -> bool {
-    let md = md.to_string();
-    let previous = std::panic::take_hook();
-    std::panic::set_hook(Box::new(|_| {}));
-    let ok = std::panic::catch_unwind(move || {
-        ::markdown::to_mdast(&md, &reader_parse_options()).is_ok()
-    })
-    .unwrap_or(false);
-    std::panic::set_hook(previous);
-    ok
-}
-
-/// Reader Markdown that is safe to render: `md` itself, or the note's source
-/// shown as code with a warning when the parser would crash on it.
-pub fn reader_guard(md: String, source: &str) -> (String, bool) {
-    if reader_can_parse(&md) {
-        return (md, true);
-    }
-    let longest = source.split(|c| c != '`').map(str::len).max().unwrap_or(0);
-    let fence = "`".repeat((longest + 1).max(3));
-    let fallback = format!(
-        "> **This note cannot be shown in the Reader** (a parser limitation); its source is below. Edit it in Live mode.\n\n{fence}\n{source}\n{fence}\n"
-    );
-    if reader_can_parse(&fallback) {
-        (fallback, false)
-    } else {
-        (
-            "> **This note cannot be shown in the Reader.** Edit it in Live mode.".to_string(),
-            false,
-        )
-    }
-}
-
 fn escape_label(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
@@ -1219,11 +1121,10 @@ fn escape_label(s: &str) -> String {
 }
 
 /// Converts Obsidian-flavoured Markdown (wikilinks, embeds, `==highlight==`,
-/// `%%comments%%`, callouts) to the CommonMark/GFM the Reader renders.
+/// `%%comments%%`, callouts) to the CommonMark/GFM that Export turns into HTML.
 ///
-/// The output has exactly the same lines as the input, so a position in the
-/// Reader (a task checkbox) maps back to the same line of the note.
-pub fn preprocess_for_reader(text: &str, source_path: Option<&str>, index: &VaultIndex) -> String {
+/// The output has exactly the same lines as the input.
+pub fn preprocess_for_html(text: &str, source_path: Option<&str>, index: &VaultIndex) -> String {
     let mut out = String::with_capacity(text.len() + 64);
     for (n, line) in lines(text).into_iter().enumerate() {
         if n > 0 {
@@ -1518,21 +1419,6 @@ mod tests {
     }
 
     #[test]
-    fn task_toggle_by_line() {
-        let text = "intro\n- [ ] one\n  > 2. [x] two\n- [link](x)";
-        assert_eq!(
-            set_task_checked(text, 1, true).as_deref(),
-            Some("intro\n- [x] one\n  > 2. [x] two\n- [link](x)")
-        );
-        assert_eq!(
-            set_task_checked(text, 2, false).as_deref(),
-            Some("intro\n- [ ] one\n  > 2. [ ] two\n- [link](x)")
-        );
-        assert_eq!(set_task_checked(text, 3, true), None);
-        assert_eq!(set_task_checked(text, 1, false), None);
-    }
-
-    #[test]
     fn percent_roundtrip() {
         for s in [
             "Launch plan",
@@ -1547,43 +1433,9 @@ mod tests {
     }
 
     #[test]
-    fn reader_link_parsing() {
-        assert_eq!(
-            parse_reader_link("noteki-link:Launch%20plan#Goals%20%26%20risks"),
-            ReaderLink::Vault {
-                target: "Launch plan".into(),
-                heading: Some("Goals & risks".into())
-            }
-        );
-        assert_eq!(
-            parse_reader_link("Other%20note.md"),
-            ReaderLink::Vault {
-                target: "Other note.md".into(),
-                heading: None
-            }
-        );
-        assert_eq!(
-            parse_reader_link("https://x.y/z"),
-            ReaderLink::External("https://x.y/z".into())
-        );
-    }
-
-    #[test]
-    fn reader_guard_catches_parser_panics() {
-        // Minimal input found by the robustness fuzzer: markdown-rs 1.0.0 panics on it.
-        let bad = "1. ```\n-";
-        assert!(!reader_can_parse(bad));
-        let (md, ok) = reader_guard(bad.to_string(), bad);
-        assert!(!ok);
-        assert!(reader_can_parse(&md));
-        let (md, ok) = reader_guard("# fine".into(), "# fine");
-        assert!(ok && md == "# fine");
-    }
-
-    #[test]
-    fn reader_keeps_line_count() {
+    fn html_keeps_line_count() {
         let text = "---\na: 1\n---\n> [!tip] Hi [[x]]\n%%gone%% [[A|b]] ==hi==\n```\n[[code]]\n```";
-        let out = preprocess_for_reader(text, None, &VaultIndex::default());
+        let out = preprocess_for_html(text, None, &VaultIndex::default());
         assert_eq!(out.split('\n').count(), text.split('\n').count());
         assert!(out.contains("> **Hi [x](noteki-link:x)**"), "{out}");
         assert!(out.contains(" [b](noteki-link:A) **hi**"), "{out}");

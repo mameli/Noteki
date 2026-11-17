@@ -16,7 +16,7 @@ scripts/eval.sh --mutants      # plus the mutation check of the tests
 |---|---|---|
 | `src/core/vault.rs` | Scanning, atomic writes, create/rename/copy/trash, daily-note paths | no |
 | `src/core/wikilink.rs` | Wikilink parsing, Obsidian resolution, link completions | no |
-| `src/core/markdown.rs` | The only Markdown scanner: blocks, inline tokens, live-preview spans, Reader conversion, task toggles, the Reader parser guard | no |
+| `src/core/markdown.rs` | The only Markdown scanner: blocks, inline tokens, live-preview spans, the HTML conversion for Export | no |
 | `src/core/index.rs` | `Corpus` of note texts; outline, tags, backlinks, search, quick switcher | no |
 | `src/core/document.rs` | `NoteDoc`: saving, Merge, Conflict, Deleted (SPEC › External changes) | no |
 | `src/core/tabs.rs` | Tabs, per-tab Back/Forward, closed tabs, rename/remove | no |
@@ -36,8 +36,8 @@ The rules live in `core` and are tested there; `app` only connects them to the w
 | Unit | `cargo test --lib` | The rules of each `core` module and the settings |
 | Regressions | `cargo test --test regressions` | The two crashing/broken behaviours of the first prototype stay fixed |
 | Robustness | `NOTEKI_FUZZ_CASES=20000 cargo test --release --test robustness` | No panic and valid UTF-8 ranges on generated Markdown; `NoteDoc` and `Tabs` invariants under random operations; merge laws |
-| Demo vault | `cargo test --test demo_vault` | On the real `docs/demo-vault`: every wikilink resolves, the Reader output parses with GPUI's options and every link in it works; tags, backlinks, outline, search |
-| UI | `cargo test --test ui` | The real `NotekiApp` in a headless GPUI window: typing and autosave timing, reload/merge/conflict/deleted banners, followed rename, Reader links and checkboxes, tree, rename/trash, session restore, CRLF |
+| Demo vault | `cargo test --test demo_vault` | On the real `docs/demo-vault`: every wikilink resolves, the HTML conversion parses and every link in it works; tags, backlinks, outline, search |
+| UI | `cargo test --test ui` | The real `NotekiApp` in a headless GPUI window: typing and autosave timing, reload/merge/conflict/deleted banners, followed rename, links, tree, rename/trash, session restore, CRLF |
 | Performance | `cargo run --release --example perf` | Budgets on a 5,000-note synthetic vault |
 | Keystroke timing | `cargo test --release --test keystroke_timing -- --ignored --nocapture` | Time per keystroke and per idle frame of the real `NotekiApp` on a 100 KB Note (informational, no budget) |
 | Mutation | `scripts/mutants.sh` | The tests catch each fixed bug when it is put back |

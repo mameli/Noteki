@@ -11,10 +11,10 @@ use noteki_gpui::core::index::{
     extract_note_tags, extract_outline, parse_search_tokens, strip_inline_markdown,
 };
 use noteki_gpui::core::markdown::{
-    compute_markdown_spans, inline_tokens, line_of_offset, lines, parse_reader_link,
-    percent_decode, percent_encode, preprocess_for_reader, reader_can_parse, reader_guard,
-    set_task_checked, wikilink_at, wikilinks,
+    compute_markdown_spans, inline_tokens, line_of_offset, lines, percent_decode,
+    percent_encode, preprocess_for_html, wikilink_at, wikilinks,
 };
+use noteki_gpui::core::export::note_html;
 use noteki_gpui::core::merge::merge_three_way;
 use noteki_gpui::core::tabs::{OpenIn, Tabs};
 use noteki_gpui::core::vault::VaultItem;
@@ -218,31 +218,19 @@ fn lines_cover_the_text() {
 }
 
 #[test]
-fn reader_markdown_keeps_lines_and_parses() {
+fn exported_html_keeps_lines_and_never_panics() {
     let idx = index();
     let mut rng = Rng(42);
-    let mut parser_crashes = 0;
     for _ in 0..cases() {
         let text = gen_text(&mut rng, 40);
-        let md = preprocess_for_reader(&text, Some("Here.md"), &idx);
+        let md = preprocess_for_html(&text, Some("Here.md"), &idx);
         assert_eq!(
             md.split('\n').count(),
             text.split('\n').count(),
             "line count changed:\n{text:?}\n{md:?}"
         );
-        // What reaches GPUI's TextView must always parse, even when markdown-rs
-        // would panic on the note itself.
-        let (shown, ok) = reader_guard(md, &text);
-        parser_crashes += usize::from(!ok);
-        assert!(
-            reader_can_parse(&shown),
-            "guarded reader markdown still crashes: {shown:?}"
-        );
+        let _ = note_html(&text, "T", Some("Here.md"), &idx, |_| None);
     }
-    eprintln!(
-        "markdown-rs panicked on {parser_crashes} of {} generated notes (guarded)",
-        cases()
-    );
 }
 
 #[test]
@@ -279,38 +267,6 @@ fn outline_tags_and_headings_never_panic() {
 }
 
 #[test]
-fn task_toggle_changes_exactly_one_character() {
-    let mut rng = Rng(3);
-    for _ in 0..cases() {
-        let text = gen_text(&mut rng, 30);
-        let n = text.split('\n').count();
-        for line in 0..n + 1 {
-            for checked in [true, false] {
-                if let Some(out) = set_task_checked(&text, line, checked) {
-                    assert_eq!(out.len(), text.len());
-                    let diffs = out
-                        .bytes()
-                        .zip(text.bytes())
-                        .filter(|(a, b)| a != b)
-                        .count();
-                    assert_eq!(diffs, 1, "{text:?} -> {out:?}");
-                    assert_eq!(
-                        set_task_checked(&out, line, checked),
-                        None,
-                        "toggle is not idempotent"
-                    );
-                    // Toggling back restores the note (`[X]` comes back as `[x]`).
-                    let back = set_task_checked(&out, line, !checked).expect("toggles back");
-                    if !text.contains("[X]") {
-                        assert_eq!(back, text);
-                    }
-                }
-            }
-        }
-    }
-}
-
-#[test]
 fn percent_encoding_roundtrips_and_links_decode() {
     let mut rng = Rng(8);
     for _ in 0..cases() {
@@ -318,7 +274,6 @@ fn percent_encoding_roundtrips_and_links_decode() {
         let enc = percent_encode(&s);
         assert!(enc.bytes().all(|b| b.is_ascii_graphic()), "{enc}");
         assert_eq!(percent_decode(&enc), s);
-        let _ = parse_reader_link(&s);
         let _ = percent_decode(&s);
     }
 }

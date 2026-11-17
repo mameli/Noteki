@@ -30,7 +30,7 @@ use crate::core::index::{
     HeadingItem, SearchResult, TagNode,
 };
 use crate::core::markdown::{
-    self, line_of_offset, preprocess_for_reader, set_task_checked, Link, ReaderLink,
+    self, Link,
 };
 use crate::core::opening::{route, Opened};
 use crate::core::tabs::{rename_target, OpenIn, Tabs};
@@ -43,7 +43,7 @@ use crate::core::wikilink::{folder_of, note_name, ResolvedItem, VaultIndex};
 use crate::editor::{Format, LineFormat, LinkContext, NoteEditor, NoteEditorEvent, Wrap};
 use crate::theme::{apply_noteki_theme, AppearanceMode, NotekiPalette, NotekiThemeName};
 
-pub use settings::{LeftPane, RightPane, Settings, ViewMode};
+pub use settings::{LeftPane, RightPane, Settings};
 
 actions!(
     noteki,
@@ -53,7 +53,6 @@ actions!(
         SwitchFilesPane,
         SwitchTagsPane,
         SwitchSearchPane,
-        ToggleViewMode,
         OpenQuickSwitcher,
         OpenQuickSwitcherNewTab,
         OpenCommandPalette,
@@ -92,7 +91,6 @@ pub fn register_keybindings(cx: &mut App) {
         KeyBinding::new("ctrl-cmd-2", SwitchTagsPane, None),
         KeyBinding::new("ctrl-cmd-3", SwitchSearchPane, None),
         KeyBinding::new("cmd-shift-f", SwitchSearchPane, None),
-        KeyBinding::new("cmd-e", ToggleViewMode, None),
         KeyBinding::new("cmd-o", OpenQuickSwitcher, None),
         KeyBinding::new("cmd-t", OpenQuickSwitcherNewTab, None),
         KeyBinding::new("cmd-shift-p", OpenCommandPalette, None),
@@ -367,8 +365,6 @@ pub struct NotekiApp {
 
     outline: Vec<HeadingItem>,
     backlinks: Vec<BacklinkMatch>,
-    /// Reader Markdown of the active note, built only while the Reader shows.
-    reader_markdown: Option<(String, SharedString)>,
 
     watcher: Option<RecommendedWatcher>,
     fs_events: Option<mpsc::Receiver<PathBuf>>,
@@ -457,7 +453,6 @@ impl NotekiApp {
             editor,
             outline: Vec::new(),
             backlinks: Vec::new(),
-            reader_markdown: None,
             watcher: None,
             fs_events: None,
             pending_fs: HashSet::new(),
@@ -646,16 +641,8 @@ impl NotekiApp {
         &self.search_results
     }
 
-    pub fn reader_markdown(&self) -> Option<&str> {
-        self.reader_markdown.as_ref().map(|(_, md)| md.as_ref())
-    }
-
     pub fn status(&self) -> Option<&StatusMessage> {
         self.status.as_ref()
-    }
-
-    pub fn view_mode(&self) -> ViewMode {
-        self.settings.view_mode
     }
 
     /// The path selected in Files.
@@ -730,13 +717,6 @@ impl NotekiApp {
             self.settings.sessions.insert(key, session);
             self.persist();
         }
-    }
-
-    pub fn set_view_mode(&mut self, mode: ViewMode, cx: &mut Context<Self>) {
-        self.settings.view_mode = mode;
-        self.refresh_reader();
-        self.persist();
-        cx.notify();
     }
 
     pub(crate) fn toggle_left_sidebar(&mut self, cx: &mut Context<Self>) {
@@ -1281,7 +1261,7 @@ impl NotekiApp {
         }
     }
 
-    /// Makes the editor, inspector, reader and tree follow the active tab.
+    /// Makes the editor, inspector and tree follow the active tab.
     fn show_active(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.prune_docs();
         let active = self.tabs.active().map(|t| (t.path.clone(), t.cursor));
@@ -1310,7 +1290,6 @@ impl NotekiApp {
         self.update_link_context(cx);
         self.refresh_outline();
         self.refresh_backlinks();
-        self.refresh_reader();
         self.select_in_tree(cx);
         self.persist_session();
         cx.notify();
@@ -1507,7 +1486,6 @@ impl NotekiApp {
 
     fn after_text_change(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.refresh_outline();
-        self.refresh_reader();
         self.schedule_autosave(window, cx);
         cx.notify();
     }
@@ -1561,27 +1539,6 @@ impl NotekiApp {
         for p in paths {
             self.save_logged(&p);
         }
-    }
-
-    /// Replaces the text of an open note (Reader checkbox, formatting) as if typed.
-    fn replace_note_text(
-        &mut self,
-        path: &str,
-        text: String,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let Some(doc) = self.docs.get_mut(path) else {
-            return;
-        };
-        if !doc.edit(&text) {
-            return;
-        }
-        if self.editor_path.as_deref() == Some(path) {
-            let cursor = self.editor.read(cx).cursor();
-            self.set_editor_text(&text, cursor, window, cx);
-        }
-        self.after_text_change(window, cx);
     }
 
     // ---- External changes ----
@@ -1736,7 +1693,6 @@ impl NotekiApp {
             self.save_logged(&p);
         }
         self.refresh_outline();
-        self.refresh_reader();
         self.persist_session();
         cx.notify();
     }
@@ -1857,21 +1813,6 @@ impl NotekiApp {
         }
     }
 
-    pub fn follow_reader_link(
-        &mut self,
-        url: &str,
-        new_tab: bool,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        match markdown::parse_reader_link(url) {
-            ReaderLink::External(url) => cx.open_url(&url),
-            ReaderLink::Vault { target, heading } => {
-                self.follow_link(&target, heading.as_deref(), new_tab, window, cx)
-            }
-        }
-    }
-
     pub(crate) fn follow_link_under_cursor(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let ed = self.editor.read(cx);
         let (text, cursor) = (ed.text().to_string(), ed.cursor());
@@ -1905,32 +1846,6 @@ impl NotekiApp {
             ed.set_selected_range(start..start, cx);
             ed.focus(window, cx);
         });
-        if self.settings.view_mode == ViewMode::Reader {
-            self.set_view_mode(ViewMode::Live, cx);
-        }
-    }
-
-    /// A Reader checkbox was clicked; `marker_offset` is in the Reader Markdown.
-    pub fn toggle_task(
-        &mut self,
-        marker_offset: usize,
-        checked: bool,
-        window: &mut Window,
-        cx: &mut Context<Self>,
-    ) {
-        let Some((path, md)) = self.reader_markdown.clone() else {
-            return;
-        };
-        let line = line_of_offset(&md, marker_offset);
-        let Some(new_text) = self
-            .docs
-            .get(&path)
-            .and_then(|d| set_task_checked(d.text(), line, checked))
-        else {
-            return;
-        };
-        self.replace_note_text(&path, new_text, window, cx);
-        self.save_logged(&path);
     }
 
     // ---- Files ----
@@ -2148,24 +2063,6 @@ impl NotekiApp {
         };
     }
 
-    fn refresh_reader(&mut self) {
-        self.reader_markdown = None;
-        if !self.settings.view_mode.shows_reader() {
-            return;
-        }
-        let (Some(path), Some(vault)) = (self.editor_path.clone(), &self.vault) else {
-            return;
-        };
-        if self.active_path() != Some(path.as_str()) {
-            return;
-        }
-        if let Some(doc) = self.docs.get(&path) {
-            let md = preprocess_for_reader(doc.text(), Some(&path), &vault.index);
-            let (md, _parsed) = markdown::reader_guard(md, doc.text());
-            self.reader_markdown = Some((path, md.into()));
-        }
-    }
-
     pub(crate) fn refresh_search(&mut self, cx: &App) {
         let query = self.search_input.read(cx).value().to_string();
         self.search_results = match &self.vault {
@@ -2175,7 +2072,7 @@ impl NotekiApp {
     }
 
     pub(crate) fn format(&mut self, command: Format, window: &mut Window, cx: &mut Context<Self>) {
-        if self.editor_path.is_none() || self.settings.view_mode == ViewMode::Reader {
+        if self.editor_path.is_none() {
             return;
         }
         self.editor.update(cx, |ed, cx| {

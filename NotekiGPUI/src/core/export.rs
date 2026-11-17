@@ -1,10 +1,10 @@
-//! *Export as HTML…* (SPEC › Export): the Note as one page standing alone, as
-//! the Reader draws it (the same `markdown` crate), in light colours. The
+//! *Export as HTML…* (SPEC › Export): the Note as one page standing alone,
+//! drawn by the `markdown` crate, in light colours. The
 //! Frontmatter and Comments are left out, Wikilinks are their name or Alias,
 //! the Vault's images are put in as data.
 
 use crate::core::markdown::{
-    lines, percent_decode, preprocess_for_reader, BlockKind, EMBED_SCHEME, LINK_SCHEME,
+    lines, percent_decode, preprocess_for_html, BlockKind, EMBED_SCHEME, LINK_SCHEME,
 };
 use crate::core::wikilink::VaultIndex;
 
@@ -61,7 +61,7 @@ pub fn note_html(
     index: &VaultIndex,
     image: impl Fn(&str) -> Option<(Vec<u8>, &'static str)>,
 ) -> String {
-    let md = preprocess_for_reader(&export_source(text), path, index);
+    let md = preprocess_for_html(&export_source(text), path, index);
     let mut options = markdown::Options::gfm();
     // Our own `noteki-link:` and `noteki-embed:` addresses, replaced below.
     options.compile.allow_dangerous_protocol = true;
