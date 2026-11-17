@@ -41,3 +41,11 @@ opt-level = 1
 
 [profile.dev.package."*"]
 opt-level = 3
+
+# Release: 29 MB → 17 MB (SPEC › Budget: under 20), same speed in examples/perf.
+# Unwinding stays: `markdown::reader_guard` catches markdown-rs's panics
+# (`panic = "abort"` would give 14 MB and crash the Reader instead).
+[profile.release]
+strip = true
+lto = "fat"
+codegen-units = 1
