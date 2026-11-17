@@ -7,6 +7,7 @@
 #![allow(clippy::single_range_in_vec_init)]
 
 pub mod app;
+pub mod assets;
 pub mod core;
 pub mod editor;
 pub mod theme;

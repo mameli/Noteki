@@ -20,7 +20,7 @@ fn config() -> AppConfig {
 
 fn main() {
     let config = config();
-    let app = gpui_kit::application().with_assets(gpui_kit::assets::Assets);
+    let app = gpui_kit::application().with_assets(noteki_gpui::assets::NotekiAssets);
     // The Finder, Takku or `open` hand files over here, at launch too: they
     // wait in the channel until the window is there.
     let (opened_tx, opened_rx) = async_channel::unbounded::<Vec<String>>();
