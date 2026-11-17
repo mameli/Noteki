@@ -115,6 +115,10 @@ pub fn span_style(kind: MdSpanKind, p: &NotekiPalette) -> HighlightStyle {
             font_weight: Some(FontWeight::MEDIUM),
             ..Default::default()
         },
+        MdSpanKind::MathError => HighlightStyle {
+            color: Some(p.error),
+            ..Default::default()
+        },
         MdSpanKind::Comment => HighlightStyle {
             color: Some(p.syntax),
             font_style: Some(FontStyle::Italic),

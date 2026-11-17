@@ -44,9 +44,87 @@ pub fn shown_text(line: &str, hidden: &[Range<usize>]) -> String {
     out
 }
 
+/// A text shown that the line does not hold: the room a formula drawn in the
+/// text takes, at `at` (its source's start, the source itself hidden).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Insert {
+    pub at: usize,
+    pub text: String,
+}
+
+/// [`to_display`] with `inserts` (sorted): an offset after an insert's `at`
+/// is after its text.
+pub fn to_display_with(hidden: &[Range<usize>], inserts: &[Insert], offset: usize) -> usize {
+    let before: usize = inserts
+        .iter()
+        .take_while(|i| i.at < offset)
+        .map(|i| i.text.len())
+        .sum();
+    to_display(hidden, offset) + before
+}
+
+/// [`to_buffer`] with `inserts`: inside an insert's text, the offset of its
+/// `at` (before the formula).
+pub fn to_buffer_with(hidden: &[Range<usize>], inserts: &[Insert], display: usize) -> usize {
+    let mut d = display;
+    let mut shift = 0;
+    for i in inserts {
+        let start = to_display(hidden, i.at) + shift;
+        if display < start {
+            break;
+        }
+        if display < start + i.text.len() {
+            return i.at;
+        }
+        d -= i.text.len();
+        shift += i.text.len();
+    }
+    to_buffer(hidden, d)
+}
+
+/// [`shown_text`] with `inserts` (sorted) put in.
+pub fn shown_text_with(line: &str, hidden: &[Range<usize>], inserts: &[Insert]) -> String {
+    let mut out = shown_text(line, hidden);
+    for i in inserts.iter().rev() {
+        out.insert_str(to_display(hidden, i.at), &i.text);
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_formulas_room_stands_in_for_its_hidden_source() {
+        // "a $x$ b": the source hidden, two spaces of room in its place.
+        let line = "a $x$ b";
+        let hidden = [2..5];
+        let inserts = [Insert {
+            at: 2,
+            text: "··".into(),
+        }];
+        assert_eq!(shown_text_with(line, &hidden, &inserts), "a ·· b");
+        assert_eq!(
+            to_display_with(&hidden, &inserts, 2),
+            2,
+            "before the formula"
+        );
+        assert_eq!(
+            to_display_with(&hidden, &inserts, 5),
+            2 + "··".len(),
+            "after it"
+        );
+        assert_eq!(to_display_with(&hidden, &inserts, 7), 4 + "··".len());
+        assert_eq!(to_buffer_with(&hidden, &inserts, 1), 1);
+        assert_eq!(
+            to_buffer_with(&hidden, &inserts, 3),
+            2,
+            "on it: before its source"
+        );
+        assert_eq!(to_buffer_with(&hidden, &inserts, 2 + "··".len()), 5);
+        assert_eq!(to_buffer_with(&hidden, &inserts, 2 + "··".len() + 2), 7);
+    }
 
     #[test]
     fn a_heading_mark_is_cut_out() {

@@ -34,6 +34,16 @@ markdown = "=1.0.0"
 memchr = "2"
 # Files the Finder asks to open, handed to the window (already built in by GPUI).
 async-channel = "2"
+# Formulas typeset as KaTeX does, drawn glyph by glyph with the KaTeX fonts
+# (see core::math, editor::math): no WebView.
+ratex-parser = "0.1.16"
+ratex-layout = "0.1.16"
+ratex-types = "0.1.16"
+ratex-katex-fonts = "0.1.16"
+# The outlines of the KaTeX glyphs GPUI cannot draw (already built in by GPUI).
+ttf-parser = "0.25"
+# Mermaid diagrams as SVG, drawn by GPUI (see core::diagram).
+mermaid-rs-renderer = { version = "0.3.1", default-features = false }
 
 [dev-dependencies]
 gpui-kit = { version = "0.10.0", features = ["syntect", "test-support"] }

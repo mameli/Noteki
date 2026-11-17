@@ -17,7 +17,10 @@ use gpui_kit::{
     TextAlign, TextRun, UnderlineStyle, Window, WindowTextSystem, WrappedLine,
 };
 
-use crate::core::editor::display::{shown_text, to_buffer, to_display};
+use crate::core::diagram::Diagram;
+use crate::core::editor::display::{
+    shown_text, shown_text_with, to_buffer, to_buffer_with, to_display, to_display_with, Insert,
+};
 use crate::core::editor::lines::{logical_lines, scroll_to_reveal, LineTops};
 use crate::core::editor::movement::prev_grapheme;
 use crate::core::editor::properties::PropertyLine;
@@ -26,6 +29,7 @@ use crate::core::editor::table::{Align, RowKind, Table, TableRow};
 use crate::core::markdown::{ListKind, MdSpanKind};
 use crate::theme::NotekiPalette;
 
+use super::math::{MathPaint, KATEX_SCALE};
 use super::style::span_style;
 
 use super::{LineStyles, NoteEditor};
@@ -73,12 +77,36 @@ pub(super) struct LaidLine {
     decoration: Option<Decoration>,
     /// The height of the text's rows: none for an image whose source is hidden.
     text_height: Pixels,
-    /// An image drawn under the text, at the size it is drawn.
-    image: Option<(Rc<Path>, Size<Pixels>)>,
+    /// An image, formula or diagram drawn under the text, at the size it takes.
+    figure: Option<(Figure, Size<Pixels>)>,
+    /// The room each formula drawn in the text takes in its place, and the formulas.
+    inserts: Rc<[Insert]>,
+    formulas: Rc<[InlineFormula]>,
     /// A table row's cells, each at its column (the line's own text is empty).
     cells: Option<Rc<[Cell]>>,
     /// A table's column edges, from the left: for the grid.
     columns: Option<Rc<[Pixels]>>,
+}
+
+/// What a line draws under its text in place of its hidden source.
+#[derive(Clone)]
+pub(super) enum Figure {
+    /// An image of the Vault, at the left.
+    File(Rc<Path>),
+    /// A `$$` block's formula at its em, centred, a little room above and under.
+    Formula(Rc<MathPaint>, Pixels),
+    /// A `mermaid` block's diagram, centred.
+    Diagram(Rc<Diagram>),
+}
+
+/// A formula drawn in a line's text, over the room its insert takes.
+#[derive(Clone)]
+pub(super) struct InlineFormula {
+    /// Where its room starts in the shown text, and how wide it is.
+    at: usize,
+    room: Pixels,
+    paint: Rc<MathPaint>,
+    em: Pixels,
 }
 
 /// One table cell as drawn: its text in the line, its place, its shaped text.
@@ -103,7 +131,7 @@ impl Cell {
 
 impl LaidLine {
     fn height(&self) -> Pixels {
-        self.text_height + self.image.as_ref().map_or(px(0.), |(_, s)| s.height)
+        self.text_height + self.figure.as_ref().map_or(px(0.), |(_, s)| s.height)
     }
 
     /// The position of `offset` (clamped to the line) relative to the line's top-left.
@@ -118,7 +146,7 @@ impl LaidLine {
                 .map_or(px(0.), |c| c.x_for(local));
             return point(x, px(0.));
         }
-        let shown = to_display(&self.hidden, local);
+        let shown = to_display_with(&self.hidden, &self.inserts, local);
         // Where a line wraps, the caret is at the start of the next row (GPUI
         // gives the end of the row before), as in every macOS text view.
         let wrapped_at = self
@@ -221,7 +249,7 @@ impl Layout {
         ) {
             Ok(i) | Err(i) => i,
         };
-        let local = to_buffer(&line.hidden, shown);
+        let local = to_buffer_with(&line.hidden, &line.inserts, shown);
         (line.range.start + local).min(line.range.end)
     }
 
@@ -655,35 +683,89 @@ fn paint_decoration(
             }
         }
         // Painted after the text, in `paint`.
-        Some(Decoration::Image(_)) | None => {}
+        Some(
+            Decoration::Image(_)
+            | Decoration::Formula(_)
+            | Decoration::Diagram(_)
+            | Decoration::Folded,
+        )
+        | None => {}
     }
 }
 
-/// An image under its line's text: loaded in the background the first time
-/// (a placeholder until then), then from GPUI's cache.
-fn paint_image(
+/// What a line draws in place of its hidden source: an image (loaded in the
+/// background the first time, a placeholder until then, then from GPUI's
+/// cache), a display formula or a diagram, both centred in the text's width.
+fn paint_figure(
+    line: &LaidLine,
+    (left, top, width): (Pixels, Pixels, Pixels),
+    input: &ShapeInput,
+    diagrams: &HashMap<u64, Arc<gpui_kit::Image>>,
+    window: &mut Window,
+    cx: &mut App,
+) {
+    let Some((figure, size)) = &line.figure else {
+        return;
+    };
+    let room = width - line.indent;
+    let pad = input.font_size * FORMULA_PAD;
+    let centred = left + line.indent + ((room - size.width) / 2.).max(px(0.));
+    let y = top + line.text_height;
+    match figure {
+        Figure::File(path) => {
+            let bounds = Bounds::new(point(left + line.indent, y), *size);
+            let source = Resource::Path(Arc::from(&**path));
+            match window.use_asset::<ImageAssetLoader>(&source, cx) {
+                Some(Ok(image)) => {
+                    let _ =
+                        window.paint_image(bounds, bounds, Corners::all(px(4.)), image, 0, false);
+                }
+                Some(Err(_)) => {}
+                None => {
+                    window.paint_quad(fill(bounds, input.palette.code_bg).corner_radii(px(4.)));
+                    // Frames until it is ready, so it shows as soon as it is, whatever
+                    // GPUI notifies (only while an image in view is loading).
+                    window.request_animation_frame();
+                }
+            }
+        }
+        Figure::Formula(paint, em) => {
+            paint.paint(point(centred, y + pad), *em, input.palette.text, window);
+        }
+        Figure::Diagram(d) => {
+            let bounds = Bounds::new(
+                point(centred, y + pad),
+                gpui_kit::size(size.width, size.height - pad * 2.),
+            );
+            let image = diagrams
+                .get(&d.id)
+                .and_then(|i| i.clone().use_render_image(window, cx));
+            if let Some(image) = image {
+                let _ = window.paint_image(bounds, bounds, Corners::default(), image, 0, false);
+            } else {
+                window.request_animation_frame();
+            }
+        }
+    }
+}
+
+/// The formulas drawn in a line's text, each centred on the room its insert
+/// takes, its baseline on the text's.
+fn paint_inline_formulas(
     line: &LaidLine,
     (left, top): (Pixels, Pixels),
     input: &ShapeInput,
     window: &mut Window,
-    cx: &mut App,
 ) {
-    let Some((path, size)) = &line.image else {
-        return;
-    };
-    let bounds = Bounds::new(point(left + line.indent, top + line.text_height), *size);
-    let source = Resource::Path(Arc::from(&**path));
-    match window.use_asset::<ImageAssetLoader>(&source, cx) {
-        Some(Ok(image)) => {
-            let _ = window.paint_image(bounds, bounds, Corners::all(px(4.)), image, 0, false);
-        }
-        Some(Err(_)) => {}
-        None => {
-            window.paint_quad(fill(bounds, input.palette.code_bg).corner_radii(px(4.)));
-            // Frames until it is ready, so it shows as soon as it is, whatever
-            // GPUI notifies (only while an image in view is loading).
-            window.request_animation_frame();
-        }
+    let layout = &line.shaped.unwrapped_layout;
+    let baseline = (line.line_height - layout.ascent - layout.descent) / 2. + layout.ascent;
+    for f in line.formulas.iter() {
+        let Some(p) = line.shaped.position_for_index(f.at, line.line_height) else {
+            continue;
+        };
+        let x = left + line.indent + p.x + (f.room - f.paint.width) / 2.;
+        let y = top + p.y + baseline - f.paint.height;
+        f.paint.paint(point(x, y), f.em, input.palette.text, window);
     }
 }
 
@@ -883,7 +965,9 @@ fn shape_line(
             indent: px(0.),
             decoration: style.decoration.clone(),
             text_height: line_height,
-            image: None,
+            figure: None,
+            inserts: Rc::default(),
+            formulas: Rc::default(),
             cells,
             columns: None,
         };
@@ -915,12 +999,14 @@ fn shape_line(
             indent: px(0.),
             decoration: style.decoration.clone(),
             text_height,
-            image: None,
+            figure: None,
+            inserts: Rc::default(),
+            formulas: Rc::default(),
             cells,
             columns: Some(edges.into()),
         };
     }
-    let (font_size, line_height) = match style.heading {
+    let (font_size, mut line_height) = match style.heading {
         Some(level) => {
             let size = input.font_size * HEADING_SCALE[usize::from(level.clamp(1, 6)) - 1];
             (size, size * HEADING_LINE_HEIGHT)
@@ -935,28 +1021,74 @@ fn shape_line(
         Some(Decoration::Code(_)) => CODE_PAD,
         _ => px(0.),
     };
-    let runs = runs_for(input, &range, style);
+    let room = (width - indent).max(px(1.));
+    // Each formula in the text: its source hidden, room for it in its place.
+    let em = font_size * KATEX_SCALE;
+    let (inserts, formulas) = inline_formulas(style, em, font_size, &input.font, ts);
+    let mut runs = runs_for(input, &range, style);
+    if !inserts.is_empty() {
+        let at: Vec<(usize, usize)> = inserts
+            .iter()
+            .map(|i| (to_display(&style.hidden, i.at), i.text.len()))
+            .collect();
+        runs = with_insert_runs(runs, &at, &input.font);
+    }
     let shaped = ts
         .shape_text(
-            SharedString::from(shown_text(&input.text[range.clone()], &style.hidden)),
+            SharedString::from(shown_text_with(
+                &input.text[range.clone()],
+                &style.hidden,
+                &inserts,
+            )),
             font_size,
             &runs,
-            Some((width - indent).max(px(1.))),
+            Some(room),
             None,
         )
         .ok()
         .and_then(|mut v| (!v.is_empty()).then(|| v.remove(0)))
         .unwrap_or_default();
-    // An image as wide as its file, or as the text if narrower, in proportion.
-    let image = match &style.decoration {
+    // A tall formula makes its line taller, its baseline where the text's is.
+    if !formulas.is_empty() {
+        let (a, d) = (
+            shaped.unwrapped_layout.ascent,
+            shaped.unwrapped_layout.descent,
+        );
+        for f in formulas.iter() {
+            line_height = line_height
+                .max(f.paint.height * 2. - a + d + px(2.))
+                .max(f.paint.depth * 2. + a - d + px(2.));
+        }
+    }
+    let figure = match &style.decoration {
+        // An image as wide as its file, or as the text if narrower, in proportion.
         Some(Decoration::Image(img)) if img.width > 0 => {
-            let w = px(img.width as f32).min(width - indent);
+            let w = px(img.width as f32).min(room);
             let h = w * (img.height as f32 / img.width as f32);
-            Some((img.path.clone(), size(w, h)))
+            Some((Figure::File(img.path.clone()), size(w, h)))
+        }
+        // A display formula, smaller when wider than the text.
+        Some(Decoration::Formula(f)) => {
+            let mut paint = MathPaint::new(f, em, ts);
+            let mut em = em;
+            if paint.width > room {
+                em *= f32::from(room) / f32::from(paint.width);
+                paint = MathPaint::new(f, em, ts);
+            }
+            let h = paint.height + paint.depth + font_size * (2. * FORMULA_PAD);
+            let w = paint.width;
+            Some((Figure::Formula(Rc::new(paint), em), size(w, h)))
+        }
+        // A diagram as wide as drawn, or as the text if narrower.
+        Some(Decoration::Diagram(d)) if d.width > 0. => {
+            let w = px(d.width).min(room);
+            let h = w * (d.height / d.width) + font_size * (2. * FORMULA_PAD);
+            Some((Figure::Diagram(d.clone()), size(w, h)))
         }
         _ => None,
     };
-    let text_height = if image.is_some() && shaped.len() == 0 {
+    let folded = matches!(style.decoration, Some(Decoration::Folded));
+    let text_height = if folded || (figure.is_some() && shaped.len() == 0) {
         px(0.)
     } else {
         shaped.size(line_height).height
@@ -969,10 +1101,105 @@ fn shape_line(
         indent,
         decoration: style.decoration.clone(),
         text_height,
-        image,
+        figure,
+        inserts: inserts.into(),
+        formulas: formulas.into(),
         cells: None,
         columns: None,
     }
+}
+
+/// Room above and under a display formula or a diagram, in ems of the text.
+const FORMULA_PAD: f32 = 0.5;
+
+/// The inserts that make room for the line's formulas, and the formulas laid
+/// out: each room a run of narrow no-break spaces (never wrapped inside) as
+/// wide as its formula, give or take half a space.
+fn inline_formulas(
+    style: &LineStyle,
+    em: Pixels,
+    font_size: Pixels,
+    font: &Font,
+    ts: &WindowTextSystem,
+) -> (Vec<Insert>, Vec<InlineFormula>) {
+    const ROOM: char = '\u{202F}';
+    if style.formulas.is_empty() {
+        return Default::default();
+    }
+    let space = ts
+        .advance(ts.resolve_font(font), font_size, ROOM)
+        .map(|s| s.width)
+        .unwrap_or(font_size * 0.2)
+        .max(px(0.5));
+    let mut inserts = Vec::new();
+    let mut formulas = Vec::new();
+    let mut shift = 0;
+    for (range, formula) in &style.formulas {
+        let paint = MathPaint::new(formula, em, ts);
+        let n = ((paint.width / space).round() as usize).max(1);
+        let text: String = std::iter::repeat_n(ROOM, n).collect();
+        formulas.push(InlineFormula {
+            at: to_display(&style.hidden, range.start) + shift,
+            room: space * n as f32,
+            paint: Rc::new(paint),
+            em,
+        });
+        shift += text.len();
+        inserts.push(Insert {
+            at: range.start,
+            text,
+        });
+    }
+    (inserts, formulas)
+}
+
+/// `runs` (of the shown text without inserts) with a transparent run for each
+/// insert `(where in that text, its length)`, cut where the inserts go.
+fn with_insert_runs(runs: Vec<TextRun>, at: &[(usize, usize)], font: &Font) -> Vec<TextRun> {
+    let mut pieces = Vec::new();
+    let mut pos = 0;
+    for run in runs {
+        let end = pos + run.len;
+        let mut start = pos;
+        for &(p, _) in at {
+            if p > start && p < end {
+                pieces.push(TextRun {
+                    len: p - start,
+                    ..run.clone()
+                });
+                start = p;
+            }
+        }
+        pieces.push(TextRun {
+            len: end - start,
+            ..run
+        });
+        pos = end;
+    }
+    let room = |len| {
+        text_run(
+            len,
+            font,
+            Hsla::transparent_black(),
+            HighlightStyle::default(),
+        )
+    };
+    let mut out = Vec::new();
+    let (mut pos, mut k) = (0, 0);
+    for piece in pieces {
+        while k < at.len() && at[k].0 <= pos {
+            out.push(room(at[k].1));
+            k += 1;
+        }
+        pos += piece.len;
+        if piece.len > 0 {
+            out.push(piece);
+        }
+    }
+    for &(_, len) in &at[k..] {
+        out.push(room(len));
+    }
+    out
 }
 
 /// The text runs of the shown line: the Live preview styles of its segments,
@@ -1127,7 +1354,7 @@ impl Element for EditorElement {
     ) -> (LayoutId, Self::RequestLayoutState) {
         let (styles, text) = self
             .editor
-            .update(cx, |ed, _| (ed.line_styles(), ed.shared_text()));
+            .update(cx, |ed, cx| (ed.line_styles(cx), ed.shared_text()));
         let ed = self.editor.read(cx);
         let style = window.text_style();
         let input = ShapeInput {
@@ -1231,9 +1458,13 @@ impl Element for EditorElement {
         window: &mut Window,
         cx: &mut App,
     ) {
-        let (focus, palette) = {
+        let (focus, palette, diagrams) = {
             let ed = self.editor.read(cx);
-            (ed.focus_handle.clone(), ed.palette)
+            (
+                ed.focus_handle.clone(),
+                ed.palette,
+                ed.diagram_images.clone(),
+            )
         };
         window.handle_input(
             &focus,
@@ -1314,7 +1545,15 @@ impl Element for EditorElement {
             let Some(top) = on_screen(i, line) else {
                 continue;
             };
-            paint_image(line, (layout.origin.x, top), input, window, cx);
+            paint_figure(
+                line,
+                (layout.origin.x, top, layout.width),
+                input,
+                &diagrams,
+                window,
+                cx,
+            );
+            paint_inline_formulas(line, (layout.origin.x, top), input, window);
             // A cell's text never overflows its column: cut at its edge.
             for cell in line.cells.iter().flat_map(|c| c.iter()) {
                 let at = point(layout.origin.x + cell.x, top);

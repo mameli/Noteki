@@ -841,6 +841,8 @@ pub enum MdSpanKind {
     Footnote,
     /// A Tag of the Properties table's `tags` row, drawn as a chip.
     TagChip,
+    /// A formula RaTeX cannot typeset, shown as written in red (SPEC).
+    MathError,
     /// The parts of a code block's code, coloured by its language.
     CodeComment,
     CodeString,
@@ -1046,7 +1048,8 @@ pub fn line_spans(
                             push(r(tok.inner.clone()), MdSpanKind::Highlight);
                         }
                         InlineKind::Tag => push(r(tok.range.clone()), MdSpanKind::Tag),
-                        // Math stays visible as code (SPEC), marks and all.
+                        // Math as written, marks and all, as code: the editor draws
+                        // it as its formula off the cursor (core::editor::figures).
                         InlineKind::Math => push(r(tok.range.clone()), MdSpanKind::InlineCode),
                     }
                 }

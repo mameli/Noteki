@@ -1088,6 +1088,110 @@ fn heights(cx: &mut TestAppContext, f: &Fixture) -> Vec<f32> {
     app(cx, f, |a, _, cx| a.editor().read(cx).line_heights())
 }
 
+// ---- Formulas and diagrams ----
+
+#[gpui_kit::test]
+fn a_math_block_is_its_formula_until_the_cursor_comes_in(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let text = "testo\n$$\n\\frac{a}{b}\n$$\nfine";
+    editor_with(cx, &f, text, 0);
+    let h = heights(cx, &f);
+    assert!(h[1] > h[0], "the formula on the first line: {h:?}");
+    assert_eq!(
+        (h[2], h[3]),
+        (0., 0.),
+        "the block's other lines folded: {h:?}"
+    );
+    let top = point_at(cx, &f, 0).1;
+    let inside = text.find("\\frac").unwrap();
+    app(cx, &f, |a, _, cx| {
+        a.editor()
+            .clone()
+            .update(cx, |ed, cx| ed.set_selected_range(inside..inside, cx))
+    });
+    let h = heights(cx, &f);
+    assert!(
+        h[1..4].iter().all(|&l| l > 0. && l < 40.),
+        "as written: {h:?}"
+    );
+    assert_eq!(point_at(cx, &f, 0).1, top, "the line above stays");
+}
+
+#[gpui_kit::test]
+fn a_formula_in_the_text_takes_its_sources_place(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let text = "x $\\frac{a}{b}$ y\naltro";
+    let y = text.find(" y").unwrap() + 1;
+    editor_with(cx, &f, text, text.len());
+    let drawn = (heights(cx, &f)[0], point_at(cx, &f, y).0);
+    // The cursor on the line: the formula as written, the line as tall as text.
+    app(cx, &f, |a, _, cx| {
+        a.editor()
+            .clone()
+            .update(cx, |ed, cx| ed.set_selected_range(1..1, cx))
+    });
+    let written = (heights(cx, &f)[0], point_at(cx, &f, y).0);
+    assert!(
+        drawn.0 > written.0,
+        "a fraction makes its line taller: {drawn:?} {written:?}"
+    );
+    assert!(
+        drawn.1 < written.1,
+        "narrower than its source: {drawn:?} {written:?}"
+    );
+}
+
+#[gpui_kit::test]
+fn a_mermaid_fence_is_its_diagram_once_drawn(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let text = "```mermaid\nflowchart LR\n  A[Uno] --> B[Due]\n```\nfine";
+    editor_with(cx, &f, text, text.len());
+    // Drawn in the background, then shown.
+    cx.run_until_parked();
+    let h = heights(cx, &f);
+    assert!(h[0] > 40., "the diagram on the fence's line: {h:?}");
+    assert_eq!((h[1], h[2], h[3]), (0., 0., 0.), "{h:?}");
+    // The cursor in the fence: the code.
+    app(cx, &f, |a, _, cx| {
+        a.editor()
+            .clone()
+            .update(cx, |ed, cx| ed.set_selected_range(15..15, cx))
+    });
+    let h = heights(cx, &f);
+    assert!(
+        h[..4].iter().all(|&l| l > 0. && l < 40.),
+        "as written: {h:?}"
+    );
+}
+
+#[gpui_kit::test]
+fn a_diagram_written_with_the_cursor_in_it_is_drawn_once_it_leaves(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let text = "```mermaid\nflowchart LR\n  A[Uno] --> B[Due]\n```\nfine";
+    editor_with(cx, &f, text, 15);
+    cx.run_until_parked();
+    assert!(heights(cx, &f)[0] < 40., "not drawn while written");
+    let end = text.len();
+    app(cx, &f, |a, _, cx| {
+        a.editor()
+            .clone()
+            .update(cx, |ed, cx| ed.set_selected_range(end..end, cx))
+    });
+    frame(cx, &f);
+    cx.run_until_parked();
+    assert!(heights(cx, &f)[0] > 40., "drawn once the cursor left");
+}
+
+#[gpui_kit::test]
+fn what_cannot_be_drawn_stays_as_written(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let text = "```mermaid\nnot a diagram\n```\n$$\n\\frac{a}{\n$$\nfine";
+    editor_with(cx, &f, text, text.len());
+    cx.run_until_parked();
+    let h = heights(cx, &f);
+    assert!(h[..6].iter().all(|&l| l > 0. && l < 40.), "{h:?}");
+}
+
 #[gpui_kit::test]
 fn headings_are_taller_the_higher_their_level(cx: &mut TestAppContext) {
     let f = fixture(cx);
@@ -1409,6 +1513,12 @@ fn walking_down_the_test_note_never_moves_the_lines_above(cx: &mut TestAppContex
         .filter(|&o| o < RENDERING.len())
         .collect();
     editor_with(cx, &f, RENDERING, 0);
+    let blocks: Vec<std::ops::Range<usize>> = noteki_gpui::core::editor::figures::figure_blocks(
+        &noteki_gpui::core::markdown::lines(RENDERING),
+    )
+    .into_iter()
+    .map(|b| b.lines.start + 1..b.lines.end)
+    .collect();
     let mut tops: Vec<f32> = Vec::new();
     for line in 0..starts.len() {
         // The top of every line up to this one, in the text (the view scrolls
@@ -1423,7 +1533,18 @@ fn walking_down_the_test_note_never_moves_the_lines_above(cx: &mut TestAppContex
                 .collect()
         });
         let now = all[..line].to_vec();
-        let moved = now.iter().zip(&tops).any(|(a, b)| (a - b).abs() > 0.5); // the scroll is rounded to pixels
+        // The line the cursor left may change height (SPEC): a block drawn as
+        // one figure is one line, folded again as the cursor leaves it.
+        let left = blocks
+            .iter()
+            .find(|b| line > 0 && b.contains(&(line - 1)))
+            .cloned()
+            .unwrap_or(line..line);
+        let moved = now
+            .iter()
+            .zip(&tops)
+            .enumerate()
+            .any(|(i, (a, b))| !left.contains(&i) && (a - b).abs() > 0.5); // the scroll is rounded to pixels
         assert!(
             !moved,
             "the cursor came onto line {line}: {now:?} vs {tops:?}"

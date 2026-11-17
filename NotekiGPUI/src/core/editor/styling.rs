@@ -4,12 +4,14 @@
 use std::ops::Range;
 use std::rc::Rc;
 
+use crate::core::diagram::Diagram;
 use crate::core::editor::properties::{property_lines, PropertyLine};
 use crate::core::editor::table::{tables, RowKind, TableRow};
 use crate::core::markdown::{
     callout_marks, image_embed, is_setext_candidate, lines, list_item, parse_atx_heading,
     quote_prefix, BlockKind, Line, ListKind, MdSpan, MdSpanKind,
 };
+use crate::core::math::Formula;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct LineStyle {
@@ -24,6 +26,9 @@ pub struct LineStyle {
     pub hidden: Vec<Range<usize>>,
     /// What the editor paints around the line's text, never changing its height.
     pub decoration: Option<Decoration>,
+    /// The line's formulas drawn in its text, each in place of its source
+    /// (`$…$`, relative to the line's start, also hidden).
+    pub formulas: Vec<(Range<usize>, Rc<Formula>)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -51,6 +56,13 @@ pub enum Decoration {
         color: CalloutColor,
         header: bool,
     },
+    /// The first line of a `$$` block, drawn as its formula; the block's
+    /// other lines are `Folded`.
+    Formula(Rc<Formula>),
+    /// The opening fence of a `mermaid` block, drawn as its diagram.
+    Diagram(Rc<Diagram>),
+    /// A line of a block drawn as one figure on its first line: not drawn.
+    Folded,
 }
 
 /// The colours of Obsidian's callout types, as the theme draws them.
@@ -469,6 +481,7 @@ fn style_of(line: &Line, spans: Vec<(Range<usize>, MdSpanKind)>) -> LineStyle {
         segments: segments(spans),
         hidden: merged,
         decoration,
+        formulas: Vec::new(),
     }
 }
 
