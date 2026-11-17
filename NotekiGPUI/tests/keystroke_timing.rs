@@ -31,6 +31,7 @@ fn keystroke_timing(cx: &mut TestAppContext) {
         vault: Some(dir.join("vault")),
         watch: false,
         trash_dir: Some(dir.join("t")),
+        slot: 0,
     };
     let (window, app) = cx.update(|cx| {
         gpui_kit::init(cx);

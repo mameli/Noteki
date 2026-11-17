@@ -1,8 +1,6 @@
 use std::path::PathBuf;
 
-use gpui_kit::component::TitleBar;
-use gpui_kit::{px, size, AppContext as _, Bounds, WindowBounds, WindowOptions};
-use noteki_gpui::app::{register_keybindings, AppConfig, NotekiApp};
+use noteki_gpui::app::{open_noteki_window, register_keybindings, AppConfig};
 use noteki_gpui::core::opening::url_to_path;
 
 /// Environment overrides, used by `scripts/eval.sh` for a smoke run that
@@ -33,17 +31,8 @@ fn main() {
         gpui_kit::init(cx);
         register_keybindings(cx);
 
-        let bounds = Bounds::centered(None, size(px(1280.), px(820.)), cx);
-        let options = WindowOptions {
-            window_bounds: Some(WindowBounds::Windowed(bounds)),
-            titlebar: Some(TitleBar::title_bar_options()),
-            window_min_size: Some(size(px(640.), px(420.))),
-            ..Default::default()
-        };
-        let (window, noteki) = gpui_kit::open_window(options, cx, |window, cx| {
-            cx.new(|cx| NotekiApp::new(config, window, cx))
-        })
-        .expect("failed to open the Noteki window");
+        let (window, noteki) =
+            open_noteki_window(config, cx).expect("failed to open the Noteki window");
         cx.activate(true);
         cx.spawn(async move |cx| {
             while let Ok(urls) = opened_rx.recv().await {

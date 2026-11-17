@@ -51,6 +51,8 @@ MUTANTS=(
   "src/core/opening.rs|Some(true) => Opened::Folder(rel),|Some(true) => Opened::File(rel),|--lib|a Vault folder opened from the Finder goes to a Tab"
   "src/app/mod.rs|while let Some(ix) = inside(self) {|while let Some(ix) = None::<usize> {|--test ui|a folder newly excluded keeps its Tabs open"
   "src/editor/mod.rs|d.max_w(self.font_size * (chars as f32 * 0.5))|d.max_w(px(820.))|--test ui|the line length setting does not change the width"
+  "src/app/settings.rs|out.sessions = disk.sessions;|out.sessions = self.sessions.clone();|--lib|a window overwrites the other windows' sessions with its stale copy"
+  "src/app/mod.rs|o.settings.adopt_shared(\&shared);|let _ = \&shared;|--test ui|a setting changed in one window does not reach the others"
 )
 
 # Restore with a fresh mtime: `mv` would keep the backup's older mtime and

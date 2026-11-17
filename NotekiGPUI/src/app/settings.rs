@@ -139,6 +139,58 @@ impl Default for Settings {
     }
 }
 
+/// The key a window's session is kept under: the Vault's root for the first
+/// window, `root#n` for the others (ADR 0010: each window its own Tabs).
+pub fn session_key(root: &str, slot: usize) -> String {
+    if slot == 0 {
+        root.to_string()
+    } else {
+        format!("{root}#{slot}")
+    }
+}
+
+impl Settings {
+    /// The slots of the other windows remembered for the Vault at `root`.
+    pub fn other_slots(&self, root: &str) -> Vec<usize> {
+        let prefix = format!("{root}#");
+        let mut slots: Vec<usize> = self
+            .sessions
+            .keys()
+            .filter_map(|k| k.strip_prefix(&prefix)?.parse().ok())
+            .filter(|&n| n > 0)
+            .collect();
+        slots.sort_unstable();
+        slots
+    }
+
+    /// What one window saves: its settings, with the sessions on `disk` (the
+    /// other windows') and its own under `key`.
+    pub fn merged_for_save(&self, disk: Settings, key: &str) -> Settings {
+        let mut out = self.clone();
+        out.sessions = disk.sessions;
+        match self.sessions.get(key) {
+            Some(mine) => out.sessions.insert(key.to_string(), mine.clone()),
+            None => out.sessions.remove(key),
+        };
+        out
+    }
+
+    /// Takes the settings every window shares (SPEC › Window: they apply at
+    /// once to every window's editor); sidebars and view stay per window.
+    pub fn adopt_shared(&mut self, from: &Settings) {
+        self.theme_name = from.theme_name;
+        self.appearance = from.appearance;
+        self.font_size = from.font_size;
+        self.font_family = from.font_family.clone();
+        self.code_font = from.code_font.clone();
+        self.line_length = from.line_length;
+        self.limit_line_length = from.limit_line_length;
+        self.excluded_folders = from.excluded_folders.clone();
+        self.daily_note_folder = from.daily_note_folder.clone();
+        self.daily_note_format = from.daily_note_format.clone();
+    }
+}
+
 pub const MAX_RECENT_NOTES: usize = 40;
 pub const MAX_RECENT_VAULTS: usize = 8;
 
@@ -222,6 +274,52 @@ mod tests {
         assert_eq!(s.zoomed(-1.), 10.);
         let old: Settings = serde_json::from_str("{}").unwrap();
         assert_eq!(old.font_size, 15., "a file from before keeps the default");
+    }
+
+    #[test]
+    fn each_window_saves_its_own_session_and_keeps_the_others() {
+        let tabs = |p: &str| VaultSession {
+            open_tabs: vec![p.into()],
+            ..Default::default()
+        };
+        let mut disk = Settings::default();
+        disk.sessions.insert(session_key("/v", 0), tabs("a.md"));
+        disk.sessions.insert(session_key("/v", 2), tabs("b.md"));
+        // The second window, whose copy of the first window's session is stale.
+        let mut mine = Settings::default();
+        mine.sessions.insert("/v".into(), tabs("old.md"));
+        mine.sessions.insert(session_key("/v", 2), tabs("c.md"));
+        mine.font_size = 20.;
+        let out = mine.merged_for_save(disk.clone(), "/v#2");
+        assert_eq!(out.sessions["/v"], tabs("a.md"), "the other window's kept");
+        assert_eq!(out.sessions["/v#2"], tabs("c.md"), "its own written");
+        assert_eq!(out.font_size, 20.);
+        assert_eq!(disk.other_slots("/v"), vec![2]);
+        assert!(disk.other_slots("/w").is_empty());
+        mine.sessions.remove("/v#2");
+        assert!(
+            !mine
+                .merged_for_save(disk, "/v#2")
+                .sessions
+                .contains_key("/v#2"),
+            "a closed window forgotten"
+        );
+    }
+
+    #[test]
+    fn shared_settings_leave_the_window_layout_alone() {
+        let mut a = Settings::default();
+        let b = Settings {
+            font_size: 22.,
+            line_length: 60,
+            left_sidebar_open: false,
+            view_mode: ViewMode::Reader,
+            ..Default::default()
+        };
+        a.adopt_shared(&b);
+        assert_eq!((a.font_size, a.line_length), (22., 60));
+        assert!(a.left_sidebar_open);
+        assert_eq!(a.view_mode, ViewMode::Live);
     }
 
     #[test]

@@ -79,6 +79,7 @@ actions!(
         InsertWikilinkAction,
         FollowLinkUnderCursorAction,
         OpenSettingsAction,
+        NewWindowAction,
     ]
 );
 
@@ -95,7 +96,7 @@ pub fn register_keybindings(cx: &mut App) {
         KeyBinding::new("cmd-t", OpenQuickSwitcherNewTab, None),
         KeyBinding::new("cmd-shift-p", OpenCommandPalette, None),
         KeyBinding::new("cmd-n", NewNoteAction, None),
-        KeyBinding::new("cmd-shift-n", NewFolderAction, None),
+        KeyBinding::new("cmd-shift-n", NewWindowAction, None),
         KeyBinding::new("cmd-shift-d", DailyNoteAction, None),
         KeyBinding::new("cmd-w", CloseTabAction, None),
         KeyBinding::new("cmd-shift-t", ReopenClosedTabAction, None),
@@ -123,6 +124,30 @@ pub fn register_keybindings(cx: &mut App) {
     crate::editor::register_keybindings(cx);
 }
 
+/// Every Noteki window open, so a setting changed in one reaches the others.
+#[derive(Default)]
+struct OpenWindows(Vec<gpui_kit::WeakEntity<NotekiApp>>);
+impl gpui_kit::Global for OpenWindows {}
+
+/// Opens a window of Noteki with `config`.
+pub fn open_noteki_window(
+    config: AppConfig,
+    cx: &mut App,
+) -> Option<(gpui_kit::AnyWindowHandle, Entity<NotekiApp>)> {
+    use gpui_kit::{px, size, Bounds, WindowBounds, WindowOptions};
+    let bounds = Bounds::centered(None, size(px(1280.), px(820.)), cx);
+    let options = WindowOptions {
+        window_bounds: Some(WindowBounds::Windowed(bounds)),
+        titlebar: Some(gpui_kit::component::TitleBar::title_bar_options()),
+        window_min_size: Some(size(px(640.), px(420.))),
+        ..Default::default()
+    };
+    gpui_kit::open_window(options, cx, |window, cx| {
+        cx.new(|cx| NotekiApp::new(config, window, cx))
+    })
+    .ok()
+}
+
 /// SPEC › Saving: about one second after the last change.
 pub const AUTOSAVE_DELAY: Duration = Duration::from_millis(1000);
 /// File-system events are handled once they have been quiet for this long,
@@ -140,6 +165,8 @@ pub struct AppConfig {
     pub watch: bool,
     /// Where "Move to Trash" moves files; `None` is `~/.Trash`.
     pub trash_dir: Option<PathBuf>,
+    /// Which window of the Vault this is: 0 the first, then ⇧⌘N's.
+    pub slot: usize,
 }
 
 impl AppConfig {
@@ -151,6 +178,7 @@ impl AppConfig {
             vault: None,
             watch: true,
             trash_dir: None,
+            slot: 0,
         }
     }
 }
@@ -347,6 +375,8 @@ pub struct NotekiApp {
     last_fs_event: Option<Instant>,
     autosave: Option<Task<()>>,
     settings_window: Option<gpui_kit::AnyWindowHandle>,
+    /// This view's window.
+    window: gpui_kit::AnyWindowHandle,
 
     _subscriptions: Vec<Subscription>,
 }
@@ -433,6 +463,7 @@ impl NotekiApp {
             last_fs_event: None,
             autosave: None,
             settings_window: None,
+            window: window.window_handle(),
             _subscriptions: subscriptions,
         };
 
@@ -454,11 +485,79 @@ impl NotekiApp {
                     None
                 }
             });
+        let me = cx.entity().downgrade();
+        cx.default_global::<OpenWindows>().0.push(me);
+        if app.config.slot > 0 {
+            // Closed by the user, it does not come back at the next launch.
+            let this = cx.entity().downgrade();
+            window.on_window_should_close(cx, move |_, cx| {
+                let _ = this.update(cx, |app, _| app.forget_session());
+                true
+            });
+        }
         if let Some(root) = initial {
             let _ = app.open_vault(&root, window, cx);
         }
         app.start_fs_poller(window, cx);
         app
+    }
+
+    /// The other Noteki windows open.
+    fn other_windows(&self, cx: &Context<Self>) -> Vec<Entity<NotekiApp>> {
+        let me = cx.entity_id();
+        cx.try_global::<OpenWindows>()
+            .map(|w| w.0.iter().filter_map(|a| a.upgrade()).collect::<Vec<_>>())
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|a| a.entity_id() != me)
+            .filter(|a| cx.windows().contains(&a.read(cx).window)) // not closed
+            .collect()
+    }
+
+    /// ⇧⌘N: another window of this Vault, with its own Tabs (ADR 0010).
+    pub fn open_another_window(&mut self, cx: &mut Context<Self>) {
+        let Some(root) = self.vault.as_ref().map(|v| v.root.clone()) else {
+            return;
+        };
+        let taken: HashSet<usize> = self
+            .other_windows(cx)
+            .iter()
+            .map(|a| a.read(cx).config.slot)
+            .chain([self.config.slot])
+            .collect();
+        let slot = (1..).find(|n| !taken.contains(n)).unwrap_or(1);
+        self.open_window_in_slot(&root, slot, cx);
+    }
+
+    fn open_window_in_slot(&mut self, root: &Path, slot: usize, cx: &mut Context<Self>) {
+        let config = AppConfig {
+            vault: Some(root.to_path_buf()),
+            slot,
+            ..self.config.clone()
+        };
+        // Opened once this update is over: the new window reads the settings file.
+        cx.defer(move |cx| {
+            open_noteki_window(config, cx);
+        });
+    }
+
+    /// Forgets this window's session (closed by the user).
+    fn forget_session(&mut self) {
+        if let Some(root) = self
+            .vault
+            .as_ref()
+            .map(|v| v.root.to_string_lossy().to_string())
+        {
+            self.settings
+                .sessions
+                .remove(&settings::session_key(&root, self.config.slot));
+            self.persist();
+        }
+    }
+
+    /// The key of this window's session in the settings.
+    fn session_key(&self, root: &Path) -> String {
+        settings::session_key(&root.to_string_lossy(), self.config.slot)
     }
 
     // ---- Accessors (used by the view and by the tests) ----
@@ -562,14 +661,23 @@ impl NotekiApp {
     // ---- Settings ----
 
     fn persist(&mut self) {
-        if let Err(e) = settings::save(self.config.settings_path.as_deref(), &self.settings) {
+        // Other windows write the same file: their sessions are kept as they are.
+        let path = self.config.settings_path.as_deref();
+        let out = match (path, &self.vault) {
+            (Some(p), Some(v)) if p.exists() => {
+                let key = self.session_key(&v.root);
+                self.settings.merged_for_save(settings::load(Some(p)), &key)
+            }
+            _ => self.settings.clone(),
+        };
+        if let Err(e) = settings::save(path, &out) {
             self.set_error(format!("Could not save preferences: {e}"));
         }
     }
 
     fn persist_session(&mut self) {
         let Some(vault) = &self.vault else { return };
-        let key = vault.root.to_string_lossy().to_string();
+        let key = self.session_key(&vault.root);
         let mut expanded: Vec<String> = self.expanded_folders.iter().cloned().collect();
         expanded.sort();
         let session = settings::VaultSession {
@@ -654,6 +762,27 @@ impl NotekiApp {
     ) {
         let before = self.settings.clone();
         change(&mut self.settings);
+        self.apply_settings(&before, window, cx);
+        self.persist();
+        // The other windows take them too.
+        let shared = self.settings.clone();
+        for other in self.other_windows(cx) {
+            let (handle, shared) = (other.read(cx).window, shared.clone());
+            cx.defer(move |cx| {
+                let _ = handle.update(cx, |_, window, cx| {
+                    other.update(cx, |o, cx| {
+                        let before = o.settings.clone();
+                        o.settings.adopt_shared(&shared);
+                        o.apply_settings(&before, window, cx);
+                    })
+                });
+            });
+        }
+    }
+
+    /// Applies what changed since `before`: the theme, the editor's text, the
+    /// Vault's Excluded folders.
+    fn apply_settings(&mut self, before: &Settings, window: &mut Window, cx: &mut Context<Self>) {
         let look = (self.settings.theme_name, self.settings.appearance);
         if look != (before.theme_name, before.appearance) {
             self.apply_theme(window, cx);
@@ -674,7 +803,6 @@ impl NotekiApp {
                 self.exclude_folders(&excluded, window, cx);
             }
         }
-        self.persist();
         cx.notify();
     }
 
@@ -706,27 +834,20 @@ impl NotekiApp {
     }
 
     /// ⌘+ (`step` 1), ⌘− (−1), ⌘0 (`None`): the text's size, remembered.
-    pub(crate) fn zoom(&mut self, step: Option<f32>, cx: &mut Context<Self>) {
-        self.settings.font_size = match step {
+    pub(crate) fn zoom(&mut self, step: Option<f32>, window: &mut Window, cx: &mut Context<Self>) {
+        let size = match step {
             Some(step) => self.settings.zoomed(step),
             None => settings::DEFAULT_FONT_SIZE,
         };
-        self.persist(); // the text size is remembered
-        let size = gpui_kit::px(self.settings.font_size);
-        self.editor.update(cx, |ed, cx| ed.set_font_size(size, cx));
-        cx.notify();
+        self.update_settings(|s| s.font_size = size, window, cx);
     }
 
     pub(crate) fn cycle_theme(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.settings.theme_name = self.settings.theme_name.next();
-        self.persist();
-        self.apply_theme(window, cx);
+        self.update_settings(|s| s.theme_name = s.theme_name.next(), window, cx);
     }
 
     pub(crate) fn cycle_appearance(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.settings.appearance = self.settings.appearance.next();
-        self.persist();
-        self.apply_theme(window, cx);
+        self.update_settings(|s| s.appearance = s.appearance.next(), window, cx);
     }
 
     pub fn theme_name(&self) -> NotekiThemeName {
@@ -756,9 +877,23 @@ impl NotekiApp {
         let session = self
             .settings
             .sessions
-            .get(&key)
+            .get(&self.session_key(&vault.root))
             .cloned()
             .unwrap_or_default();
+        // Another Vault: the other windows close (SPEC › Window).
+        let switching = self.vault.as_ref().is_some_and(|v| v.root != vault.root);
+        if switching {
+            for other in self.other_windows(cx) {
+                let handle = other.read(cx).window;
+                other.update(cx, |o, _| {
+                    o.flush_all();
+                    o.forget_session();
+                });
+                cx.defer(move |cx| {
+                    let _ = handle.update(cx, |_, window, _| window.remove_window());
+                });
+            }
+        }
 
         self.tabs = Tabs::default();
         self.docs.clear();
@@ -787,6 +922,19 @@ impl NotekiApp {
         self.vault = Some(vault);
         self.start_watcher(&root);
         self.refresh_tree(cx);
+        if self.config.slot == 0 {
+            // The Vault's other windows, as they were left.
+            let open: HashSet<usize> = self
+                .other_windows(cx)
+                .iter()
+                .map(|a| a.read(cx).config.slot)
+                .collect();
+            for slot in self.settings.other_slots(&root.to_string_lossy()) {
+                if !open.contains(&slot) {
+                    self.open_window_in_slot(&root, slot, cx);
+                }
+            }
+        }
 
         for path in &session.open_tabs {
             self.load_into_tabs(path, OpenIn::NewTab);

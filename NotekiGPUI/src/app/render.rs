@@ -108,6 +108,7 @@ impl Render for NotekiApp {
                     cx,
                 )
             }))
+            .on_action(cx.listener(|this, _: &NewWindowAction, _, cx| this.open_another_window(cx)))
             .on_action(cx.listener(|this, _: &OpenSettingsAction, window, cx| {
                 this.open_settings(window, cx)
             }))
@@ -132,9 +133,9 @@ impl Render for NotekiApp {
                     this.cycle_tab(false, window, cx)
                 }),
             )
-            .on_action(cx.listener(|this, _: &ZoomIn, _, cx| this.zoom(Some(1.), cx)))
-            .on_action(cx.listener(|this, _: &ZoomOut, _, cx| this.zoom(Some(-1.), cx)))
-            .on_action(cx.listener(|this, _: &ZoomReset, _, cx| this.zoom(None, cx)))
+            .on_action(cx.listener(|this, _: &ZoomIn, w, cx| this.zoom(Some(1.), w, cx)))
+            .on_action(cx.listener(|this, _: &ZoomOut, w, cx| this.zoom(Some(-1.), w, cx)))
+            .on_action(cx.listener(|this, _: &ZoomReset, w, cx| this.zoom(None, w, cx)))
             .on_action(cx.listener(|this, _: &NavigateBackAction, window, cx| {
                 this.navigate(true, window, cx)
             }))
@@ -495,8 +496,8 @@ impl NotekiApp {
                 )),
             )
             .child(
-                button("new-folder", AssetIcon::FolderPlus, "New folder (⇧⌘N)").on_click(
-                    cx.listener(|this, _, window, cx| {
+                button("new-folder", AssetIcon::FolderPlus, "New folder").on_click(cx.listener(
+                    |this, _, window, cx| {
                         let folder = this.target_folder(cx);
                         this.open_name_prompt(
                             PromptKind::NewFolder,
@@ -505,8 +506,8 @@ impl NotekiApp {
                             window,
                             cx,
                         )
-                    }),
-                ),
+                    },
+                )),
             )
             .child(
                 button("daily-note", AssetIcon::CalendarDays, "Today's note (⇧⌘D)")
@@ -1500,6 +1501,9 @@ impl NotekiApp {
             }),
             ("Light / dark / system", AssetIcon::Sun, |a, w, cx| {
                 a.cycle_appearance(w, cx)
+            }),
+            ("New window", AssetIcon::SquarePlus, |a, _, cx| {
+                a.open_another_window(cx)
             }),
             ("Settings…", AssetIcon::Settings, |a, w, cx| {
                 a.open_settings(w, cx)

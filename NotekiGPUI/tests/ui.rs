@@ -66,6 +66,7 @@ fn open_app(
         vault: Some(vault.to_path_buf()),
         watch: false, // tests deliver file-system changes themselves
         trash_dir: Some(dir.join("Trash")),
+        slot: 0,
     };
     cx.update(|cx| {
         gpui_kit::init(cx);
@@ -399,6 +400,125 @@ fn the_settings_window_opens_once(cx: &mut TestAppContext) {
     );
     let saved = std::fs::read_to_string(f.dir.join("settings.json")).unwrap();
     assert!(saved.to_lowercase().contains("everforest"), "{saved}");
+}
+
+// ---- Windows ----
+
+/// The Noteki view of every window open but `except`.
+fn other_apps(
+    cx: &mut TestAppContext,
+    except: &[AnyWindowHandle],
+) -> Vec<(AnyWindowHandle, Entity<NotekiApp>)> {
+    let windows = cx.update(|cx| cx.windows());
+    windows
+        .into_iter()
+        .filter(|w| !except.contains(w))
+        .filter_map(|w| {
+            cx.update_window(w, |root, _, cx| {
+                root.downcast::<gpui_kit::base::Root>()
+                    .ok()
+                    .and_then(|r| r.read(cx).view().clone().downcast::<NotekiApp>().ok())
+            })
+            .ok()
+            .flatten()
+            .map(|a| (w, a))
+        })
+        .collect()
+}
+
+fn tab_paths(cx: &mut TestAppContext, app: &Entity<NotekiApp>) -> Vec<String> {
+    cx.update(|cx| app.read(cx).tabs().iter().map(|t| t.path.clone()).collect())
+}
+
+#[gpui_kit::test]
+fn a_second_window_has_its_own_tabs_and_follows_the_file(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    app(cx, &f, |a, w, cx| {
+        a.open_path("Ideas.md", OpenIn::CurrentTab, w, cx)
+    });
+    app(cx, &f, |a, _, cx| a.open_another_window(cx));
+    cx.run_until_parked();
+    let others = other_apps(cx, &[f.window]);
+    assert_eq!(others.len(), 1, "⇧⌘N opens one window");
+    let (w2, b) = others[0].clone();
+    let in_b = |cx: &mut TestAppContext,
+                run: &dyn Fn(&mut NotekiApp, &mut Window, &mut Context<NotekiApp>)| {
+        cx.update_window(w2, |_, window, cx| b.update(cx, |b, cx| run(b, window, cx)))
+            .unwrap();
+        cx.run_until_parked();
+    };
+    in_b(cx, &|b, w, cx| {
+        b.open_path("Projects/Launch plan.md", OpenIn::CurrentTab, w, cx);
+        b.open_path("Ideas.md", OpenIn::NewTab, w, cx);
+    });
+    assert!(tab_paths(cx, &b).contains(&"Projects/Launch plan.md".to_string()));
+    assert!(
+        !app(cx, &f, |a, _, _| a
+            .tabs()
+            .contains("Projects/Launch plan.md")),
+        "its own Tabs"
+    );
+
+    // Typed in the first window, saved, and seen by the second through the file.
+    type_in_editor(cx, &f, "Insieme ");
+    wait_autosave(cx);
+    let abs = f.vault.join("Ideas.md");
+    in_b(cx, &|b, w, cx| b.handle_fs_changes(&[abs.clone()], w, cx));
+    let text_b = cx.update(|cx| b.read(cx).editor_text(cx));
+    assert!(text_b.starts_with("Insieme "), "{text_b}");
+
+    // A setting changed in one window reaches the other.
+    app(cx, &f, |a, w, cx| {
+        a.update_settings(|s| s.font_size = 21., w, cx)
+    });
+    cx.run_until_parked();
+    assert_eq!(cx.update(|cx| b.read(cx).settings().font_size), 21.);
+
+    // Its Tabs come back at the next launch; the first window's stay its own.
+    let saved = noteki_gpui::app::settings::load(Some(&f.dir.join("settings.json")));
+    let root = app(cx, &f, |a, _, _| {
+        a.vault().unwrap().root.to_string_lossy().to_string()
+    });
+    let b_tabs = &saved.sessions[&format!("{root}#1")].open_tabs;
+    assert!(
+        b_tabs.contains(&"Projects/Launch plan.md".to_string()),
+        "{b_tabs:?}"
+    );
+    assert!(!saved.sessions[&root]
+        .open_tabs
+        .contains(&"Projects/Launch plan.md".to_string()));
+    cx.update_window(w2, |_, window, _| window.remove_window())
+        .unwrap(); // as at quit
+    cx.run_until_parked();
+    let (relaunched, _) = open_app(cx, &f.dir, &f.vault);
+    cx.run_until_parked();
+    let restored = other_apps(cx, &[f.window, relaunched]);
+    assert_eq!(restored.len(), 1, "the second window reopened");
+    let tabs = tab_paths(cx, &restored[0].1);
+    assert!(
+        tabs.contains(&"Projects/Launch plan.md".to_string()),
+        "{tabs:?}"
+    );
+}
+
+#[gpui_kit::test]
+fn choosing_another_vault_closes_the_other_windows(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    app(cx, &f, |a, _, cx| a.open_another_window(cx));
+    cx.run_until_parked();
+    assert_eq!(other_apps(cx, &[f.window]).len(), 1);
+    let other = f.dir.join("Altro");
+    std::fs::create_dir_all(&other).unwrap();
+    std::fs::write(other.join("Nota.md"), "x").unwrap();
+    app(cx, &f, |a, w, cx| a.open_vault(&other, w, cx)).unwrap();
+    cx.run_until_parked();
+    assert!(other_apps(cx, &[f.window]).is_empty());
+    let saved = noteki_gpui::app::settings::load(Some(&f.dir.join("settings.json")));
+    assert!(
+        !saved.sessions.keys().any(|k| k.ends_with("#1")),
+        "{:?}",
+        saved.sessions.keys()
+    );
 }
 
 // ---- Saving ----
