@@ -435,6 +435,17 @@ fn the_settings_window_opens_once(cx: &mut TestAppContext) {
     );
     let saved = std::fs::read_to_string(f.dir.join("settings.json")).unwrap();
     assert!(saved.to_lowercase().contains("everforest"), "{saved}");
+    // One page: Light or dark and the text's Restore Defaults are on it too.
+    click_label(cx, "Dark");
+    assert_eq!(
+        app(cx, &f, |a, _, _| a.settings().appearance),
+        noteki_gpui::theme::AppearanceMode::Dark
+    );
+    app(cx, &f, |a, w, cx| {
+        a.update_settings(|s| s.font_size = 20., w, cx)
+    });
+    click_label(cx, "Restore Defaults");
+    assert_eq!(app(cx, &f, |a, _, _| a.settings().font_size), 15.);
 }
 
 // ---- Export ----
