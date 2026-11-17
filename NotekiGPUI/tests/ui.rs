@@ -313,6 +313,38 @@ fn files_from_the_finder_go_to_a_tab_files_or_a_window_of_their_own(cx: &mut Tes
 // ---- Settings ----
 
 #[gpui_kit::test]
+fn the_text_column_stays_in_the_middle_of_the_pane(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    editor_with(cx, &f, "testo", 0);
+    // (text size, characters): narrower than the 770px pane, then wider.
+    for (size, chars, narrower) in [(15., 60, true), (10., 120, true), (15., 200, false)] {
+        app(cx, &f, |a, w, cx| {
+            a.update_settings(
+                |s| {
+                    s.font_size = size;
+                    s.line_length = chars;
+                },
+                w,
+                cx,
+            )
+        });
+        let p = pane(cx, &f);
+        let left = point_at(cx, &f, 0).0 - 1. - f32::from(p.origin.x);
+        let column = size * chars as f32 * 0.5;
+        if narrower {
+            let right = f32::from(p.size.width) - left - column;
+            assert!(
+                (left - right).abs() < 1.,
+                "{size} pt, {chars}: {left} | {right}"
+            );
+        } else {
+            // As wide as the pane: its margin on each side.
+            assert_eq!(left, 24., "{size} pt, {chars}");
+        }
+    }
+}
+
+#[gpui_kit::test]
 fn a_shorter_line_length_rewraps_and_is_saved(cx: &mut TestAppContext) {
     let f = fixture(cx);
     let long = "parola ".repeat(60);
