@@ -438,86 +438,9 @@ impl NotekiApp {
     }
 
     fn render_files_pane(&self, cx: &mut Context<Self>) -> impl IntoElement {
-        let (border, muted, primary) = (
-            cx.theme().sidebar_border,
-            cx.theme().muted_foreground,
-            cx.theme().primary,
-        );
+        let (muted, primary) = (cx.theme().muted_foreground, cx.theme().primary);
         let entity = cx.entity();
         let active = self.active_path().map(str::to_string);
-
-        let button = |id: &'static str, icon: AssetIcon, tip: &'static str| {
-            Button::new(id)
-                .icon(Icon::new(icon))
-                .xsmall()
-                .ghost()
-                .tooltip(tip)
-        };
-        let toolbar = h_flex()
-            .px_2()
-            .py_1()
-            .gap_1()
-            .border_b_1()
-            .border_color(border)
-            .child(
-                button("new-note", AssetIcon::FilePlus, "New note (⌘N)").on_click(cx.listener(
-                    |this, _, window, cx| {
-                        let folder = this.target_folder(cx);
-                        this.open_name_prompt(
-                            PromptKind::NewNote,
-                            String::new(),
-                            Some(folder),
-                            window,
-                            cx,
-                        )
-                    },
-                )),
-            )
-            .child(
-                button("new-folder", AssetIcon::FolderPlus, "New folder").on_click(cx.listener(
-                    |this, _, window, cx| {
-                        let folder = this.target_folder(cx);
-                        this.open_name_prompt(
-                            PromptKind::NewFolder,
-                            String::new(),
-                            Some(folder),
-                            window,
-                            cx,
-                        )
-                    },
-                )),
-            )
-            .child(
-                button("daily-note", AssetIcon::CalendarDays, "Today's note (⇧⌘D)")
-                    .on_click(cx.listener(|this, _, window, cx| this.open_daily_note(window, cx))),
-            )
-            .child(div().flex_1())
-            .when_some(active.clone(), |row, path| {
-                let (p1, p3) = (path.clone(), path);
-                row.child(
-                    button("rename-active", AssetIcon::Pencil, "Rename").on_click(cx.listener(
-                        move |this, _, window, cx| {
-                            let name = note_name(&p1);
-                            this.open_name_prompt(
-                                PromptKind::Rename,
-                                name,
-                                Some(p1.clone()),
-                                window,
-                                cx,
-                            )
-                        },
-                    )),
-                )
-                .child(
-                    button("trash-active", AssetIcon::Trash, "Move to Trash").on_click(
-                        cx.listener(move |this, _, window, cx| {
-                            let r = this.trash(&p3, window, cx);
-                            this.report(r);
-                            cx.notify();
-                        }),
-                    ),
-                )
-            });
 
         let file_tree = tree(&self.file_tree, move |ix, entry, tree_selected, _, _| {
             let item = entry.item();
@@ -565,7 +488,7 @@ impl NotekiApp {
             let path = entry.item().id.to_string();
             file_menu(menu, &menu_app, path, entry.is_folder())
         });
-        v_flex().size_full().child(toolbar).child(
+        v_flex().size_full().child(
             div()
                 .id("file-tree")
                 .flex_1()

@@ -21,7 +21,6 @@ icon_assets!(
         Pencil,
         SquarePlus,
         Tag,
-        Trash,
         X,
     ]
 );
