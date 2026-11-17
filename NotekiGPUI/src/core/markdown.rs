@@ -423,13 +423,15 @@ fn scan_inline(s: &str, from: usize, to: usize, out: &mut Vec<Inline>) {
             }
             // SPEC: `$x$` when the first `$` is followed by no space and the
             // last preceded by none and followed by no digit (`$5 and $10` is
-            // text); `$$x$$` too. Nothing inside is Markdown.
+            // text); `$$x$$` too. Nothing inside is Markdown, and it ends
+            // before any code (`` `$x$` `` stays code).
             b'$' => {
                 let n = if starts(i, "$$") { 2 } else { 1 };
+                let code = find_in(s, i + n, to, "`").unwrap_or(to);
                 let close = if n == 2 {
-                    find_in(s, i + 2, to, "$$")
+                    find_in(s, i + 2, code, "$$")
                 } else if i + 1 < to && !b[i + 1].is_ascii_whitespace() {
-                    (i + 2..to).find(|&p| {
+                    (i + 2..code).find(|&p| {
                         b[p] == b'$'
                             && !b[p - 1].is_ascii_whitespace()
                             && b[p - 1] != b'\\'
@@ -1314,6 +1316,12 @@ mod tests {
                 .iter()
                 .all(|(k, _)| *k != InlineKind::Math),
             "a closing `$` followed by a digit closes nothing"
+        );
+        assert!(
+            kinds("costa $5 e $10, scritto \\$ e il codice `$x$`.")
+                .iter()
+                .all(|(k, _)| *k != InlineKind::Math),
+            "a formula ends before any code"
         );
         let block = "testo\n$$\n\\int_0^1 x\\,dx\n$$\ndopo";
         let k: Vec<_> = lines(block).iter().map(|l| l.kind).collect();
