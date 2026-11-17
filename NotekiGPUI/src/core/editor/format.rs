@@ -96,6 +96,66 @@ pub fn toggle_wrap(text: &str, selection: Range<usize>, wrap: Wrap) -> Change {
     }
 }
 
+/// ⌘K: `[text](url)` of the selection (or the word at the cursor), the URL
+/// from the clipboard when it holds one; else the cursor between the brackets
+/// (no text) or the parentheses (no URL).
+pub fn make_link(text: &str, selection: Range<usize>, clipboard: Option<&str>) -> Change {
+    let (a, b) = if selection.is_empty() {
+        let w = word_range_at(text, selection.start);
+        if text[w.clone()].chars().any(|c| c.is_alphanumeric()) {
+            (w.start, w.end)
+        } else {
+            (selection.start, selection.start)
+        }
+    } else {
+        (selection.start, selection.end)
+    };
+    let label = &text[a..b];
+    let url = clipboard
+        .map(str::trim)
+        .filter(|u| !u.contains(char::is_whitespace) && u.contains("://"))
+        .unwrap_or("");
+    let new = format!("[{label}]({url})");
+    let cursor = if label.is_empty() {
+        a + 1
+    } else if url.is_empty() {
+        a + new.len() - 1
+    } else {
+        a + new.len()
+    };
+    Change {
+        range: a..b,
+        text: new,
+        selection: cursor..cursor,
+    }
+}
+
+/// ⌘/: the selection in `%%`, or the whole line without one; again, they go.
+pub fn toggle_comment(text: &str, selection: Range<usize>) -> Change {
+    let sel = if selection.is_empty() {
+        line_start(text, selection.start)..line_end(text, selection.start)
+    } else {
+        selection
+    };
+    let inner = &text[sel.clone()];
+    if let Some(bare) = inner
+        .strip_prefix("%%")
+        .and_then(|s| s.strip_suffix("%%"))
+        .filter(|_| inner.len() >= 4)
+    {
+        return Change {
+            range: sel.clone(),
+            text: bare.to_string(),
+            selection: sel.start..sel.start + bare.len(),
+        };
+    }
+    Change {
+        range: sel.clone(),
+        text: format!("%%{inner}%%"),
+        selection: sel.start + 2..sel.end + 2,
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LineFormat {
     Heading(u8),
@@ -317,5 +377,30 @@ mod tests {
             ),
             t
         );
+    }
+
+    #[test]
+    fn cmd_k_makes_a_link_with_the_url_on_the_clipboard() {
+        let t = "vedi questo sito";
+        let c = make_link(t, 5..11, Some("https://example.com"));
+        assert_eq!(apply(t, &c), "vedi [questo](https://example.com) sito");
+        let c = make_link(t, 5..11, Some("non un url"));
+        assert_eq!(apply(t, &c), "vedi [questo]() sito");
+        assert_eq!(c.selection, 14..14, "the cursor between the parentheses");
+        let c = make_link("a  b", 2..2, None);
+        assert_eq!(
+            (apply("a  b", &c).as_str(), c.selection),
+            ("a []() b", 3..3)
+        );
+    }
+
+    #[test]
+    fn cmd_slash_comments_the_line_or_the_selection_and_back() {
+        let t = "uno\ndue";
+        let c = toggle_comment(t, 5..5);
+        let t2 = apply(t, &c);
+        assert_eq!(t2, "uno\n%%due%%");
+        assert_eq!(apply(&t2, &toggle_comment(&t2, 7..7)), t);
+        assert_eq!(apply(t, &toggle_comment(t, 0..2)), "%%un%%o\ndue");
     }
 }

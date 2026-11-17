@@ -30,7 +30,7 @@ use gpui_kit::{
 
 use crate::core::editor::buffer::{range_from_utf16, range_to_utf16};
 use crate::core::editor::code;
-use crate::core::editor::format::{format_lines, toggle_wrap};
+use crate::core::editor::format::{format_lines, make_link, toggle_comment, toggle_wrap};
 pub use crate::core::editor::format::{LineFormat, Wrap};
 use crate::core::editor::history::History;
 use crate::core::editor::lines::{edge_scroll, logical_lines};
@@ -100,6 +100,8 @@ actions!(
         Heading5,
         Heading6,
         ToggleTask,
+        MakeLink,
+        ToggleComment,
         Indent,
         Outdent,
         Undo,
@@ -169,6 +171,8 @@ pub fn register_keybindings(cx: &mut App) {
         KeyBinding::new("cmd-5", Heading5, c),
         KeyBinding::new("cmd-6", Heading6, c),
         KeyBinding::new("cmd-enter", ToggleTask, c),
+        KeyBinding::new("cmd-k", MakeLink, c),
+        KeyBinding::new("cmd-/", ToggleComment, c),
         KeyBinding::new("cmd-]", Indent, c),
         KeyBinding::new("cmd-[", Outdent, c),
         KeyBinding::new("cmd-f", OpenFind, c),
@@ -193,6 +197,10 @@ pub fn register_keybindings(cx: &mut App) {
 pub enum Format {
     Wrap(Wrap),
     Lines(LineFormat),
+    /// ⌘K: `[text](url)`, the URL from the clipboard.
+    Link,
+    /// ⌘/: `%%` around the selection or the line.
+    Comment,
 }
 
 /// What the editor needs from the Vault: the Note's path, the index, the folder.
@@ -431,6 +439,11 @@ impl NoteEditor {
         let change = match command {
             Format::Wrap(w) => toggle_wrap(text, sel, w),
             Format::Lines(l) => format_lines(text, sel, l),
+            Format::Link => {
+                let clip = cx.read_from_clipboard().and_then(|c| c.text());
+                make_link(text, sel, clip.as_deref())
+            }
+            Format::Comment => toggle_comment(text, sel),
         };
         self.buf.close_undo_step();
         let changed = self.buf.replace(change.range, &change.text);
@@ -933,6 +946,8 @@ handlers! {
     Heading5 => |ed, cx| ed.format(Format::Lines(LineFormat::Heading(5)), cx);
     Heading6 => |ed, cx| ed.format(Format::Lines(LineFormat::Heading(6)), cx);
     ToggleTask => |ed, cx| ed.format(Format::Lines(LineFormat::Task), cx);
+    MakeLink => |ed, cx| ed.format(Format::Link, cx);
+    ToggleComment => |ed, cx| ed.format(Format::Comment, cx);
     Indent => |ed, cx| ed.format(Format::Lines(LineFormat::Indent), cx);
     Outdent => |ed, cx| ed.format(Format::Lines(LineFormat::Outdent), cx);
     SelectNextOccurrence => |ed, cx| { ed.buf.select_next_occurrence(); ed.wake(cx) };

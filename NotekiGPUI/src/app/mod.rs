@@ -113,7 +113,7 @@ pub fn register_keybindings(cx: &mut App) {
         KeyBinding::new("cmd-i", FormatItalicAction, None),
         KeyBinding::new("cmd-shift-x", FormatStrikeAction, None),
         KeyBinding::new("ctrl-`", FormatCodeAction, None),
-        KeyBinding::new("cmd-k", InsertWikilinkAction, None),
+        KeyBinding::new("cmd-shift-k", InsertWikilinkAction, None),
     ]);
     crate::editor::register_keybindings(cx);
 }

@@ -214,7 +214,7 @@ pub fn strip_inline_markdown(input: &str) -> String {
                 out.push_str(&Wikilink::parse(&input[tok.inner.clone()]).display_text())
             }
             K::Comment => {}
-            K::Tag => out.push_str(&input[tok.range.clone()]),
+            K::Tag | K::Math => out.push_str(&input[tok.range.clone()]),
             K::Bold | K::Italic | K::Strikethrough | K::Highlight | K::MarkdownLink => {
                 out.push_str(&strip_inline_markdown(&input[tok.inner.clone()]))
             }

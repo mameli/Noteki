@@ -1878,3 +1878,21 @@ fn a_dropped_image_file_is_copied_next_to_the_note_and_embedded(cx: &mut TestApp
     assert_eq!(editor_state(cx, &f).0, "testo![[Schermata.png]]");
     assert!(f.vault.join("Schermata.png").is_file());
 }
+
+#[gpui_kit::test]
+fn cmd_k_makes_a_link_and_cmd_slash_a_comment(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    editor_with(cx, &f, "vedi sito", 6);
+    cx.write_to_clipboard(gpui_kit::ClipboardItem::new_string(
+        "https://example.com".into(),
+    ));
+    press(cx, &f, "cmd-k");
+    assert_eq!(editor_state(cx, &f).0, "vedi [sito](https://example.com)");
+    press(cx, &f, "cmd-/");
+    assert_eq!(
+        editor_state(cx, &f).0,
+        "%%vedi [sito](https://example.com)%%"
+    );
+    press(cx, &f, "cmd-z cmd-z");
+    assert_eq!(editor_state(cx, &f).0, "vedi sito");
+}

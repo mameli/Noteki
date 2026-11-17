@@ -780,8 +780,50 @@ fn table_cells(
         let abs = range.start + cell.start..range.start + cell.end;
         let runs = runs_for(input, &abs, &cell_style);
         let text = shown_text(&input.text[abs], &cell_style.hidden);
-        let shaped = ts.shape_line(text.into(), input.font_size, &runs, None);
         let room = (*w - CELL_PAD * 2.).max(px(0.));
+        let mut shaped = ts.shape_line(text.clone().into(), input.font_size, &runs, None);
+        // Cut at its column with an ellipsis (ADR 0008).
+        if shaped.width() > room && room > px(0.) {
+            let ell = ts.shape_line(
+                "…".into(),
+                input.font_size,
+                &[text_run(
+                    "…".len(),
+                    &input.font,
+                    input.palette.text,
+                    Default::default(),
+                )],
+                None,
+            );
+            let keep = shaped.closest_index_for_x((room - ell.width()).max(px(0.)));
+            let keep = (0..=keep)
+                .rev()
+                .find(|&k| text.is_char_boundary(k))
+                .unwrap_or(0);
+            let mut cut_runs = Vec::new();
+            let mut left_len = keep;
+            for r in &runs {
+                if left_len == 0 {
+                    break;
+                }
+                let len = r.len.min(left_len);
+                cut_runs.push(TextRun { len, ..r.clone() });
+                left_len -= len;
+            }
+            let last = runs.last().cloned().unwrap_or_else(|| {
+                text_run(0, &input.font, input.palette.text, Default::default())
+            });
+            cut_runs.push(TextRun {
+                len: "…".len(),
+                ..last
+            });
+            shaped = ts.shape_line(
+                format!("{}…", &text[..keep]).into(),
+                input.font_size,
+                &cut_runs,
+                None,
+            );
+        }
         let x = left
             + CELL_PAD
             + match align {

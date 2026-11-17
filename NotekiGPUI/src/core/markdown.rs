@@ -27,6 +27,9 @@ pub enum BlockKind {
     /// A thematic break (`---`, `***`, `___`), drawn as a rule. Not a setext
     /// Heading's underline, which stays `Text`.
     Rule,
+    /// A line of a `$$` math block across lines, its `$$` lines included:
+    /// left as written.
+    Math,
     /// Ordinary Markdown.
     Text,
 }
@@ -52,6 +55,7 @@ pub fn lines(text: &str) -> Vec<Line<'_>> {
     let fm_end = frontmatter_end_line(text).unwrap_or(0); // 1-based closing line
     let mut out = Vec::new();
     let mut fence: Option<(u8, usize)> = None;
+    let mut math = false;
     let mut start = 0usize;
     for (index, raw) in text.split('\n').enumerate() {
         let line_text = raw.strip_suffix('\r').unwrap_or(raw);
@@ -69,6 +73,13 @@ pub fn lines(text: &str) -> Vec<Line<'_>> {
             } else {
                 BlockKind::Code
             }
+        } else if math {
+            math = !line_text.trim_end().ends_with("$$");
+            BlockKind::Math
+        } else if line_text.trim_start().starts_with("$$") && !line_text.trim()[2..].contains("$$")
+        {
+            math = true;
+            BlockKind::Math
         } else if let Some(open) = opening_fence(line_text.trim_start()) {
             fence = Some(open);
             BlockKind::FenceDelimiter
@@ -376,6 +387,8 @@ pub enum InlineKind {
     Highlight,
     /// `#tag`; `inner` excludes the `#`.
     Tag,
+    /// `$x$` or `$$x$$`: math, left as written (no Markdown inside).
+    Math,
 }
 
 /// An inline construct. `range` is the whole construct, `inner` its content;
@@ -425,6 +438,35 @@ fn scan_inline(s: &str, from: usize, to: usize, out: &mut Vec<Inline>) {
                     });
                 }
                 i += 1 + next;
+                continue;
+            }
+            // SPEC: `$x$` when the first `$` is followed by no space and the
+            // last preceded by none and followed by no digit (`$5 and $10` is
+            // text); `$$x$$` too. Nothing inside is Markdown.
+            b'$' => {
+                let n = if starts(i, "$$") { 2 } else { 1 };
+                let close = if n == 2 {
+                    find_in(s, i + 2, to, "$$")
+                } else if i + 1 < to && !b[i + 1].is_ascii_whitespace() {
+                    (i + 2..to).find(|&p| {
+                        b[p] == b'$'
+                            && !b[p - 1].is_ascii_whitespace()
+                            && b[p - 1] != b'\\'
+                            && !(p + 1 < to && b[p + 1].is_ascii_digit())
+                    })
+                } else {
+                    None
+                };
+                if let Some(close) = close {
+                    out.push(Inline {
+                        kind: InlineKind::Math,
+                        range: i..close + n,
+                        inner: i + n..close,
+                    });
+                    i = close + n;
+                } else {
+                    i += n;
+                }
                 continue;
             }
             b'`' => {
@@ -885,6 +927,7 @@ pub fn line_spans(
                 }
                 push(line.range(), MdSpanKind::CodeBlock)
             }
+            BlockKind::Math => push(line.range(), MdSpanKind::CodeBlock),
             BlockKind::Rule => {
                 if !on_cursor {
                     push(line.range(), MdSpanKind::SyntaxMarker);
@@ -1020,6 +1063,8 @@ pub fn line_spans(
                             push(r(tok.inner.clone()), MdSpanKind::Highlight);
                         }
                         InlineKind::Tag => push(r(tok.range.clone()), MdSpanKind::Tag),
+                        // Math stays visible as code (SPEC), marks and all.
+                        InlineKind::Math => push(r(tok.range.clone()), MdSpanKind::InlineCode),
                     }
                 }
                 for f in footnotes(line.text) {
@@ -1352,6 +1397,38 @@ mod tests {
     }
 
     #[test]
+    fn math_is_left_as_written() {
+        let k = kinds("area $A = \\pi r^2$ e $$\\sum$$ ma costa $5 e $10");
+        let math: Vec<&str> = k
+            .iter()
+            .filter(|(k, _)| *k == InlineKind::Math)
+            .map(|(_, s)| *s)
+            .collect();
+        assert_eq!(math, vec!["$A = \\pi r^2$", "$$\\sum$$"]);
+        assert!(kinds("$x_{1,2}$ e `$x$`")
+            .iter()
+            .all(|(k, _)| *k != InlineKind::Escape));
+        assert!(
+            kinds("da $a$1 a $b")
+                .iter()
+                .all(|(k, _)| *k != InlineKind::Math),
+            "a closing `$` followed by a digit closes nothing"
+        );
+        let block = "testo\n$$\n\\int_0^1 x\\,dx\n$$\ndopo";
+        let k: Vec<_> = lines(block).iter().map(|l| l.kind).collect();
+        assert_eq!(
+            k,
+            vec![
+                BlockKind::Text,
+                BlockKind::Math,
+                BlockKind::Math,
+                BlockKind::Math,
+                BlockKind::Text
+            ]
+        );
+    }
+
+    #[test]
     fn link_at_finds_a_links_shown_text() {
         let text = "Visita [GitHub](https://github.com \"t\") e [[Nota|Alias]].\n`[x](y)`";
         let gh = text.find("GitHub").unwrap();
@@ -1417,7 +1494,7 @@ mod tests {
         // Only ASCII punctuation is escaped (CommonMark): `\è` and `\pi` keep
         // their backslash, and nothing lands inside the `è`.
         assert_eq!(kinds("\\è #perché"), vec![(InlineKind::Tag, "#perché")]);
-        assert_eq!(kinds("$\\pi$"), vec![]);
+        assert_eq!(kinds("$\\pi$"), vec![(InlineKind::Math, "$\\pi$")]);
         assert_eq!(kinds("\\"), vec![]);
         assert_eq!(kinds("\\#nottag"), vec![(InlineKind::Escape, "\\#")]);
     }

@@ -116,6 +116,7 @@ pub fn style_lines(text: &str, spans: &[MdSpan], cx: Context) -> Vec<LineStyle> 
     let mut clipped: Vec<Vec<(Range<usize>, MdSpanKind)>> = vec![Vec::new(); lines.len()];
     let mut parts: Vec<Option<CodePart>> = vec![None; lines.len()];
     let code_spans = code_blocks(&lines, text, &mut parts, cx.highlight);
+    let indented = indented_code(&lines);
     let mut rows: Vec<Option<TableRow>> = vec![None; lines.len()];
     for (i, row) in tables(&lines) {
         rows[i] = Some(row);
@@ -136,6 +137,13 @@ pub fn style_lines(text: &str, spans: &[MdSpan], cx: Context) -> Vec<LineStyle> 
                 break;
             }
             push_clipped(&mut clipped[i], line, span);
+        }
+    }
+    for (i, part) in indented.into_iter().enumerate() {
+        if let Some(part) = part {
+            // Code: no Markdown inside, the code font.
+            clipped[i] = vec![(0..lines[i].text.len(), MdSpanKind::CodeBlock)];
+            parts[i] = Some(part);
         }
     }
     for (i, level) in setext.iter().enumerate() {
@@ -262,6 +270,46 @@ fn callouts(lines: &[Line]) -> Vec<Option<Decoration>> {
                 color,
                 header: header.is_some(),
             });
+        }
+    }
+    out
+}
+
+/// The indented code blocks: lines indented four spaces (or a tab) after a
+/// blank line, not a list item nor under one. Drawn as a code box.
+fn indented_code(lines: &[Line]) -> Vec<Option<CodePart>> {
+    let mut out = vec![None; lines.len()];
+    let indented = |l: &Line| {
+        l.kind == BlockKind::Text
+            && (l.text.starts_with("    ") || l.text.starts_with('\t'))
+            && !l.text.trim().is_empty()
+            && list_item(l.text).is_none()
+    };
+    let mut i = 0;
+    while i < lines.len() {
+        let after_blank = i == 0 || lines[i - 1].text.trim().is_empty();
+        // Under a list item (its continuation), indented text is no code.
+        let under_list = lines[..i]
+            .iter()
+            .rev()
+            .find(|l| !l.text.trim().is_empty())
+            .is_some_and(|l| list_item(l.text).is_some() || l.text.starts_with([' ', '\t']));
+        if indented(&lines[i]) && after_blank && !under_list {
+            let start = i;
+            while i < lines.len() && indented(&lines[i]) {
+                i += 1;
+            }
+            out[start] = Some(CodePart::Open {
+                language: "".into(),
+            });
+            for part in out.iter_mut().take(i).skip(start + 1) {
+                *part = Some(CodePart::Body);
+            }
+            if i - start > 1 {
+                out[i - 1] = Some(CodePart::Close);
+            }
+        } else {
+            i += 1;
         }
     }
     out
@@ -743,6 +791,30 @@ mod tests {
         // Without a title, the type shows.
         let untitled = styles("> [!tip]\n> x", None);
         assert_eq!(untitled[0].hidden, vec![0..4, 7..8]);
+    }
+
+    #[test]
+    fn indented_code_but_not_a_list_continuation() {
+        let s = styles(
+            "testo\n\n    let a = 1;\n    let b = **2**;\n\n- voce\n\n    continua",
+            None,
+        );
+        assert!(matches!(
+            s[2].decoration,
+            Some(Decoration::Code(CodePart::Open { .. }))
+        ));
+        assert!(matches!(
+            s[3].decoration,
+            Some(Decoration::Code(CodePart::Close))
+        ));
+        assert!(
+            s[3].hidden.is_empty(),
+            "no Markdown in code: the stars stay"
+        );
+        assert!(
+            !matches!(s[7].decoration, Some(Decoration::Code(_))),
+            "under a list item"
+        );
     }
 
     #[test]
