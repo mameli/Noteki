@@ -115,6 +115,7 @@ actions!(
         Copy,
         Cut,
         Paste,
+        PasteAndMatchStyle,
         ShowCharacterPalette,
     ]
 );
@@ -190,6 +191,7 @@ pub fn register_keybindings(cx: &mut App) {
         KeyBinding::new("cmd-c", Copy, c),
         KeyBinding::new("cmd-x", Cut, c),
         KeyBinding::new("cmd-v", Paste, c),
+        KeyBinding::new("cmd-shift-v", PasteAndMatchStyle, c),
         KeyBinding::new("ctrl-cmd-space", ShowCharacterPalette, c),
     ]);
 }
@@ -1014,6 +1016,12 @@ handlers! {
                 extension: image_extension(img.format),
             });
         } else if let Some(text) = item.text() {
+            ed.replace_selection(&text, cx);
+        }
+    };
+    // The text alone, never an image.
+    PasteAndMatchStyle => |ed, cx| {
+        if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
             ed.replace_selection(&text, cx);
         }
     };

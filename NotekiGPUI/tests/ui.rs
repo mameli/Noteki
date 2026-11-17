@@ -2151,6 +2151,24 @@ fn a_pasted_image_is_saved_next_to_the_note_and_embedded(cx: &mut TestAppContext
 }
 
 #[gpui_kit::test]
+fn paste_and_match_style_pastes_the_text_alone(cx: &mut TestAppContext) {
+    use gpui_kit::{ClipboardItem, Image, ImageFormat};
+    let f = fixture(cx);
+    editor_with(cx, &f, "prima ", 6);
+    cx.write_to_clipboard(ClipboardItem::new_string("**testo**".into()));
+    press(cx, &f, "cmd-shift-v");
+    assert_eq!(editor_state(cx, &f).0, "prima **testo**");
+    // An image alone: nothing pasted, nothing saved.
+    let png = std::fs::read(f.vault.join("Media/noteki.png")).unwrap();
+    cx.write_to_clipboard(ClipboardItem::new_image(&Image::from_bytes(
+        ImageFormat::Png,
+        png,
+    )));
+    press(cx, &f, "cmd-shift-v");
+    assert_eq!(editor_state(cx, &f).0, "prima **testo**");
+}
+
+#[gpui_kit::test]
 fn a_dropped_image_file_is_copied_next_to_the_note_and_embedded(cx: &mut TestAppContext) {
     use gpui_kit::{ExternalPaths, FileDropEvent, PlatformInput};
     let f = fixture(cx);
