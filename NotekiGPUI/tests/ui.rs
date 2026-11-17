@@ -2275,3 +2275,52 @@ fn a_search_result_line_opens_its_note_there(cx: &mut TestAppContext) {
     assert_eq!(path.as_deref(), Some("Projects/Launch plan.md"));
     assert!(text[cursor..].starts_with("From the"), "{:?}", &text[cursor..]);
 }
+
+#[gpui_kit::test]
+fn the_sidebar_shortcuts_are_the_swift_apps(cx: &mut TestAppContext) {
+    use noteki_gpui::app::{LeftPane, RightPane};
+    let f = fixture(cx);
+    let layout = |cx: &mut TestAppContext| {
+        app(cx, &f, |a, _, _| {
+            let s = a.settings();
+            (s.left_sidebar_open, s.left_pane, s.right_sidebar_open, s.right_pane)
+        })
+    };
+    let before = layout(cx);
+    press(cx, &f, "ctrl-cmd-s");
+    assert_eq!(layout(cx).0, !before.0);
+    press(cx, &f, "ctrl-cmd-2");
+    assert_eq!((layout(cx).0, layout(cx).1), (true, LeftPane::Tags));
+    press(cx, &f, "ctrl-cmd-3");
+    assert_eq!(layout(cx).1, LeftPane::Search);
+    // From the search field too, which ⌃⌘3 gave the keyboard.
+    press(cx, &f, "ctrl-cmd-1");
+    assert_eq!(layout(cx).1, LeftPane::Files);
+    press(cx, &f, "alt-cmd-2");
+    assert_eq!((layout(cx).2, layout(cx).3), (true, RightPane::Backlinks));
+    press(cx, &f, "alt-cmd-1");
+    assert_eq!(layout(cx).3, RightPane::Outline);
+    press(cx, &f, "alt-cmd-0");
+    assert!(!layout(cx).2);
+}
+
+#[gpui_kit::test]
+fn the_menu_bar_has_settings_under_the_apps_name(cx: &mut TestAppContext) {
+    cx.update(noteki_gpui::app::set_app_menus);
+    let menus = cx.update(|cx| cx.get_menus()).expect("a menu bar");
+    let names: Vec<String> = menus.iter().map(|m| m.name.to_string()).collect();
+    assert_eq!(names[0], "Noteki");
+    let first: Vec<String> = menus[0]
+        .items
+        .iter()
+        .filter_map(|i| match i {
+            gpui_kit::OwnedMenuItem::Action { name, .. } => Some(name.clone()),
+            _ => None,
+        })
+        .collect();
+    assert!(first.contains(&"Settings…".to_string()), "{first:?}");
+    assert!(first.contains(&"Quit Noteki".to_string()), "{first:?}");
+    for menu in ["File", "Edit", "Format", "View", "Go", "Window", "Help"] {
+        assert!(names.contains(&menu.to_string()), "{names:?}");
+    }
+}

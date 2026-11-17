@@ -62,19 +62,25 @@ impl Render for NotekiApp {
             .bg(cx.theme().background)
             .text_color(cx.theme().foreground)
             .on_action(
-                cx.listener(|this, _: &ToggleLeftSidebar, _, cx| this.toggle_left_sidebar(cx)),
+                cx.listener(|this, _: &ToggleLeftSidebar, w, cx| this.toggle_left_sidebar(w, cx)),
             )
             .on_action(
                 cx.listener(|this, _: &ToggleRightSidebar, _, cx| this.toggle_right_sidebar(cx)),
             )
-            .on_action(cx.listener(|this, _: &SwitchFilesPane, _, cx| {
-                this.show_left_pane(LeftPane::Files, cx)
+            .on_action(cx.listener(|this, _: &SwitchFilesPane, window, cx| {
+                this.show_left_pane(LeftPane::Files, window, cx)
             }))
-            .on_action(cx.listener(|this, _: &SwitchTagsPane, _, cx| {
-                this.show_left_pane(LeftPane::Tags, cx)
+            .on_action(cx.listener(|this, _: &SwitchTagsPane, window, cx| {
+                this.show_left_pane(LeftPane::Tags, window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &ShowOutlineAction, _, cx| {
+                this.show_right_pane(RightPane::Outline, cx)
+            }))
+            .on_action(cx.listener(|this, _: &ShowBacklinksAction, _, cx| {
+                this.show_right_pane(RightPane::Backlinks, cx)
             }))
             .on_action(cx.listener(|this, _: &SwitchSearchPane, window, cx| {
-                this.show_left_pane(LeftPane::Search, cx);
+                this.show_left_pane(LeftPane::Search, window, cx);
                 this.search_input.update(cx, |s, cx| s.focus(window, cx));
             }))
             .on_action(cx.listener(|this, _: &OpenQuickSwitcher, window, cx| {
@@ -225,7 +231,7 @@ impl NotekiApp {
                                 AssetIcon::PanelLeft,
                                 "Toggle sidebar (⌃⌘S)",
                             )
-                            .on_click(cx.listener(|this, _, _, cx| this.toggle_left_sidebar(cx))),
+                            .on_click(cx.listener(|this, _, w, cx| this.toggle_left_sidebar(w, cx))),
                         )
                         .child(
                             icon_button("nav-back", AssetIcon::ArrowLeft, "Back (⌥⌘←)")
@@ -370,7 +376,7 @@ impl NotekiApp {
                    cx: &mut Context<Self>| {
             let b = Button::new(id).icon(Icon::new(icon)).small().tooltip(tip);
             let b = if pane == p { b.primary() } else { b.ghost() };
-            b.on_click(cx.listener(move |this, _, _, cx| this.show_left_pane(p, cx)))
+            b.on_click(cx.listener(move |this, _, w, cx| this.show_left_pane(p, w, cx)))
         };
         let tabs = h_flex()
             .justify_center()
@@ -1357,8 +1363,8 @@ impl NotekiApp {
             ("Numbered list", AssetIcon::Pencil, |a, w, cx| {
                 a.format(Format::Lines(LineFormat::Numbered), w, cx)
             }),
-            ("Toggle left sidebar", AssetIcon::PanelLeft, |a, _, cx| {
-                a.toggle_left_sidebar(cx)
+            ("Toggle left sidebar", AssetIcon::PanelLeft, |a, w, cx| {
+                a.toggle_left_sidebar(w, cx)
             }),
             ("Toggle right sidebar", AssetIcon::PanelRight, |a, _, cx| {
                 a.toggle_right_sidebar(cx)

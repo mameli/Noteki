@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use noteki_gpui::app::{open_noteki_window, register_keybindings, AppConfig};
+use noteki_gpui::app::{open_noteki_window, register_keybindings, set_app_menus, AppConfig};
 use noteki_gpui::core::opening::url_to_path;
 
 /// Environment overrides, used by `scripts/eval.sh` for a smoke run that
@@ -30,6 +30,7 @@ fn main() {
     app.run(move |cx| {
         gpui_kit::init(cx);
         register_keybindings(cx);
+        set_app_menus(cx);
 
         let (window, noteki) =
             open_noteki_window(config, cx).expect("failed to open the Noteki window");

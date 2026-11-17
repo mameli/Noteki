@@ -4,6 +4,7 @@
 //! unit-tested there; this module wires them to GPUI and the file system.
 
 mod loose;
+mod menus;
 mod render;
 pub mod settings;
 mod settings_window;
@@ -43,6 +44,7 @@ use crate::core::wikilink::{folder_of, note_name, ResolvedItem, VaultIndex};
 use crate::editor::{Format, LineFormat, LinkContext, NoteEditor, NoteEditorEvent, Wrap};
 use crate::theme::{apply_noteki_theme, AppearanceMode, NotekiPalette, NotekiThemeName};
 
+pub use menus::{app_menus, set_app_menus};
 pub use settings::{LeftPane, RightPane, Settings};
 
 actions!(
@@ -80,6 +82,8 @@ actions!(
         OpenSettingsAction,
         ExportHtmlAction,
         NewWindowAction,
+        ShowOutlineAction,
+        ShowBacklinksAction,
     ]
 );
 
@@ -90,6 +94,8 @@ pub fn register_keybindings(cx: &mut App) {
         KeyBinding::new("ctrl-cmd-1", SwitchFilesPane, None),
         KeyBinding::new("ctrl-cmd-2", SwitchTagsPane, None),
         KeyBinding::new("ctrl-cmd-3", SwitchSearchPane, None),
+        KeyBinding::new("alt-cmd-1", ShowOutlineAction, None),
+        KeyBinding::new("alt-cmd-2", ShowBacklinksAction, None),
         KeyBinding::new("cmd-shift-f", SwitchSearchPane, None),
         KeyBinding::new("cmd-o", OpenQuickSwitcher, None),
         KeyBinding::new("cmd-t", OpenQuickSwitcherNewTab, None),
@@ -108,8 +114,6 @@ pub fn register_keybindings(cx: &mut App) {
         KeyBinding::new("cmd-shift-=", ZoomIn, None),
         KeyBinding::new("cmd--", ZoomOut, None),
         KeyBinding::new("cmd-0", ZoomReset, None),
-        KeyBinding::new("cmd-[", NavigateBackAction, None),
-        KeyBinding::new("cmd-]", NavigateForwardAction, None),
         KeyBinding::new("cmd-alt-left", NavigateBackAction, None),
         KeyBinding::new("cmd-alt-right", NavigateForwardAction, None),
         KeyBinding::new("cmd-shift-o", OpenVaultAction, None),
@@ -728,10 +732,20 @@ impl NotekiApp {
         }
     }
 
-    pub(crate) fn toggle_left_sidebar(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn toggle_left_sidebar(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.settings.left_sidebar_open = !self.settings.left_sidebar_open;
+        self.keep_keyboard_off_search(window, cx);
         self.persist();
         cx.notify();
+    }
+
+    /// The search field leaving the window takes the keyboard with it, and the
+    /// window's shortcuts would reach nothing: the window keeps it instead.
+    fn keep_keyboard_off_search(&self, window: &mut Window, cx: &mut Context<Self>) {
+        let shown = self.settings.left_sidebar_open && self.settings.left_pane == LeftPane::Search;
+        if !shown && self.search_input.focus_handle(cx).contains_focused(window, cx) {
+            window.focus(&self.focus_handle, cx);
+        }
     }
 
     pub(crate) fn toggle_right_sidebar(&mut self, cx: &mut Context<Self>) {
@@ -740,9 +754,15 @@ impl NotekiApp {
         cx.notify();
     }
 
-    pub(crate) fn show_left_pane(&mut self, pane: LeftPane, cx: &mut Context<Self>) {
+    pub(crate) fn show_left_pane(
+        &mut self,
+        pane: LeftPane,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.settings.left_sidebar_open = true;
         self.settings.left_pane = pane;
+        self.keep_keyboard_off_search(window, cx);
         self.persist();
         cx.notify();
     }
