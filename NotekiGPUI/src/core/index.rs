@@ -429,7 +429,10 @@ pub fn search_vault(corpus: &Corpus, query: &str) -> Vec<SearchResult> {
         })
         .filter_map(|note| {
             let in_name = |w: &String| contains_folded(&note.name, w);
-            if !words.iter().all(|w| in_name(w) || contains_folded(&note.text, w)) {
+            if !words
+                .iter()
+                .all(|w| in_name(w) || contains_folded(&note.text, w))
+            {
                 return None;
             }
             Some((note, !words.is_empty() && words.iter().all(in_name)))
@@ -713,7 +716,10 @@ mod tests {
     fn contains_folded_ignores_case_without_lowering_the_text() {
         assert!(contains_folded("Il Progetto", "progetto"));
         assert!(contains_folded("perché ALPHA", "alpha"));
-        assert!(contains_folded("aab", "ab"), "a false start before the match");
+        assert!(
+            contains_folded("aab", "ab"),
+            "a false start before the match"
+        );
         assert!(contains_folded("Straße", "straße"));
         assert!(contains_folded("ÈLA", "èla"));
         assert!(contains_folded("x", ""));

@@ -234,7 +234,11 @@ mod tests {
     fn old_files_with_missing_fields_load() {
         let s: Settings =
             serde_json::from_str(r#"{"vault_path":"/x","view_mode":"reader"}"#).unwrap();
-        assert_eq!(s.vault_path.as_deref(), Some("/x"), "an old field is ignored");
+        assert_eq!(
+            s.vault_path.as_deref(),
+            Some("/x"),
+            "an old field is ignored"
+        );
         assert!(s.left_sidebar_open);
     }
 

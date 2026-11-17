@@ -1,8 +1,6 @@
 //! Bugs found in the first prototype, reproduced before they were fixed.
 use noteki_gpui::core::index::extract_note_tags;
-use noteki_gpui::core::markdown::{
-    compute_markdown_spans, preprocess_for_html,
-};
+use noteki_gpui::core::markdown::{compute_markdown_spans, preprocess_for_html};
 use noteki_gpui::core::wikilink::VaultIndex;
 
 #[test]

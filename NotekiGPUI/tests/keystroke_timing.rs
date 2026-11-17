@@ -115,10 +115,15 @@ fn search_timing(cx: &mut TestAppContext) {
     for f in 0..50 {
         std::fs::create_dir_all(dir.join(format!("vault/folder {f}"))).unwrap();
     }
-    let para = "Una riga di testo di una nota sul progetto, con **grassetto** e [[link]] e #area/3.\n";
+    let para =
+        "Una riga di testo di una nota sul progetto, con **grassetto** e [[link]] e #area/3.\n";
     for i in 0..5000 {
         let text: String = (0..16).map(|l| format!("{l} {para}")).collect();
-        std::fs::write(dir.join(format!("vault/folder {}/Note {i}.md", i % 50)), text).unwrap();
+        std::fs::write(
+            dir.join(format!("vault/folder {}/Note {i}.md", i % 50)),
+            text,
+        )
+        .unwrap();
     }
     let config = AppConfig {
         settings_path: Some(dir.join("s.json")),

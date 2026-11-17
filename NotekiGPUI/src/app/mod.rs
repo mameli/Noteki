@@ -30,9 +30,7 @@ use crate::core::index::{
     build_tag_tree, extract_outline, find_backlinks, search_vault, BacklinkMatch, Corpus,
     HeadingItem, SearchResult, TagNode,
 };
-use crate::core::markdown::{
-    self, Link,
-};
+use crate::core::markdown::{self, Link};
 use crate::core::opening::{route, Opened};
 use crate::core::tabs::{rename_target, OpenIn, Tabs};
 use crate::core::vault::{
@@ -84,6 +82,7 @@ actions!(
         NewWindowAction,
         ShowOutlineAction,
         ShowBacklinksAction,
+        SearchInVaultAction,
     ]
 );
 
@@ -96,7 +95,8 @@ pub fn register_keybindings(cx: &mut App) {
         KeyBinding::new("ctrl-cmd-3", SwitchSearchPane, None),
         KeyBinding::new("alt-cmd-1", ShowOutlineAction, None),
         KeyBinding::new("alt-cmd-2", ShowBacklinksAction, None),
-        KeyBinding::new("cmd-shift-f", SwitchSearchPane, None),
+        // Its own action: the menu shows ⇧⌘F for it, ⌃⌘3 for View › Search.
+        KeyBinding::new("cmd-shift-f", SearchInVaultAction, None),
         KeyBinding::new("cmd-o", OpenQuickSwitcher, None),
         KeyBinding::new("cmd-t", OpenQuickSwitcherNewTab, None),
         KeyBinding::new("cmd-shift-p", OpenCommandPalette, None),
@@ -744,7 +744,12 @@ impl NotekiApp {
     /// window's shortcuts would reach nothing: the window keeps it instead.
     fn keep_keyboard_off_search(&self, window: &mut Window, cx: &mut Context<Self>) {
         let shown = self.settings.left_sidebar_open && self.settings.left_pane == LeftPane::Search;
-        if !shown && self.search_input.focus_handle(cx).contains_focused(window, cx) {
+        if !shown
+            && self
+                .search_input
+                .focus_handle(cx)
+                .contains_focused(window, cx)
+        {
             window.focus(&self.focus_handle, cx);
         }
     }
@@ -753,6 +758,12 @@ impl NotekiApp {
         self.settings.right_sidebar_open = !self.settings.right_sidebar_open;
         self.persist();
         cx.notify();
+    }
+
+    /// Search shown, with the keyboard in its field.
+    pub(crate) fn show_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.show_left_pane(LeftPane::Search, window, cx);
+        self.search_input.update(cx, |s, cx| s.focus(window, cx));
     }
 
     pub(crate) fn show_left_pane(
@@ -814,7 +825,7 @@ impl NotekiApp {
         change(&mut self.settings);
         self.apply_settings(&before, window, cx);
         self.persist(); // the settings are remembered
-        // The other windows take them too.
+                        // The other windows take them too.
         let shared = self.settings.clone();
         for other in self.other_windows(cx) {
             let (handle, shared) = (other.read(cx).window, shared.clone());

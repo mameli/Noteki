@@ -7,14 +7,14 @@
 //! Deterministic (fixed seeds); raise `NOTEKI_FUZZ_CASES` for a longer run.
 
 use noteki_gpui::core::document::NoteDoc;
+use noteki_gpui::core::export::note_html;
 use noteki_gpui::core::index::{
     extract_note_tags, extract_outline, parse_search_tokens, strip_inline_markdown,
 };
 use noteki_gpui::core::markdown::{
-    compute_markdown_spans, inline_tokens, line_of_offset, lines, percent_decode,
-    percent_encode, preprocess_for_html, wikilink_at, wikilinks,
+    compute_markdown_spans, inline_tokens, line_of_offset, lines, percent_decode, percent_encode,
+    preprocess_for_html, wikilink_at, wikilinks,
 };
-use noteki_gpui::core::export::note_html;
 use noteki_gpui::core::merge::merge_three_way;
 use noteki_gpui::core::tabs::{OpenIn, Tabs};
 use noteki_gpui::core::vault::VaultItem;

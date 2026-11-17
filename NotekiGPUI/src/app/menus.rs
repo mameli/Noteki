@@ -5,9 +5,8 @@ use gpui_kit::{actions, App, Menu, MenuItem, OsAction, SystemMenuType};
 
 use super::*;
 use crate::editor::{
-    Copy, Cut, FindNext, FindPrevious, Heading1, Heading2, Heading3, Heading4, Heading5,
-    Heading6, Indent, MakeLink, OpenFind, Outdent, Paste, Redo, SelectAll, ToggleComment,
-    ToggleTask, Undo,
+    Copy, Cut, FindNext, FindPrevious, Heading1, Heading2, Heading3, Heading4, Heading5, Heading6,
+    Indent, MakeLink, OpenFind, Outdent, Paste, Redo, SelectAll, ToggleComment, ToggleTask, Undo,
 };
 
 actions!(noteki_app, [Quit, Hide, HideOthers, ShowAll, Minimize]);
@@ -75,7 +74,7 @@ pub fn app_menus() -> Vec<Menu> {
             action("Find…", OpenFind),
             action("Find Next", FindNext),
             action("Find Previous", FindPrevious),
-            action("Search in Vault…", SwitchSearchPane),
+            action("Search in Vault…", SearchInVaultAction),
         ]),
         Menu::new("Format").items([
             action("Bold", FormatBoldAction),

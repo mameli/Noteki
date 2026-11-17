@@ -64,7 +64,10 @@ mod tests {
             }
         }
         let mut code = String::new();
-        sources(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"), &mut code);
+        sources(
+            &std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src"),
+            &mut code,
+        );
         let mut used: Vec<&str> = code
             .split("AssetIcon::")
             .skip(1)

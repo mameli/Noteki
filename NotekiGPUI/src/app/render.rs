@@ -79,10 +79,14 @@ impl Render for NotekiApp {
             .on_action(cx.listener(|this, _: &ShowBacklinksAction, _, cx| {
                 this.show_right_pane(RightPane::Backlinks, cx)
             }))
-            .on_action(cx.listener(|this, _: &SwitchSearchPane, window, cx| {
-                this.show_left_pane(LeftPane::Search, window, cx);
-                this.search_input.update(cx, |s, cx| s.focus(window, cx));
-            }))
+            .on_action(
+                cx.listener(|this, _: &SwitchSearchPane, window, cx| this.show_search(window, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &SearchInVaultAction, window, cx| {
+                    this.show_search(window, cx)
+                }),
+            )
             .on_action(cx.listener(|this, _: &OpenQuickSwitcher, window, cx| {
                 this.open_quick_switcher(OpenIn::CurrentTab, window, cx)
             }))
@@ -231,7 +235,9 @@ impl NotekiApp {
                                 AssetIcon::PanelLeft,
                                 "Toggle sidebar (⌃⌘S)",
                             )
-                            .on_click(cx.listener(|this, _, w, cx| this.toggle_left_sidebar(w, cx))),
+                            .on_click(
+                                cx.listener(|this, _, w, cx| this.toggle_left_sidebar(w, cx)),
+                            ),
                         )
                         .child(
                             icon_button("nav-back", AssetIcon::ArrowLeft, "Back (⌥⌘←)")
@@ -290,10 +296,9 @@ impl NotekiApp {
                         .items_center()
                         .gap_1()
                         .child(
-                            icon_button("settings", AssetIcon::Settings, "Settings (⌘,)")
-                                .on_click(cx.listener(|this, _, window, cx| {
-                                    this.open_settings(window, cx)
-                                })),
+                            icon_button("settings", AssetIcon::Settings, "Settings (⌘,)").on_click(
+                                cx.listener(|this, _, window, cx| this.open_settings(window, cx)),
+                            ),
                         )
                         .child(
                             icon_button(
@@ -688,7 +693,8 @@ impl NotekiApp {
                 .iter()
                 .enumerate()
                 .flat_map(|(ix, r)| {
-                    std::iter::once((ix, None)).chain((0..r.lines.len()).map(move |l| (ix, Some(l))))
+                    std::iter::once((ix, None))
+                        .chain((0..r.lines.len()).map(move |l| (ix, Some(l))))
                 })
                 .collect();
             let entity = cx.entity();
@@ -844,26 +850,23 @@ impl NotekiApp {
                 .gap_1()
                 .children(self.backlinks.iter().enumerate().map(|(ix, b)| {
                     let (path, line) = (b.source_path.clone(), b.line);
-                    let item = ListItem::new(("backlink", ix))
-                        .rounded(px(6.))
-                        .p_2()
-                        .child(
-                            v_flex()
-                                .child(
-                                    div()
-                                        .text_sm()
-                                        .font_semibold()
-                                        .truncate()
-                                        .child(b.source_name.clone()),
-                                )
-                                .child(
-                                    div()
-                                        .text_xs()
-                                        .text_color(muted)
-                                        .truncate()
-                                        .child(b.snippet.clone()),
-                                ),
-                        );
+                    let item = ListItem::new(("backlink", ix)).rounded(px(6.)).p_2().child(
+                        v_flex()
+                            .child(
+                                div()
+                                    .text_sm()
+                                    .font_semibold()
+                                    .truncate()
+                                    .child(b.source_name.clone()),
+                            )
+                            .child(
+                                div()
+                                    .text_xs()
+                                    .text_color(muted)
+                                    .truncate()
+                                    .child(b.snippet.clone()),
+                            ),
+                    );
                     opens_note(item, cx.entity(), path, Some(line))
                 }))
                 .into_any_element(),
@@ -1433,7 +1436,15 @@ fn opens_note(
     let middle = open.clone();
     item.on_click(move |ev: &ClickEvent, window, cx| {
         let new_tab = ev.modifiers().platform;
-        open(if new_tab { OpenIn::NewTab } else { OpenIn::CurrentTab }, window, cx)
+        open(
+            if new_tab {
+                OpenIn::NewTab
+            } else {
+                OpenIn::CurrentTab
+            },
+            window,
+            cx,
+        )
     })
     .on_mouse_down(MouseButton::Middle, move |_, window, cx| {
         cx.stop_propagation();

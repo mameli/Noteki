@@ -229,7 +229,9 @@ fn a_middle_click_on_a_note_opens_it_in_a_new_tab(cx: &mut TestAppContext) {
     let tabs = app(cx, &f, |a, _, _| a.tabs().len());
     let middle = ClickOptions::new().with_button(gpui_kit::MouseButton::Middle);
     ui(cx, &f, |window, cx| {
-        window.within("file-tree").click_with_options(5usize, middle, cx)
+        window
+            .within("file-tree")
+            .click_with_options(5usize, middle, cx)
     }); // Ideas.md
     frame(cx, &f);
     assert_eq!(app(cx, &f, |a, _, _| a.tabs().len()), tabs + 1);
@@ -2266,14 +2268,24 @@ fn a_search_result_line_opens_its_note_there(cx: &mut TestAppContext) {
     ui(cx, &f, |window, cx| window.input("what ships", cx));
     frame(cx, &f);
     assert_eq!(app(cx, &f, |a, _, _| a.search_results().len()), 1);
-    ui(cx, &f, |window, cx| window.click(("search-row", 1usize), cx));
+    ui(cx, &f, |window, cx| {
+        window.click(("search-row", 1usize), cx)
+    });
     frame(cx, &f);
     let (path, cursor, text) = app(cx, &f, |a, _, cx| {
         let ed = a.editor().read(cx);
-        (a.active_path().map(str::to_string), ed.cursor(), ed.text().to_string())
+        (
+            a.active_path().map(str::to_string),
+            ed.cursor(),
+            ed.text().to_string(),
+        )
     });
     assert_eq!(path.as_deref(), Some("Projects/Launch plan.md"));
-    assert!(text[cursor..].starts_with("From the"), "{:?}", &text[cursor..]);
+    assert!(
+        text[cursor..].starts_with("From the"),
+        "{:?}",
+        &text[cursor..]
+    );
 }
 
 #[gpui_kit::test]
@@ -2283,7 +2295,12 @@ fn the_sidebar_shortcuts_are_the_swift_apps(cx: &mut TestAppContext) {
     let layout = |cx: &mut TestAppContext| {
         app(cx, &f, |a, _, _| {
             let s = a.settings();
-            (s.left_sidebar_open, s.left_pane, s.right_sidebar_open, s.right_pane)
+            (
+                s.left_sidebar_open,
+                s.left_pane,
+                s.right_sidebar_open,
+                s.right_pane,
+            )
         })
     };
     let before = layout(cx);
@@ -2328,13 +2345,40 @@ fn every_shortcut_is_one_a_mac_keyboard_can_send(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
+fn the_menus_show_the_swift_apps_shortcuts(cx: &mut TestAppContext) {
+    use noteki_gpui::app::{SearchInVaultAction, SwitchSearchPane};
+    let _f = fixture(cx);
+    // A menu item shows the first binding of its action.
+    let first = |cx: &mut TestAppContext, action: &dyn gpui_kit::Action| {
+        cx.update(|cx| {
+            let keymap = cx.key_bindings();
+            let keymap = keymap.borrow();
+            let b = keymap
+                .bindings_for_action(action)
+                .next()
+                .expect("a binding");
+            b.keystrokes()
+                .iter()
+                .map(|k| k.unparse(gpui_kit::OperatingSystem::Mac))
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
+    };
+    assert_eq!(first(cx, &SwitchSearchPane), "ctrl-cmd-3");
+    assert_eq!(first(cx, &SearchInVaultAction), "cmd-shift-f");
+}
+
+#[gpui_kit::test]
 fn shift_cmd_brackets_change_tab_as_the_mac_sends_them(cx: &mut TestAppContext) {
     let f = fixture(cx);
-    app(cx, &f, |a, w, cx| a.open_path("Ideas.md", OpenIn::NewTab, w, cx));
+    app(cx, &f, |a, w, cx| {
+        a.open_path("Ideas.md", OpenIn::NewTab, w, cx)
+    });
     app(cx, &f, |a, w, cx| {
         a.open_path("Reading list.md", OpenIn::NewTab, w, cx)
     });
-    let active = |cx: &mut TestAppContext| app(cx, &f, |a, _, _| a.active_path().map(str::to_string));
+    let active =
+        |cx: &mut TestAppContext| app(cx, &f, |a, _, _| a.active_path().map(str::to_string));
     press(cx, &f, "cmd-{");
     assert_eq!(active(cx).as_deref(), Some("Ideas.md"));
     press(cx, &f, "cmd-}");
