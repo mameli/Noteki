@@ -2225,3 +2225,35 @@ fn the_name_prompt_takes_the_keyboard_at_once(cx: &mut TestAppContext) {
     frame(cx, &f);
     assert!(f.vault.join("Zeta.md").exists());
 }
+
+#[gpui_kit::test]
+fn shortcuts_work_as_soon_as_the_window_opens(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    press(cx, &f, "cmd-o");
+    frame(cx, &f);
+    ui(cx, &f, |window, cx| window.input("Launch plan", cx));
+    frame(cx, &f);
+    press(cx, &f, "enter");
+    frame(cx, &f);
+    assert_eq!(
+        app(cx, &f, |a, _, _| a.active_path().map(str::to_string)),
+        Some("Projects/Launch plan.md".to_string())
+    );
+    // With every Tab closed, the window still takes the shortcuts.
+    let tabs = app(cx, &f, |a, _, _| a.tabs().len());
+    for _ in 0..tabs {
+        press(cx, &f, "cmd-w");
+        frame(cx, &f);
+    }
+    assert_eq!(app(cx, &f, |a, _, _| a.tabs().len()), 0);
+    press(cx, &f, "cmd-o");
+    frame(cx, &f);
+    ui(cx, &f, |window, cx| window.input("Ideas", cx));
+    frame(cx, &f);
+    press(cx, &f, "enter");
+    frame(cx, &f);
+    assert_eq!(
+        app(cx, &f, |a, _, _| a.active_path().map(str::to_string)),
+        Some("Ideas.md".to_string())
+    );
+}

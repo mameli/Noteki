@@ -494,6 +494,13 @@ impl NotekiApp {
         if let Some(root) = initial {
             let _ = app.open_vault(&root, window, cx);
         }
+        // Something has to hold the keyboard, or the window's shortcuts reach
+        // nothing until a click: the Note in front, else the window.
+        if app.editor_path.is_some() {
+            app.editor.update(cx, |ed, cx| ed.focus(window, cx));
+        } else {
+            window.focus(&app.focus_handle, cx);
+        }
         app.start_fs_poller(window, cx);
         app
     }
@@ -1285,7 +1292,13 @@ impl NotekiApp {
                 self.recent_notes.insert(0, path);
                 self.recent_notes.truncate(settings::MAX_RECENT_NOTES);
             }
-            _ => self.editor_path = None,
+            _ => {
+                self.editor_path = None;
+                // The editor leaves the window: the keyboard stays with the window.
+                if self.editor.focus_handle(cx).contains_focused(window, cx) {
+                    window.focus(&self.focus_handle, cx);
+                }
+            }
         }
         self.update_link_context(cx);
         self.refresh_outline();
