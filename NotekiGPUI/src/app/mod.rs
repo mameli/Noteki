@@ -84,6 +84,7 @@ actions!(
         ShowBacklinksAction,
         SearchInVaultAction,
         TrashSelectedAction,
+        KeyboardShortcutsAction,
     ]
 );
 
@@ -125,6 +126,8 @@ pub fn register_keybindings(cx: &mut App) {
         KeyBinding::new("ctrl-`", FormatCodeAction, None),
         KeyBinding::new("cmd-shift-k", InsertWikilinkAction, None),
         KeyBinding::new("cmd-,", OpenSettingsAction, None),
+        // ⇧⌘/, which macOS sends as ⌘?.
+        KeyBinding::new("cmd-?", KeyboardShortcutsAction, None),
         // As in the Finder, only while Files has the keyboard: in the editor ⌘⌫
         // deletes to the start of the line.
         KeyBinding::new(

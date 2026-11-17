@@ -2263,6 +2263,20 @@ fn the_command_palette_takes_the_keyboard_at_once(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
+fn shift_cmd_slash_lists_the_shortcuts_in_the_palette(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    editor_with(cx, &f, "", 0);
+    let tabs = app(cx, &f, |a, _, _| a.tabs().len());
+    press(cx, &f, "cmd-?"); // ⇧⌘/, as macOS sends it
+    frame(cx, &f);
+    ui(cx, &f, |window, cx| window.input("Close tab", cx));
+    frame(cx, &f);
+    press(cx, &f, "enter");
+    frame(cx, &f);
+    assert_eq!(app(cx, &f, |a, _, _| a.tabs().len()), tabs - 1);
+}
+
+#[gpui_kit::test]
 fn the_name_prompt_takes_the_keyboard_at_once(cx: &mut TestAppContext) {
     let f = fixture(cx);
     editor_with(cx, &f, "", 0);

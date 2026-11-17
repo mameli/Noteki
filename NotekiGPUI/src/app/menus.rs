@@ -124,6 +124,6 @@ pub fn app_menus() -> Vec<Menu> {
             action("Show Next Tab", NextTabAction),
         ]),
         Menu::new("Window").items([action("Minimize", Minimize)]),
-        Menu::new("Help").items([action("Keyboard Shortcuts", OpenCommandPalette)]),
+        Menu::new("Help").items([action("Keyboard Shortcuts", KeyboardShortcutsAction)]),
     ]
 }

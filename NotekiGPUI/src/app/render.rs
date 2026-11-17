@@ -87,6 +87,12 @@ impl Render for NotekiApp {
                     this.show_search(window, cx)
                 }),
             )
+            // The palette lists every command with its shortcut.
+            .on_action(
+                cx.listener(|this, _: &KeyboardShortcutsAction, window, cx| {
+                    this.open_command_palette(window, cx)
+                }),
+            )
             .on_action(cx.listener(|this, _: &TrashSelectedAction, window, cx| {
                 if let Some(path) = this.selected_in_files(cx) {
                     let r = this.trash(&path, window, cx);
