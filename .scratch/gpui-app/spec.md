@@ -52,3 +52,19 @@ As in `.scratch/gpui-editor`: rules tested without GPUI, UI tests through real k
 ## Out of Scope
 
 The Properties table (the prototype shows the Frontmatter as YAML), the format bar of a Loose file (the prototype has no Loose file), drag and drop of files and Tabs.
+
+## Second batch: what the prototype still lacks of SPEC v1 (tickets 07–16)
+
+After tickets 01–06 and the editor's batch, what SPEC v1 has and the prototype does not, in the order it matters for using the prototype every day. Asked by the user on 17 November 2026 ("sono tutte cose che possono essere utili"); the package's size "non è bloccante" (done: 29 → 17 MB with strip and fat LTO, same speed).
+
+- **07** `[[` completion while typing.
+- **08** Callouts, Comments, footnotes and setext Headings in Live preview.
+- **09** The Properties table over the Frontmatter, Tags as chips.
+- **10** Pasted and dropped images saved next to the Note.
+- **11** Small editor gaps: ⌘K link, ⌘/ Comment, a table cell's ellipsis, indented code blocks, math left as written.
+- **12** A real `.app`: bundle, icon, opening files from the Finder and Takku, Loose files.
+- **13** Settings: font, line length, Excluded folders, Daily note.
+- **14** A second window (⇧⌘N).
+- **15** Export as HTML.
+
+Out of scope for now, each needs native code GPUI does not offer: pasting formatted text as Markdown (GPUI's clipboard gives text, images and files, not HTML; it would take reading `NSPasteboard` directly and an HTML-to-Markdown converter), spelling and autocorrect (`NSSpellChecker`), PDFs in a native view (PDFKit; a PDF opens in the default app), print and export as PDF (WebKit's).
