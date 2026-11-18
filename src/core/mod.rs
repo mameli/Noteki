@@ -12,6 +12,7 @@ pub mod markdown;
 pub mod math;
 pub mod merge;
 pub mod opening;
+pub mod paste;
 pub mod tabs;
 pub mod vault;
 pub mod wikilink;

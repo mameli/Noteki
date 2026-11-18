@@ -50,11 +50,14 @@ ratex-katex-fonts = "0.1.16"
 ttf-parser = "0.25"
 # Mermaid diagrams as SVG, drawn by GPUI (see core::diagram).
 mermaid-rs-renderer = { version = "0.3.1", default-features = false }
+htmd = "0.6"
 
 # Sparkle, loaded from the bundle at launch (see app::updates; already built in by GPUI).
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSBundle", "NSString"] }
+# The HTML a copy carries, pasted as Markdown (see editor::clipboard).
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSPasteboard"] }
 
 [dev-dependencies]
 gpui-kit = { version = "0.10.0", features = ["syntect", "test-support"] }

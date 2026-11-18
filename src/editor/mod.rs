@@ -7,6 +7,7 @@
 //! `crate::core::editor` and tested there; this module only measures, draws
 //! and dispatches.
 
+mod clipboard;
 mod element;
 mod find_bar;
 mod link_completion;
@@ -1262,7 +1263,13 @@ handlers! {
                 extension: image_extension(img.format),
             });
         } else if let Some(text) = item.text() {
-            ed.replace_selection(&text, cx);
+            // Formatted text (a web page, Mail, Word) as Markdown, unless in code,
+            // the Frontmatter or a Comment.
+            let at = ed.buf.selection().range().start;
+            let markdown = clipboard::html_of(&text)
+                .filter(|_| !crate::core::paste::pastes_plain_at(ed.buf.text(), at))
+                .and_then(|html| crate::core::paste::markdown_of(&html, &text));
+            ed.replace_selection(markdown.as_deref().unwrap_or(&text), cx);
         }
     };
     // The text alone, never an image.
