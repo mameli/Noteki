@@ -10,19 +10,28 @@ use gpui_kit::{AssetSource, Result, SharedString};
 icon_assets!(
     ExtraIcons,
     [
+        Bold,
         CalendarDays,
         ChevronsDownUp,
         ChevronsUpDown,
+        Code,
         Command,
         Download,
         FilePlus,
         FolderPlus,
+        Heading,
         Image,
+        Italic,
         Link,
         List,
+        ListOrdered,
+        ListTodo,
+        Paperclip,
         Pencil,
         SquarePlus,
+        Strikethrough,
         Tag,
+        TextQuote,
         X,
     ]
 );

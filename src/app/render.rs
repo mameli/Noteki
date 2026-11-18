@@ -888,7 +888,7 @@ impl NotekiApp {
             (Some(path), Some(TabKind::Attachment(kind))) => {
                 self.render_attachment(&path, kind, cx).into_any_element()
             }
-            (Some(_), Some(TabKind::Note)) => self.render_editor(),
+            (Some(_), Some(TabKind::Note)) => self.render_editor(cx),
             _ => self.render_no_tab(cx).into_any_element(),
         };
         v_flex()
@@ -1045,12 +1045,23 @@ impl NotekiApp {
         }
     }
 
-    fn render_editor(&self) -> AnyElement {
-        div()
+    fn render_editor(&self, cx: &mut Context<Self>) -> AnyElement {
+        let bar = self.settings.show_format_bar.then(|| {
+            let (a, b) = (cx.entity(), cx.entity());
+            super::format_bar::format_bar(
+                std::rc::Rc::new(move |f, w, cx| a.update(cx, |app, cx| app.format(f, w, cx))),
+                Some(std::rc::Rc::new(move |w, cx| {
+                    b.update(cx, |app, cx| app.pick_attachments(w, cx))
+                })),
+                cx,
+            )
+        });
+        v_flex()
             .id("editor-pane")
             .test_support()
             .size_full()
-            .child(self.editor.clone())
+            .children(bar)
+            .child(div().flex_1().min_h_0().child(self.editor.clone()))
             .into_any_element()
     }
 

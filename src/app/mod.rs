@@ -10,6 +10,7 @@ pub mod settings;
 mod settings_window;
 mod swift_prefs;
 pub mod terminal;
+mod format_bar;
 pub mod updates;
 
 use std::collections::{HashMap, HashSet};
@@ -1187,6 +1188,27 @@ impl NotekiApp {
         }
         self.embed_attachments(&copied, cx);
         Ok(())
+    }
+
+    /// The paperclip of the Format bar: images chosen in a dialog, copied next
+    /// to the Note and embedded at the cursor, as if dropped.
+    pub(crate) fn pick_attachments(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let rx = cx.prompt_for_paths(gpui_kit::PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: true,
+            prompt: Some("Attach".into()),
+        });
+        cx.spawn_in(window, async move |this, cx| {
+            if let Ok(Ok(Some(paths))) = rx.await {
+                let _ = this.update(cx, |app, cx| {
+                    let r = app.attach_files(&paths, cx);
+                    app.report(r);
+                    cx.notify();
+                });
+            }
+        })
+        .detach();
     }
 
     /// `![[name]]` for each new Attachment at the cursor, and the Vault told.

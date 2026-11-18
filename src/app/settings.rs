@@ -65,6 +65,8 @@ pub struct Settings {
     pub focus_mode: bool,
     /// View › Typewriter Mode: the line being written kept in the middle.
     pub typewriter_mode: bool,
+    /// The Format bar over the Note (hidden at first, for those who know the shortcuts).
+    pub show_format_bar: bool,
 }
 
 pub const DEFAULT_FONT_SIZE: f32 = 15.;
@@ -116,6 +118,7 @@ impl Default for Settings {
             daily_note_format: "[Daily_]YYYY/YYYY-MM-DD".into(),
             focus_mode: false,
             typewriter_mode: false,
+            show_format_bar: false,
         }
     }
 }
@@ -171,6 +174,7 @@ impl Settings {
         self.daily_note_format = from.daily_note_format.clone();
         self.focus_mode = from.focus_mode;
         self.typewriter_mode = from.typewriter_mode;
+        self.show_format_bar = from.show_format_bar;
     }
 }
 

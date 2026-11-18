@@ -2902,3 +2902,21 @@ fn focus_mode_is_a_setting_of_every_window_ticked_in_the_view_menu(cx: &mut Test
     frame(cx, &f);
     assert_eq!(app(cx, &f, |a, _, cx| a.editor().read(cx).modes()), (false, false));
 }
+
+#[gpui_kit::test]
+fn the_format_bar_chosen_in_settings_formats_the_selection(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    editor_with(cx, &f, "una parola", 4);
+    let shown = |cx: &mut TestAppContext| ui(cx, &f, |w, _| w.try_find("format-bar").is_some());
+    assert!(!shown(cx), "hidden at first");
+    app(cx, &f, |a, w, cx| a.update_settings(|s| s.show_format_bar = true, w, cx));
+    frame(cx, &f);
+    assert!(shown(cx));
+    press(cx, &f, "alt-shift-right");
+    ui(cx, &f, |w, cx| w.click("format-bar-bold", cx));
+    frame(cx, &f);
+    assert_eq!(editor_state(cx, &f).0, "una **parola**");
+    ui(cx, &f, |w, cx| w.click("format-bar-task", cx));
+    frame(cx, &f);
+    assert_eq!(editor_state(cx, &f).0, "- [ ] una **parola**");
+}

@@ -19,6 +19,8 @@ use crate::theme::NotekiPalette;
 
 pub struct LooseFile {
     path: PathBuf,
+    /// The Format bar, as Settings had it when the window opened.
+    format_bar: bool,
     doc: NoteDoc,
     editor: Entity<NoteEditor>,
     autosave: Option<Task<()>>,
@@ -100,6 +102,7 @@ impl LooseFile {
         ];
         Self {
             path,
+            format_bar: settings.show_format_bar,
             doc: NoteDoc::new(text),
             editor,
             autosave: None,
@@ -177,6 +180,19 @@ impl Render for LooseFile {
             .flex_col()
             .bg(cx.theme().background)
             .child(TitleBar::new().child(div().text_sm().child(title)))
+            .children(self.format_bar.then(|| {
+                let editor = self.editor.clone();
+                super::format_bar::format_bar(
+                    std::rc::Rc::new(move |f, w, cx| {
+                        editor.update(cx, |ed, cx| {
+                            ed.format(f, cx);
+                            ed.focus(w, cx);
+                        })
+                    }),
+                    None,
+                    cx,
+                )
+            }))
             .child(div().flex_1().min_h_0().child(self.editor.clone()))
     }
 }

@@ -337,6 +337,23 @@ impl SettingsWindow {
         section("Text", Some(restore.into_any_element()), rows, None)
     }
 
+    /// How writing looks: the Format bar.
+    fn writing(&self, s: &Settings) -> AnyElement {
+        let (app, main) = (self.app.clone(), self.main);
+        let bar = Switch::new("show-format-bar")
+            .checked(s.show_format_bar)
+            .on_click(move |on, _, cx| {
+                let on = *on;
+                apply(&app, main, cx, move |t| t.show_format_bar = on)
+            });
+        section(
+            "Writing",
+            None,
+            vec![row("Show the Format bar over the Note", bar)],
+            None,
+        )
+    }
+
     fn excluded(&self, cx: &mut Context<Self>) -> AnyElement {
         let a = self.app.read(cx);
         let root = a.vault().map(|v| v.root.clone());
@@ -639,6 +656,7 @@ impl Render for SettingsWindow {
             .child(header)
             .child(self.appearance(&s))
             .child(self.text(&s, window, cx))
+            .child(self.writing(&s))
             .child(self.excluded(cx))
             .child(self.daily_note(&s, cx))
             .child(updates_and_support());
