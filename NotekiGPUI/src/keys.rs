@@ -46,8 +46,11 @@ fn here(mac: &'static str) -> Option<&'static str> {
     })
 }
 
-/// The Linux keystroke of a Mac one: `None` for the Mac's own.
+/// The Linux keystroke of a Mac one, its modifiers in any order: `None` for
+/// the Mac's own.
 pub fn linux(mac: &str) -> Option<String> {
+    let mac = canonical(mac);
+    let mac = mac.as_str();
     let keys = match mac {
         // Hiding the app, minimizing, the character palette: macOS's.
         "cmd-h" | "alt-cmd-h" | "cmd-m" | "ctrl-cmd-space" => return None,
@@ -71,8 +74,8 @@ pub fn linux(mac: &str) -> Option<String> {
         "cmd-shift-up" => "ctrl-shift-home",
         "cmd-shift-down" => "ctrl-shift-end",
         // Back and forward as in a browser; Tabs as in one too.
-        "cmd-alt-left" | "alt-cmd-left" => "alt-left",
-        "cmd-alt-right" | "alt-cmd-right" => "alt-right",
+        "alt-cmd-left" => "alt-left",
+        "alt-cmd-right" => "alt-right",
         "cmd-}" => "ctrl-pagedown",
         "cmd-{" => "ctrl-pageup",
         // Replace and help as Linux's apps have them.
@@ -91,6 +94,33 @@ pub fn linux(mac: &str) -> Option<String> {
         }
     };
     Some(keys.to_string())
+}
+
+/// A keystroke with its modifiers as the table above writes them: ctrl, alt,
+/// cmd, shift, then the key (`shift-alt-left` is `alt-shift-left`).
+fn canonical(keys: &str) -> String {
+    let parts: Vec<&str> = keys.split('-').collect();
+    let (key, mods) = match parts.split_last() {
+        // `cmd--`: the key is the minus.
+        Some((&"", rest)) if rest.last() == Some(&"") => ("-", &rest[..rest.len() - 1]),
+        Some((key, rest)) => (*key, rest),
+        None => return keys.to_string(),
+    };
+    let mut out = String::new();
+    for m in ["ctrl", "alt", "cmd", "shift"] {
+        if mods.contains(&m) {
+            out.push_str(m);
+            out.push('-');
+        }
+    }
+    if mods
+        .iter()
+        .any(|m| !["ctrl", "alt", "cmd", "shift"].contains(m))
+    {
+        return keys.to_string();
+    }
+    out.push_str(key);
+    out
 }
 
 /// A shortcut as the Mac's menus show it (`⌥⌘←`), shown on this system.
@@ -185,6 +215,14 @@ mod tests {
         assert_eq!(linux("cmd-alt-left").as_deref(), Some("alt-left"), "back");
         assert_eq!(linux("ctrl-a"), None, "Ctrl+A selects all there");
         assert_eq!(linux("cmd-h"), None);
+        assert_eq!(
+            linux("shift-alt-left").as_deref(),
+            Some("ctrl-shift-left"),
+            "any order"
+        );
+        assert_eq!(linux("cmd-alt-left").as_deref(), Some("alt-left"));
+        assert_eq!(linux("cmd--").as_deref(), Some("ctrl--"));
+        assert_eq!(linux("cmd-shift-=").as_deref(), Some("ctrl-shift-="));
     }
 
     #[test]
