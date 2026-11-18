@@ -2942,3 +2942,33 @@ fn the_interface_size_scales_the_interface_not_the_text(cx: &mut TestAppContext)
     assert!(large > medium, "the interface grows: {large}");
     assert_eq!(same_text, text, "the Note's text keeps its size");
 }
+
+#[cfg(target_os = "macos")]
+#[gpui_kit::test]
+fn misspelled_words_of_the_prose_are_marked_not_the_one_being_typed(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let text = "This sentense is fine\n\n`sentense` in code\n\nAnd then";
+    editor_with(cx, &f, text, text.len());
+    let marked = |cx: &mut TestAppContext| app(cx, &f, |a, _, cx| a.editor().update(cx, |e, _| (*e.misspelled()).clone()));
+    assert_eq!(marked(cx), vec![5..13], "the prose's word, not the code's");
+    // The word the cursor is in is being typed: left alone until it moves on.
+    type_in_editor(cx, &f, " wrod");
+    assert_eq!(marked(cx), vec![5..13]);
+    app(cx, &f, |a, w, cx| a.update_settings(|s| s.check_spelling = false, w, cx));
+    assert!(marked(cx).is_empty(), "turned off in Settings");
+}
+
+#[cfg(target_os = "macos")]
+#[gpui_kit::test]
+fn a_misspelled_word_is_corrected_as_it_ends_and_undo_puts_it_back(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    editor_with(cx, &f, "I will ", 7);
+    type_in_editor(cx, &f, "recieve");
+    type_in_editor(cx, &f, " ");
+    assert_eq!(editor_state(cx, &f).0, "I will receive ");
+    press(cx, &f, "cmd-z");
+    assert_eq!(editor_state(cx, &f).0, "I will recieve ");
+    app(cx, &f, |a, w, cx| a.update_settings(|s| s.correct_spelling = false, w, cx));
+    type_in_editor(cx, &f, "agian ");
+    assert!(editor_state(cx, &f).0.ends_with("agian "), "turned off");
+}

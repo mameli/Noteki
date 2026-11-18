@@ -8,6 +8,7 @@
 //! and dispatches.
 
 mod clipboard;
+pub mod spelling;
 mod element;
 mod find_bar;
 mod link_completion;
@@ -29,6 +30,9 @@ use gpui_kit::{
     MouseMoveEvent, MouseUpEvent, Pixels, Point, ScrollHandle, SharedString, Task, UTF16Selection,
     Window,
 };
+
+use gpui_kit::component::menu::ContextMenuExt as _;
+use gpui_kit::Entity;
 
 use crate::core::diagram::{self, Diagram};
 use crate::core::editor::buffer::{range_from_utf16, range_to_utf16};
@@ -276,6 +280,15 @@ pub struct NoteEditor {
     /// View › Focus Mode and Typewriter Mode, from the settings.
     focus_mode: bool,
     typewriter_mode: bool,
+    /// Spelling checked while typing, and corrected, from the settings.
+    check_spelling: bool,
+    correct_spelling: bool,
+    /// The misspelled words each line gave, and those marked in the last
+    /// frame with the `(revision, cursor)` they were found at.
+    spell_checked: crate::core::editor::spelling::Checked,
+    spell_marks: (Option<(u64, usize)>, Words),
+    /// Where the last right click was, for its menu (a misspelled word's guesses).
+    context_at: Option<usize>,
     /// The Note chosen in the `[[` list, and the link where Esc closed it.
     completion_pick: usize,
     completion_dismissed: Option<usize>,
@@ -364,6 +377,11 @@ impl NoteEditor {
             line_limit: Some(100),
             focus_mode: false,
             typewriter_mode: false,
+            check_spelling: false,
+            correct_spelling: false,
+            spell_checked: Default::default(),
+            spell_marks: (None, Rc::default()),
+            context_at: None,
             note_key: None,
             histories: HashMap::new(),
             revision: 0,
@@ -574,6 +592,124 @@ impl NoteEditor {
             self.reveal = true;
             cx.notify();
         }
+    }
+
+    /// Spelling checked while typing (misspelled words underlined) and
+    /// corrected as a word ends (SPEC › Window).
+    pub fn set_spelling(&mut self, check: bool, correct: bool, cx: &mut Context<Self>) {
+        if (check, correct) != (self.check_spelling, self.correct_spelling) {
+            self.check_spelling = check;
+            self.correct_spelling = correct;
+            self.spell_marks.0 = None;
+            cx.notify();
+        }
+    }
+
+    /// The misspelled words underlined: of the prose, not the one being typed.
+    pub fn misspelled(&mut self) -> Rc<Vec<Range<usize>>> {
+        let text = self.buf.text();
+        if !self.check_spelling || !spelling::AVAILABLE || text.len() > LIVE_PREVIEW_MAX_BYTES {
+            return Rc::default();
+        }
+        let key = (self.revision, self.buf.cursor());
+        if self.spell_marks.0 != Some(key) {
+            // The word the cursor touches is being typed: not marked yet.
+            let cursor = self.buf.selection().is_empty().then(|| self.buf.cursor());
+            let found = crate::core::editor::spelling::misspelled(
+                text,
+                cursor,
+                &mut self.spell_checked,
+                spelling::misspelled,
+            );
+            self.spell_marks = (Some(key), Rc::new(found));
+        }
+        self.spell_marks.1.clone()
+    }
+
+    /// The misspelled word at `offset`, if one is marked there.
+    fn misspelled_at(&mut self, offset: usize) -> Option<Range<usize>> {
+        self.misspelled()
+            .iter()
+            .find(|r| r.start <= offset && offset <= r.end)
+            .cloned()
+    }
+
+    /// Corrects the word just ended by `typed` (a space or a punctuation
+    /// mark), as the Mac's text views do; one undo step puts it back.
+    fn correct_word_before(&mut self, typed: &str, cx: &mut Context<Self>) {
+        use crate::core::editor::spelling::word_before;
+        if !self.correct_spelling
+            || !self.check_spelling
+            || !spelling::AVAILABLE
+            || !matches!(typed, " " | "." | "," | ";" | ":" | "!" | "?" | ")")
+            || !self.buf.selection().is_empty()
+        {
+            return;
+        }
+        let end = self.buf.cursor() - typed.len();
+        let text = self.buf.text();
+        let Some(word) = word_before(text, end) else {
+            return;
+        };
+        if crate::core::paste::pastes_plain_at(text, word.start) {
+            return;
+        }
+        // Only a word the checker marks, in the language of its paragraph.
+        let line = text[..word.start].rfind('\n').map_or(0, |i| i + 1);
+        let line_end = text[word.end..].find('\n').map_or(text.len(), |i| word.end + i);
+        let paragraph = &text[line..line_end];
+        let local = word.start - line..word.end - line;
+        if !crate::core::editor::spelling::misspelled(
+            paragraph,
+            None,
+            &mut Default::default(),
+            spelling::misspelled,
+        )
+        .contains(&local)
+        {
+            return;
+        }
+        let Some(fix) = spelling::correction(paragraph, local) else {
+            return;
+        };
+        let cursor = self.buf.cursor();
+        self.buf.close_undo_step();
+        let changed = self.buf.replace(word.clone(), &fix);
+        let moved = cursor + fix.len() - word.len();
+        self.buf.move_to(moved, false);
+        self.buf.close_undo_step();
+        self.edited(changed, cx);
+    }
+
+    /// A right click: the cursor goes there unless it is in the selection, as
+    /// on the Mac, and its menu (`context_menu`) knows the word under it.
+    fn on_right_click(&mut self, ev: &MouseDownEvent, _: &mut Window, cx: &mut Context<Self>) {
+        let Some(layout) = &self.layout else {
+            return;
+        };
+        let at = layout.offset_for_point(self.buf.text(), ev.position);
+        if !self.buf.selection().range().contains(&at) {
+            self.buf.move_to(at, false);
+        }
+        self.context_at = Some(at);
+        self.wake(cx);
+        self.reveal = false;
+    }
+
+    /// A word was learned or ignored: every line is checked again.
+    fn forget_spelling(&mut self, cx: &mut Context<Self>) {
+        self.spell_checked.clear();
+        self.spell_marks.0 = None;
+        cx.notify();
+    }
+
+    /// A guess chosen in the menu of a misspelled word: it takes the word's place.
+    fn replace_word(&mut self, word: Range<usize>, with: &str, cx: &mut Context<Self>) {
+        self.buf.close_undo_step();
+        let changed = self.buf.replace(word.clone(), with);
+        self.buf.move_to(word.start + with.len(), false);
+        self.buf.close_undo_step();
+        self.edited(changed, cx);
     }
 
     pub fn modes(&self) -> (bool, bool) {
@@ -1280,6 +1416,52 @@ handlers! {
     };
 }
 
+/// Ranges of words of the text, shared with the frame that draws them.
+type Words = Rc<Vec<Range<usize>>>;
+
+/// The editor's right-click menu: a misspelled word's guesses, *Ignore* and
+/// *Learn Spelling*, then Cut, Copy and Paste.
+fn context_menu(
+    editor: &Entity<NoteEditor>,
+    menu: gpui_kit::component::menu::PopupMenu,
+    cx: &mut App,
+) -> gpui_kit::component::menu::PopupMenu {
+    use gpui_kit::component::menu::PopupMenuItem;
+    let word = editor.update(cx, |ed, _| {
+        let at = ed.context_at?;
+        let range = ed.misspelled_at(at)?;
+        let guesses = spelling::guesses(ed.buf.text(), range.clone());
+        Some((range.clone(), ed.buf.text()[range].to_string(), guesses))
+    });
+    let mut menu = menu;
+    if let Some((range, word, guesses)) = word {
+        if guesses.is_empty() {
+            menu = menu.item(PopupMenuItem::new("No Guesses Found").disabled(true));
+        }
+        for guess in guesses.into_iter().take(6) {
+            let (e, r) = (editor.clone(), range.clone());
+            menu = menu.item(PopupMenuItem::new(guess.clone()).on_click(move |_, _, cx| {
+                e.update(cx, |ed, cx| ed.replace_word(r.clone(), &guess, cx))
+            }));
+        }
+        let (e1, e2, w1, w2) = (editor.clone(), editor.clone(), word.clone(), word);
+        menu = menu
+            .separator()
+            .item(PopupMenuItem::new("Ignore Spelling").on_click(move |_, _, cx| {
+                spelling::ignore(&w1);
+                e1.update(cx, |ed, cx| ed.forget_spelling(cx));
+            }))
+            .item(PopupMenuItem::new("Learn Spelling").on_click(move |_, _, cx| {
+                spelling::learn(&w2);
+                e2.update(cx, |ed, cx| ed.forget_spelling(cx));
+            }))
+            .separator();
+    }
+    menu.menu("Cut", Box::new(Cut))
+        .menu("Copy", Box::new(Copy))
+        .menu("Paste", Box::new(Paste))
+}
+
 impl Render for NoteEditor {
     fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let find_bar = self.render_find_bar(cx);
@@ -1327,6 +1509,7 @@ impl Render for NoteEditor {
         } else {
             px(16.)
         };
+        let root = root.on_mouse_down(MouseButton::Right, cx.listener(Self::on_right_click));
         let editor = self.bind_actions(root, cx).child(
             div().w_full().px_6().pt(room).pb(room).child(
                 div()
@@ -1339,6 +1522,8 @@ impl Render for NoteEditor {
                     .child(EditorElement::new(cx.entity())),
             ),
         );
+        let entity = cx.entity();
+        let editor = editor.context_menu(move |menu, _, cx| context_menu(&entity, menu, cx));
         // The find bar is outside the editor's key context: typing in it is
         // not editing the Note.
         div()
@@ -1419,6 +1604,9 @@ impl EntityInputHandler for NoteEditor {
         };
         window.notify_text_input_changed(&self.focus_handle);
         self.edited(changed, cx);
+        if changed {
+            self.correct_word_before(text, cx);
+        }
     }
 
     fn replace_and_mark_text_in_range(

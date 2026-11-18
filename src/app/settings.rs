@@ -101,6 +101,9 @@ pub struct Settings {
     /// The Format bar over the Note (hidden at first, for those who know the shortcuts).
     pub show_format_bar: bool,
     pub interface_size: InterfaceSize,
+    /// Spelling checked while typing, and corrected as a word ends.
+    pub check_spelling: bool,
+    pub correct_spelling: bool,
 }
 
 pub const DEFAULT_FONT_SIZE: f32 = 15.;
@@ -154,6 +157,8 @@ impl Default for Settings {
             typewriter_mode: false,
             show_format_bar: false,
             interface_size: InterfaceSize::default(),
+            check_spelling: true,
+            correct_spelling: true,
         }
     }
 }
@@ -211,6 +216,8 @@ impl Settings {
         self.typewriter_mode = from.typewriter_mode;
         self.show_format_bar = from.show_format_bar;
         self.interface_size = from.interface_size;
+        self.check_spelling = from.check_spelling;
+        self.correct_spelling = from.correct_spelling;
     }
 }
 

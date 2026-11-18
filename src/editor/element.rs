@@ -1391,6 +1391,8 @@ pub(super) struct PrepaintState {
     selection: Vec<Bounds<Pixels>>,
     matches: Vec<Bounds<Pixels>>,
     carets: Vec<Bounds<Pixels>>,
+    /// Under each misspelled word, the row it is on.
+    misspelled: Vec<Bounds<Pixels>>,
 }
 
 impl Element for EditorElement {
@@ -1500,11 +1502,19 @@ impl Element for EditorElement {
             }
         }
         let matches = match_rects;
+        let words = self.editor.update(cx, |ed, _| ed.misspelled());
+        let mut misspelled = Vec::new();
+        for w in words.iter() {
+            for i in layout.line_of(w.start)..=layout.line_of(w.end) {
+                misspelled.extend(layout.selection_rects(i, w));
+            }
+        }
         PrepaintState {
             layout,
             selection,
             matches,
             carets,
+            misspelled,
         }
     }
 
@@ -1643,6 +1653,25 @@ impl Element for EditorElement {
                 window,
                 cx,
             );
+        }
+        // A misspelled word: red dots under its letters, as on the Mac.
+        let red = gpui_kit::hsla(0., 0.8, 0.55, 1.);
+        for r in state.misspelled.drain(..) {
+            if r.bottom() < visible.top() || r.top() > visible.bottom() {
+                continue;
+            }
+            let line_height = r.size.height;
+            // The letters' bottom: a row's spacing is shared above and under them.
+            let y = r.top() + line_height * 0.89;
+            let dot = px(2.);
+            let mut x = r.left();
+            while x + dot <= r.right() {
+                window.paint_quad(gpui_kit::fill(
+                    Bounds::new(point(x, y), size(dot, dot)),
+                    red,
+                ).corner_radii(px(1.)));
+                x += dot * 2.;
+            }
         }
         // Focus Mode: every line but the cursor's paragraph under a veil of
         // the background.

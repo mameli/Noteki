@@ -95,6 +95,13 @@ pub fn app_menus(settings: &Settings) -> Vec<Menu> {
             action("Find Previous", FindPrevious),
             action("Replace…", OpenReplace),
             action("Search in Vault…", SearchInVaultAction),
+            MenuItem::separator(),
+            MenuItem::submenu(Menu::new("Spelling and Grammar").items([
+                action("Check Spelling While Typing", ToggleCheckSpelling)
+                    .checked(settings.check_spelling),
+                action("Correct Spelling Automatically", ToggleCorrectSpelling)
+                    .checked(settings.correct_spelling),
+            ])),
         ]),
         Menu::new("Format").items([
             action("Bold", FormatBoldAction),

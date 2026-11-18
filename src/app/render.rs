@@ -128,6 +128,12 @@ impl Render for NotekiApp {
             .on_action(cx.listener(|this, _: &NewWindowAction, _, cx| this.open_another_window(cx)))
             .on_action(cx.listener(|this, _: &ToggleFocusMode, w, cx| this.toggle_focus_mode(w, cx)))
             .on_action(cx.listener(|this, _: &ExportPdfAction, _, cx| this.export_pdf(cx)))
+            .on_action(cx.listener(|this, _: &ToggleCheckSpelling, w, cx| {
+                this.toggle_check_spelling(w, cx)
+            }))
+            .on_action(cx.listener(|this, _: &ToggleCorrectSpelling, w, cx| {
+                this.toggle_correct_spelling(w, cx)
+            }))
             .on_action(cx.listener(|this, _: &PrintAction, _, cx| this.print_note(cx)))
             .on_action(cx.listener(|this, _: &ToggleTypewriterMode, w, cx| {
                 this.toggle_typewriter_mode(w, cx)

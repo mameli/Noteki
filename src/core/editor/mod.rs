@@ -3,6 +3,7 @@
 //! The element that draws them is `crate::editor`.
 
 pub mod buffer;
+pub mod spelling;
 pub mod code;
 pub mod completion;
 pub mod display;

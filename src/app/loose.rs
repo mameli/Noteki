@@ -73,6 +73,7 @@ impl LooseFile {
                 cx,
             );
             ed.open_note(&key, &text, 0, cx);
+            ed.set_spelling(settings.check_spelling, settings.correct_spelling, cx);
             ed
         });
         editor.update(cx, |ed, cx| ed.focus(window, cx));

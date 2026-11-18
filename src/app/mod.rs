@@ -97,6 +97,8 @@ actions!(
         ToggleTypewriterMode,
         ExportPdfAction,
         PrintAction,
+        ToggleCheckSpelling,
+        ToggleCorrectSpelling,
     ]
 );
 
@@ -475,6 +477,7 @@ impl NotekiApp {
                 cx,
             );
             ed.set_modes(settings.focus_mode, settings.typewriter_mode, cx);
+            ed.set_spelling(settings.check_spelling, settings.correct_spelling, cx);
             ed
         });
         menus::refresh(&settings, cx);
@@ -982,12 +985,16 @@ impl NotekiApp {
                 .clamp(settings::MIN_FONT_SIZE, settings::MAX_FONT_SIZE),
         );
         let modes = (s.focus_mode, s.typewriter_mode);
+        let spelling = (s.check_spelling, s.correct_spelling);
         self.editor.update(cx, |ed, cx| {
             ed.set_font_size(size, cx);
             ed.set_text_settings(&family, &code, limit, cx);
             ed.set_modes(modes.0, modes.1, cx);
+            ed.set_spelling(spelling.0, spelling.1, cx);
         });
-        if modes != (before.focus_mode, before.typewriter_mode) {
+        if modes != (before.focus_mode, before.typewriter_mode)
+            || spelling != (before.check_spelling, before.correct_spelling)
+        {
             menus::refresh(&self.settings, cx);
         }
         if let Some(root) = self.vault.as_ref().map(|v| v.root.clone()) {
@@ -1033,6 +1040,16 @@ impl NotekiApp {
             None => settings::DEFAULT_FONT_SIZE,
         };
         self.update_settings(|s| s.font_size = size, window, cx);
+    }
+
+    /// Edit › Spelling and Grammar › Check Spelling While Typing.
+    pub(crate) fn toggle_check_spelling(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.update_settings(|s| s.check_spelling = !s.check_spelling, window, cx);
+    }
+
+    /// Edit › Spelling and Grammar › Correct Spelling Automatically.
+    pub(crate) fn toggle_correct_spelling(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.update_settings(|s| s.correct_spelling = !s.correct_spelling, window, cx);
     }
 
     /// View › Focus Mode, for every window.

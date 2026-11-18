@@ -123,6 +123,13 @@ pub fn from_swift(get: impl Fn(&str) -> Option<Value>) -> Option<Settings> {
     if let Some(size) = get("interfaceSize").and_then(|v| serde_json::from_value(v).ok()) {
         s.interface_size = size;
     }
+    // WebKit kept them in the app's preferences.
+    if let Some(on) = flag("WebContinuousSpellCheckingEnabled") {
+        s.check_spelling = on;
+    }
+    if let Some(on) = flag("WebAutomaticSpellingCorrectionEnabled") {
+        s.correct_spelling = on;
+    }
     if let Some(on) = flag("showsFormatBar") {
         s.show_format_bar = on;
     }
@@ -172,6 +179,7 @@ mod tests {
             "typewriterMode": true,
             "showsFormatBar": true,
             "interfaceSize": "large",
+            "WebAutomaticSpellingCorrectionEnabled": false,
             "excludedFolders": {"/Users/me/Vault/": ["Archive"]},
             "recentNotes": {"/Users/me/Vault/": ["a.md", "b/c.md"]},
             "windows": "data the import leaves",
@@ -193,6 +201,7 @@ mod tests {
         assert_eq!(s.daily_note_folder, "Diario");
         assert!(s.typewriter_mode && !s.focus_mode && s.show_format_bar);
         assert_eq!(s.interface_size, crate::app::settings::InterfaceSize::Large);
+        assert!(s.check_spelling && !s.correct_spelling, "on unless turned off there");
         assert_eq!(s.daily_note_format, "[Daily_]YYYY/YYYY-MM-DD");
         assert_eq!(
             s.excluded_in(std::path::Path::new("/Users/me/Vault")),
