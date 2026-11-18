@@ -18,7 +18,7 @@ A light native Mac app to read and write the Markdown vault you keep with **Obsi
 - **Frontmatter** shown as a Properties table, with Tags as chips.
 - **Wikilinks** resolved as Obsidian does, completed as you type, with **Backlinks** and an Outline in the sidebar.
 - **Tags** pane, **Search** across the vault, a Quick switcher, the Daily note, and a **Command palette** (⇧⌘P) with every command.
-- **Export** a note to HTML.
+- **Paste** from the web, Mail or Word as Markdown; **export** a note to HTML or PDF, or print it.
 - **External changes** merged while you type: written for the Meeting notes [Takku](https://github.com/mameli/Takku) writes during a call.
 - **Updates itself**, and installs with Homebrew: `brew tap mameli/noteki && brew trust mameli/noteki && brew install --cask noteki`.
 

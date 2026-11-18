@@ -11,5 +11,5 @@ From 0.4 Noteki is one Rust program on [GPUI](https://www.gpui.rs) (Zed's UI fra
 ## Consequences
 
 - The Swift code (`Noteki/`, `NotekiCore/`, `Editor/`, the Xcode project) is removed from the repository; it stays in the history and in the 0.3.1 release, the last version with a web view.
-- Everything CodeMirror gave for free is Noteki's own to write and test: text input and IME, selection, undo, wrapping, accessibility. Some 0.3 features are not there yet (CHANGELOG, 0.4.0): Export as PDF and Print, spell checking, Focus and Typewriter Mode, the Format bar, pasting formatted text as Markdown.
+- Everything CodeMirror and WebKit gave for free is Noteki's own to write and test: text input and IME, selection, undo, wrapping, spelling (the Mac's NSSpellChecker), accessibility. WebKit is still the system's way to page HTML: *Export as PDF…* and *Print…* lay the exported page out in a WKWebView never shown, only while printing (`src/app/print.rs`).
 - The SPEC's budget was set for a web view: the app is 26 MB on disk with Sparkle, over its 20 MB, and memory has to be measured again without WebKit.
