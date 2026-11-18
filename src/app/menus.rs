@@ -65,6 +65,7 @@ pub fn app_menus() -> Vec<Menu> {
             action("Quick Switcher…", OpenQuickSwitcher),
             action("New Tab…", OpenQuickSwitcherNewTab),
             action("Open Vault…", OpenVaultAction),
+            action(terminal::open_vault_label(), OpenVaultInTerminalAction),
             MenuItem::separator(),
             action("Export as HTML…", ExportHtmlAction),
             MenuItem::separator(),

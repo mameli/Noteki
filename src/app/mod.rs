@@ -9,6 +9,7 @@ mod render;
 pub mod settings;
 mod settings_window;
 mod swift_prefs;
+pub mod terminal;
 pub mod updates;
 
 use std::collections::{HashMap, HashSet};
@@ -89,6 +90,7 @@ actions!(
         KeyboardShortcutsAction,
         CheckForUpdatesAction,
         SupportNotekiAction,
+        OpenVaultInTerminalAction,
     ]
 );
 
@@ -1517,6 +1519,23 @@ impl NotekiApp {
     }
 
     /// Shows a file or folder in the Finder.
+    /// The user's terminal in the folder `path` of the Vault, or the folder of
+    /// the file `path`; `""` is the Vault's root.
+    pub(crate) fn open_in_terminal(&mut self, path: &str) {
+        let Some(v) = &self.vault else {
+            return;
+        };
+        let target = v.root.join(path);
+        let folder = if target.is_dir() {
+            target
+        } else {
+            target.parent().map_or(v.root.clone(), Path::to_path_buf)
+        };
+        if let Err(e) = terminal::open(&folder) {
+            self.set_error(format!("Could not open the terminal: {e}"));
+        }
+    }
+
     pub(crate) fn reveal(&mut self, path: &str, cx: &mut Context<Self>) {
         if let Some(v) = &self.vault {
             cx.reveal_path(&v.root.join(path));

@@ -126,6 +126,10 @@ impl Render for NotekiApp {
                 )
             }))
             .on_action(cx.listener(|this, _: &NewWindowAction, _, cx| this.open_another_window(cx)))
+            .on_action(cx.listener(|this, _: &OpenVaultInTerminalAction, _, cx| {
+                this.open_in_terminal("");
+                cx.notify();
+            }))
             .on_action(cx.listener(|this, _: &OpenSettingsAction, window, cx| {
                 this.open_settings(window, cx)
             }))
@@ -1372,6 +1376,10 @@ impl NotekiApp {
             ("Open vault…", AssetIcon::FolderOpen, |a, w, cx| {
                 a.pick_vault(w, cx)
             }),
+            (super::terminal::open_vault_label(), AssetIcon::FolderOpen, |a, _, cx| {
+                a.open_in_terminal("");
+                cx.notify();
+            }),
             ("Close tab", AssetIcon::X, |a, w, cx| {
                 a.close_active_tab(w, cx)
             }),
@@ -1493,6 +1501,7 @@ fn file_menu(menu: PopupMenu, app: &Entity<NotekiApp>, path: String, is_folder: 
         }))
     };
     let (rename, copy, rel, abs, reveal, trash) = (p(), p(), p(), p(), p(), p());
+    let term = p();
     let menu = menu
         .separator()
         .item(menu_item("Rename…", app, move |app, w, cx| {
@@ -1520,6 +1529,10 @@ fn file_menu(menu: PopupMenu, app: &Entity<NotekiApp>, path: String, is_folder: 
         }))
         .item(menu_item(REVEAL, app, move |app, _, cx| {
             app.reveal(&reveal, cx)
+        }))
+        .item(menu_item(super::terminal::open_in_label(), app, move |app, _, cx| {
+            app.open_in_terminal(&term);
+            cx.notify();
         }))
         .separator()
         .item(menu_item("Move to Trash", app, move |app, w, cx| {
