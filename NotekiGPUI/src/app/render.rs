@@ -445,10 +445,11 @@ impl NotekiApp {
         let entity = cx.entity();
         let active = self.active_path().map(str::to_string);
 
+        let empty = self.empty_folders.clone();
         let file_tree = tree(&self.file_tree, move |ix, entry, tree_selected, _, _| {
             let item = entry.item();
             let id = item.id.to_string();
-            let is_folder = entry.is_folder();
+            let is_folder = entry.is_folder() || empty.contains(&id);
             let icon = match (is_folder, entry.is_expanded()) {
                 (true, true) => AssetIcon::ChevronDown,
                 (true, false) => AssetIcon::ChevronRight,
@@ -487,9 +488,11 @@ impl NotekiApp {
         });
 
         let menu_app = cx.entity();
+        let empty = self.empty_folders.clone();
         let file_tree = file_tree.context_menu(move |_, entry, menu, _, _| {
             let path = entry.item().id.to_string();
-            file_menu(menu, &menu_app, path, entry.is_folder())
+            let is_folder = entry.is_folder() || empty.contains(&path);
+            file_menu(menu, &menu_app, path, is_folder)
         });
         v_flex().size_full().child(
             div()

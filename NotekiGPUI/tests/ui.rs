@@ -209,6 +209,37 @@ fn clicking_a_folder_expands_it_once(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
+fn an_empty_folder_is_a_folder_not_a_note_to_open(cx: &mut TestAppContext) {
+    // Regression: the tree took a folder with nothing in it for a file, and a
+    // click said "Not found: Excalidraw".
+    let dir = temp_dir();
+    let vault = dir.join("vault");
+    copy_dir(
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("../docs/demo-vault"),
+        &vault,
+    );
+    std::fs::create_dir(vault.join("Aaa Excalidraw")).unwrap();
+    let (window, app_entity) = open_app(cx, &dir, &vault);
+    let f = Fixture {
+        dir,
+        vault,
+        window,
+        app: app_entity,
+    };
+    frame(cx, &f);
+    let before = app(cx, &f, |a, _, _| a.active_path().map(str::to_string));
+    ui(cx, &f, |window, cx| {
+        window.within("file-tree").click(0usize, cx)
+    });
+    frame(cx, &f);
+    assert!(!status(cx, &f).contains("Not found"), "{}", status(cx, &f));
+    assert_eq!(
+        app(cx, &f, |a, _, _| a.active_path().map(str::to_string)),
+        before
+    );
+}
+
+#[gpui_kit::test]
 fn clicking_a_note_in_the_tree_opens_it(cx: &mut TestAppContext) {
     let f = fixture(cx);
     // Folders first (Daily, Media, Meetings, Physics, Projects), then Ideas.md.

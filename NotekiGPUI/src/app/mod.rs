@@ -349,6 +349,17 @@ fn collect_notes(items: &[VaultItem], out: &mut Vec<(String, String)>) {
     }
 }
 
+fn empty_folders(items: &[VaultItem], out: &mut HashSet<String>) {
+    for item in items {
+        if let VaultItem::Folder { path, children, .. } = item {
+            if children.is_empty() {
+                out.insert(path.clone());
+            }
+            empty_folders(children, out);
+        }
+    }
+}
+
 fn tree_items(items: &[VaultItem], expanded: &HashSet<String>) -> Vec<TreeItem> {
     items
         .iter()
@@ -397,6 +408,9 @@ pub struct NotekiApp {
     status: Option<StatusMessage>,
 
     file_tree: Entity<TreeState>,
+    /// The folders with nothing shown in them: the tree takes an item without
+    /// children for a file, so they are told apart by their paths.
+    empty_folders: std::rc::Rc<HashSet<String>>,
     expanded_folders: HashSet<String>,
     selected_tag: Option<String>,
     search_input: Entity<InputState>,
@@ -488,6 +502,7 @@ impl NotekiApp {
             palette,
             status: None,
             file_tree,
+            empty_folders: Default::default(),
             expanded_folders: HashSet::new(),
             selected_tag: None,
             search_input,
@@ -1204,6 +1219,9 @@ impl NotekiApp {
         }
         self.expanded_folders.retain(|p| vault.is_folder(p));
         let items = tree_items(&vault.scan, &self.expanded_folders);
+        let mut empty = HashSet::new();
+        empty_folders(&vault.scan, &mut empty);
+        self.empty_folders = std::rc::Rc::new(empty);
         let selected = self.active_path().map(SharedString::from);
         self.file_tree.update(cx, |tree, cx| {
             tree.set_items(items, cx);
