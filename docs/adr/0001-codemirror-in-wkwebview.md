@@ -1,5 +1,7 @@
 # The editor is CodeMirror 6 in a WKWebView, the rest is native Swift
 
+> Superseded in 0.4 by [ADR 0012](0012-rust-and-gpui.md): Noteki is drawn by GPUI, with no web view.
+
 Noteki exists to be lighter than Obsidian (441 MB on disk, Electron) and to keep its **Live preview**, where Markdown syntax hides outside the cursor. Doing Live preview in TextKit is the hard path: FSNotes, the most mature native open source alternative, hides syntax with a 0.1 pt clear font and only for the whole Note at once, never around the cursor; MiaoYan's author calls WYSIWYG "heavy and fragile" and keeps a separate preview. Tables (in 108 of the 624 Notes of the Vault), images and checkboxes inside a TextKit editor are the hardest part. CodeMirror 6 is the engine Obsidian itself uses for Live preview, and MIT code to hide syntax, show tables and images already exists (SilverBullet, MarkEdit-preview, codemirror-markdown-tables). A WKWebView uses the system's WebKit, so unlike Electron nothing big ships with the app: MarkEdit, a native Mac editor built exactly this way, is 3.2 MB on Apple Silicon.
 
 Only the Note being edited lives in the web view. The Vault, the index, Wikilink resolution, search, Merge, the sidebar, images and PDFs (PDFKit) are Swift, so the JavaScript side stays small and receives data, not responsibilities. The bridge between the two is a typed message enum on each side, written by hand: about ten messages do not justify MarkEdit's code generation (ts-gyb).

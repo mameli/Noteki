@@ -205,19 +205,19 @@ Noteki works with Takku without changes to Takku:
 
 ## Project structure
 
-- `NotekiCore/`: Swift package, no AppKit. Vault scanning and Excluded folders, Frontmatter parsing, Tags, Wikilink resolution, the index, search, three-way Merge. Everything here is unit tested.
-- `Noteki/`: the SwiftUI + AppKit app. Windows, sidebars, Tabs, the editor's web view and its bridge, file watching, image and PDF views, settings.
-- `Editor/`: TypeScript, CodeMirror 6 and the Live preview extensions, built into one `editor.html` committed in the app's resources, with a hash of its sources that the build checks ([ADR 0004](adr/0004-committed-editor-bundle.md)).
-- The bridge between `Noteki` and `Editor` is a typed message enum on each side, written by hand ([ADR 0001](adr/0001-codemirror-in-wkwebview.md)). A test checks that the names match.
-- `scripts/release.sh`: a release, a notarized disk image whose window shows Noteki, an arrow and Applications on a notebook page (`scripts/dmg/`), published on GitHub with the `appcast.xml` that Sparkle reads: Noteki updates itself, checking once a day unless turned off in Settings → Updates, and never opens Sparkle's window by itself ([ADR 0011](adr/0011-updates-with-sparkle.md)).
-- `THIRD_PARTY.md`: every piece of code borrowed from MarkEdit, SilverBullet, MarkEdit-preview and others, with licence and changes ([ADR 0007](adr/0007-from-scratch-borrowing-mit-code.md)).
+Since 0.4 Noteki is one Rust program drawn by GPUI ([ADR 0012](adr/0012-rust-and-gpui.md)); up to 0.3 it was SwiftUI with CodeMirror in a web view, and the parts of this document that name WebKit, SwiftUI or CodeMirror describe that version until they are rewritten. The layout of the code is in the README.
+
+- `src/core/`: no GPUI. Vault scanning and Excluded folders, Frontmatter parsing, Tags, Wikilink resolution, the index, search, three-way Merge, and the editor's rules (text, selection, Live preview styles, tables, undo). Everything here is unit tested.
+- `src/editor/`: Noteki's own editor element, drawing each line with its Live preview; `src/app/`: windows, sidebars, Tabs, file watching, settings, Sparkle.
+- `scripts/bundle.sh` builds the Mac app; `scripts/release.sh`: a release, a notarized disk image whose window shows Noteki, an arrow and Applications on a notebook page (`scripts/dmg/`), published on GitHub with the `appcast.xml` that Sparkle reads: Noteki updates itself, checking once a day unless turned off in Settings → Updates, and never opens Sparkle's window by itself ([ADR 0011](adr/0011-updates-with-sparkle.md)).
+- `THIRD_PARTY.md`: code borrowed from other projects, with licence and changes ([ADR 0007](adr/0007-from-scratch-borrowing-mit-code.md)).
 
 ## Testing and measurement
 
-- Swift Testing in `NotekiCore` on a fixture Vault in the repository, written for the purpose: duplicate names, aliases, Embeds, nested Tags, broken YAML, Excluded folders. Never the user's real Vault.
+- Unit tests in `src/core` and on the fixture Vault `docs/demo-vault`, written for the purpose: duplicate names, aliases, Embeds, nested Tags, broken YAML, Excluded folders. Never the user's real Vault.
 - Merge tests replay the sequence of writes Takku makes during Processing (atomic writes, rename) against a user still typing.
-- A few JavaScript tests for the Live preview extensions: what is hidden where the cursor is. `npm test` in `Editor/`: CodeMirror's state with Noteki's extensions under Node, no browser. Not part of the Xcode build, which needs no Node (ADR 0004).
-- `scripts/measure`: generates a Vault of 5,000 Notes and measures the [Budget](#budget). Run at the end of every milestone, results noted in the changelog.
+- UI tests (`tests/ui.rs`) drive the real app in a headless GPUI window: typing, Live preview, banners, Files, Tabs. Robustness tests fuzz the scanner and the documents.
+- `examples/perf.rs`: a Vault of 5,000 Notes against the timing budgets. `scripts/eval.sh` runs every check.
 
 ## Milestones
 

@@ -8,6 +8,9 @@ Noteki is rewritten in Rust, drawn by GPUI: no web page inside, the same Notes, 
 - Formulas (`$…$`, `$$…$$`) are typeset as KaTeX does and Mermaid diagrams drawn in the Note, without a browser; the source comes back when the cursor goes into it.
 - Updating from 0.3 keeps the Vault, the theme, the text's font, size and line length, the Excluded folders, the Daily note and the recent Notes.
 - *Settings* is one page, with *Updates* and *Support*.
+- Return in a list writes the next item (`2.` after `1.`, the numbers below moving on; the same bullet, a new task, a quote); Return on an empty item ends the list, ⇧Return goes to a new line without one.
+- *Files* has *New Note*, *New Folder* and *Expand All* / *Collapse All* beside the panes' buttons; an empty folder is a folder, not a Note that is not found.
+- Noteki also builds on Linux (Wayland or X11), from the same code.
 - Not yet in this version: *Export as PDF…* and *Print…*, spell checking, *Focus Mode* and *Typewriter Mode*, the Format bar, the interface size, pasting formatted text as Markdown, *Open Vault in Terminal*.
 
 ## 0.3.1 — 12 November 2026

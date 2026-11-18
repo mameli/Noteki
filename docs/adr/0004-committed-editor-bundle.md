@@ -1,5 +1,7 @@
 # The editor's JavaScript is built into one HTML file that is committed
 
+> Superseded in 0.4 by [ADR 0012](0012-rust-and-gpui.md): Noteki is drawn by GPUI, with no web view.
+
 The editor's sources are TypeScript in `Editor/`, built with Node into a single `editor.html` with everything inlined, as MarkEdit does: no requests to load it, and Swift fills in the configuration before loading it, so the first Note appears without a round trip. Unlike MarkEdit, the built file is committed in the app's resources. Building the app then needs only Xcode, and Node is needed only to change the editor, which happens far less often than changing the Swift side.
 
 ## Consequences

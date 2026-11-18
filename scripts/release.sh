@@ -1,37 +1,37 @@
 #!/bin/bash
-# Builds Noteki in Release, signs it with the "Developer ID Application" certificate (Sparkle's
-# helpers too), has Apple notarize the app (notarytool profile "noteki", else "takku" or "dimmela"
-# if one of those is on this Mac, or $NOTEKI_NOTARY_PROFILE) and staples the ticket, packs it into
-# a disk image with a background to drag it into Applications (scripts/dmg/make-dmg.sh), signs,
-# notarizes and staples that too, and publishes it as a GitHub Release tagged v<MARKETING_VERSION>
-# (from Config/Base.xcconfig), its notes the version's section of CHANGELOG.md. The Release also
-# carries a copy named Noteki.dmg, so releases/latest/download/Noteki.dmg always gives the latest
-# version, and appcast.xml: Noteki reads releases/latest/download/appcast.xml with Sparkle and
-# installs the disk image after checking its EdDSA signature (ADR 0011). Then it points the
-# Homebrew cask in the tap (a clone of mameli/homebrew-noteki, ../homebrew-noteki or $NOTEKI_TAP)
-# to it. Adapted from Dimmela's.
+# Builds Noteki (scripts/bundle.sh) signed with the "Developer ID Application"
+# certificate, Sparkle's helpers too, with the hardened runtime; has Apple
+# notarize it (notarytool profile "noteki", else "takku" or "dimmela" if one of
+# those is on this Mac, or $NOTEKI_NOTARY_PROFILE) and staples the ticket;
+# packs it into the disk image to drag into Applications (scripts/dmg),
+# signed, notarized and stapled too; writes appcast.xml, signed with the
+# Sparkle key; and publishes them as the GitHub Release v<version> (Cargo.toml),
+# its notes the version's section of CHANGELOG.md, with a copy named
+# Noteki.dmg (releases/latest/download/Noteki.dmg is always the latest). Every
+# Noteki, the Swift ones of 0.3 too (same bundle id and key), reads that
+# appcast and updates itself. Then the Homebrew cask (a clone of mameli/homebrew-noteki,
+# ../homebrew-noteki or $NOTEKI_TAP) points to it.
 #
-#   scripts/release.sh            build, sign, notarize into build.noindex/release/, then ask before publishing
+#   scripts/release.sh            build, sign, notarize into target/release-dmg/, then ask before publishing
 #   scripts/release.sh --dry-run  build, sign, notarize only
 #
 # Once per Mac: the certificate from Xcode → Settings → Accounts → Manage Certificates, and
 #   xcrun notarytool store-credentials noteki --apple-id <Apple ID> --team-id <Team ID>
-# with an app-specific password from account.apple.com. The Sparkle signing key is in the
-# keychain too (account "noteki", made with Sparkle's generate_keys; back it up with
+# The Sparkle signing key is in the keychain (account "noteki"; back it up with
 # generate_keys --account noteki -x <file>): without it no Noteki can install the update.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-version=$(sed -n 's/^MARKETING_VERSION = //p' Config/Base.xcconfig)
-build=$(sed -n 's/^CURRENT_PROJECT_VERSION = //p' Config/Base.xcconfig)
-minimum_macos=$(sed -n 's/^MACOSX_DEPLOYMENT_TARGET = //p' Config/Base.xcconfig)
+version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+build=$(sed -n 's/^build = //p' Cargo.toml | head -1)
+minimum_macos=$(sed -n 's:.*<key>LSMinimumSystemVersion</key><string>\(.*\)</string>.*:\1:p' scripts/bundle.sh)
 tag="v$version"
-app=build.noindex/release/DerivedData/Build/Products/Release/Noteki.app
-dmg="build.noindex/release/Noteki-$version.dmg"
-latest=build.noindex/release/Noteki.dmg
-zip=build.noindex/release/Noteki.zip
-appcast=build.noindex/release/appcast.xml
-sparkle_bin=build.noindex/release/DerivedData/SourcePackages/artifacts/sparkle/Sparkle/bin
+out=target/release-dmg
+app=target/release/Noteki.app
+dmg="$out/Noteki-$version.dmg"
+latest="$out/Noteki.dmg"
+zip="$out/Noteki.zip"
+appcast="$out/appcast.xml"
 tap=${NOTEKI_TAP:-../homebrew-noteki}
 cask="$tap/Casks/noteki.rb"
 identity="Developer ID Application"
@@ -46,19 +46,23 @@ if [[ -z $notary ]]; then
     done
 fi
 
+if [[ $(uname -m) != arm64 ]]; then
+    echo "Build on an Apple Silicon Mac: the release is for arm64." >&2
+    exit 1
+fi
 if [[ -n $(git status --porcelain) ]]; then
     echo "Commit or stash your changes first: the Release must match a commit." >&2
     exit 1
 fi
 if gh release view "$tag" >/dev/null 2>&1; then
-    echo "Release $tag already exists: raise MARKETING_VERSION in Config/Base.xcconfig." >&2
+    echo "Release $tag already exists: raise the version in Cargo.toml." >&2
     exit 1
 fi
 # Sparkle compares the build numbers: each release must raise it.
 latest_build=$(curl -fsL https://github.com/mameli/Noteki/releases/latest/download/appcast.xml 2>/dev/null \
     | sed -n 's:.*<sparkle\:version>\(.*\)</sparkle\:version>.*:\1:p' || true)
 if [[ -n $latest_build && $build -le $latest_build ]]; then
-    echo "CURRENT_PROJECT_VERSION is $build, the latest release's is $latest_build: raise it in Config/Base.xcconfig." >&2
+    echo "The build is $build, the latest release's is $latest_build: raise [package.metadata.noteki] build in Cargo.toml." >&2
     exit 1
 fi
 if [[ ! -f $cask || -n $(git -C "$tap" status --porcelain) ]]; then
@@ -70,8 +74,6 @@ if [[ -z $changes ]]; then
     echo "CHANGELOG.md has no \"## $version\" section." >&2
     exit 1
 fi
-
-# The Team ID is the certificate's organizational unit.
 team=$(security find-certificate -c "$identity" -p 2>/dev/null | openssl x509 -noout -subject -nameopt multiline 2>/dev/null \
     | sed -n 's/^ *organizationalUnitName *= *//p')
 if [[ -z $team ]]; then
@@ -83,43 +85,27 @@ if [[ -z $notary ]]; then
     exit 1
 fi
 
-rm -rf build.noindex/release
-# No get-task-allow entitlement: it is only for debugging (and notarization refuses it).
-# A secure timestamp is required by notarization.
-xcodebuild -project Noteki.xcodeproj -scheme Noteki -configuration Release \
-    -derivedDataPath build.noindex/release/DerivedData \
-    CODE_SIGN_STYLE=Manual CODE_SIGN_IDENTITY="$identity" DEVELOPMENT_TEAM="$team" \
-    CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO OTHER_CODE_SIGN_FLAGS=--timestamp \
-    clean build | grep -E "error: |BUILD"
-
-# Xcode signs Sparkle.framework but leaves its helpers ad hoc, which notarization refuses: each is
-# signed with the Developer ID, inside out, then the framework and the app again.
-sparkle=$app/Contents/Frameworks/Sparkle.framework/Versions/B
-sign() { codesign --force --sign "$identity" --timestamp --options runtime "$@"; }
-sign "$sparkle/XPCServices/Installer.xpc"
-sign --preserve-metadata=entitlements "$sparkle/XPCServices/Downloader.xpc"
-sign "$sparkle/Autoupdate"
-sign "$sparkle/Updater.app"
-sign "$app/Contents/Frameworks/Sparkle.framework"
-sign --preserve-metadata=entitlements,requirements,flags "$app"
-
-codesign --verify --strict --deep "$app"
+rm -rf "$out"
+mkdir -p "$out"
+NOTEKI_IDENTITY="$identity" scripts/bundle.sh
 [[ $(codesign -dvv "$app" 2>&1) == *"Authority=$identity"* ]] || { echo "Not signed with the $identity certificate." >&2; exit 1; }
+[[ $(lipo -archs "$app/Contents/MacOS/noteki") == arm64 ]] || { echo "The binary is not arm64." >&2; exit 1; }
+sparkle_bin=$(ls -d target/sparkle-*/bin | tail -1)
 
 notarize() {
-    xcrun notarytool submit "$1" --keychain-profile "$notary" --wait --output-format json > build.noindex/release/notary.json || true
-    if [[ $(plutil -extract status raw -o - build.noindex/release/notary.json 2>/dev/null) != Accepted ]]; then
-        cat build.noindex/release/notary.json >&2
-        id=$(plutil -extract id raw -o - build.noindex/release/notary.json 2>/dev/null)
+    xcrun notarytool submit "$1" --keychain-profile "$notary" --wait --output-format json > "$out/notary.json" || true
+    if [[ $(plutil -extract status raw -o - "$out/notary.json" 2>/dev/null) != Accepted ]]; then
+        cat "$out/notary.json" >&2
+        id=$(plutil -extract id raw -o - "$out/notary.json" 2>/dev/null)
         [[ -n $id ]] && xcrun notarytool log "$id" --keychain-profile "$notary" >&2
         echo "Notarization of $1 failed." >&2
         exit 1
     fi
 }
 
-# The app is notarized as a zip and its ticket stapled, so Gatekeeper accepts it offline once it
-# is in Applications, or installed by Sparkle. Then the disk image around it is signed, notarized
-# and stapled.
+# The app is notarized as a zip and its ticket stapled, so Gatekeeper accepts
+# it offline once in Applications, or installed by Sparkle. Then the disk
+# image around it is signed, notarized and stapled.
 ditto -c -k --keepParent "$app" "$zip"
 notarize "$zip"
 rm "$zip"
@@ -133,8 +119,9 @@ spctl --assess --type open --context context:primary-signature "$dmg" || { echo 
 cp "$dmg" "$latest"
 echo "Ready: $dmg (notarized)"
 
-# The appcast Sparkle reads: this version only, with what's new and the disk image's EdDSA
-# signature. Made in the dry-run too, so a missing key shows before publishing.
+# The appcast Sparkle reads: this version only, with what's new and the disk
+# image's EdDSA signature. Made in the dry run too, so a missing key shows
+# before publishing.
 signature=$("$sparkle_bin/sign_update" --account noteki "$dmg") \
     || { echo "No Sparkle key \"noteki\" in the keychain: see the top of this script." >&2; exit 1; }
 notes_html=$(gh api markdown -f mode=gfm -f context=mameli/Noteki -f text="$changes")
@@ -158,19 +145,22 @@ APPCAST
 xmllint --noout "$appcast"
 
 [[ ${1:-} == --dry-run ]] && exit 0
-read -r -p "Publish $tag on GitHub? [y/N] " answer
+read -r -p "Publish $tag on GitHub? Every Noteki will offer it as an update. [y/N] " answer
 [[ $answer == y ]] || exit 0
 
-if [[ $(git rev-parse HEAD) != $(gh api "repos/{owner}/{repo}/commits/main" --jq .sha) ]]; then
-    echo "Push main first: the tag is created on the commit GitHub has." >&2
+# The tag is made on the commit GitHub has.
+head=$(git rev-parse HEAD)
+branch=$(git rev-parse --abbrev-ref HEAD)
+if [[ $head != $(gh api "repos/{owner}/{repo}/commits/$branch" --jq .sha 2>/dev/null) ]]; then
+    echo "Push $branch first: the tag is created on the commit GitHub has." >&2
     exit 1
 fi
-gh release create "$tag" "$dmg" "$latest" "$appcast" --target main --title "Noteki $version" --notes-file - <<NOTES
-Apple Silicon Mac with macOS 15 or later.
+gh release create "$tag" "$dmg" "$latest" "$appcast" --target "$head" --title "Noteki $version" --notes-file - <<NOTES
+Apple Silicon Mac with macOS $minimum_macos or later.
 
 Download \`Noteki-$version.dmg\` (\`Noteki.dmg\` is the same file), open it and drag **Noteki** to **Applications**. Noteki is notarized by Apple: it opens like any other app. With Homebrew: \`brew tap mameli/noteki && brew trust mameli/noteki && brew install --cask noteki\`.
 
-From 0.3.0 on Noteki updates itself: *Check for Updates…* in the Noteki menu, then **Install Update**.
+Noteki updates itself: *Check for Updates…* in the Noteki menu, then **Install Update**.
 
 ## What's new
 
@@ -180,14 +170,11 @@ Every version: [CHANGELOG.md](https://github.com/mameli/Noteki/blob/$tag/CHANGEL
 NOTES
 echo "Published: $(gh release view "$tag" --json url --jq .url)"
 
-# The cask points to this version's disk image. Noteki updates itself, so the cask says so
-# (auto_updates): brew upgrade leaves it to Noteki. Pushed through gh, like the Release.
+# The cask points to this version's disk image; Noteki updates itself
+# (auto_updates), so brew upgrade leaves it to Noteki.
 sha=$(shasum -a 256 "$dmg" | cut -d ' ' -f 1)
 git -C "$tap" pull --ff-only -q
 sed -i '' -e "s/^  version \".*\"/  version \"$version\"/" -e "s/^  sha256 \".*\"/  sha256 \"$sha\"/" "$cask"
-grep -q '^  auto_updates true$' "$cask" || sed -i '' 's/^  depends_on arch: :arm64$/  auto_updates true\
-\
-&/' "$cask"
 git -C "$tap" commit -q -am "Noteki $version"
 git -C "$tap" -c credential.helper= -c 'credential.helper=!gh auth git-credential' push -q origin main
 echo "Homebrew cask updated to $version."

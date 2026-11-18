@@ -1,6 +1,6 @@
 # Noteki
 
-Light native macOS app to read and write the Markdown Vault kept with Obsidian. Start from docs/SPEC.md.
+Light native app (Rust, GPUI) to read and write the Markdown Vault kept with Obsidian. Start from docs/SPEC.md; build and layout in README.md.
 
 ## Agent skills
 

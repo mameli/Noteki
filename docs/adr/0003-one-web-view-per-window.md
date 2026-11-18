@@ -1,5 +1,7 @@
 # One web view per window, with Noteki's own Tabs instead of macOS window tabs
 
+> Superseded in 0.4 by [ADR 0012](0012-rust-and-gpui.md): Noteki is drawn by GPUI, with no web view.
+
 macOS gives Tabs for free (NSWindow tabbing), but each native tab is a window, so each would hold its own WKWebView and its own WebKit process of roughly 40–60 MB. Five open Notes would break the 150 MB budget at rest. Noteki draws its own tab bar instead: a window has one WKWebView, and switching **Tab** swaps the CodeMirror editor state, which is instant and keeps each Tab's cursor, scroll and undo. More windows (⌘⇧N) are still possible, each with its own web view.
 
 ## Consequences
