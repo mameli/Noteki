@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.0 — unreleased
+
+Noteki is rewritten in Rust, drawn by GPUI: no web page inside, the same Notes, Vault and shortcuts.
+
+- The whole window, the editor included, is native: it opens at once and types without delay on long Notes.
+- Formulas (`$…$`, `$$…$$`) are typeset as KaTeX does and Mermaid diagrams drawn in the Note, without a browser; the source comes back when the cursor goes into it.
+- Updating from 0.3 keeps the Vault, the theme, the text's font, size and line length, the Excluded folders, the Daily note and the recent Notes.
+- *Settings* is one page, with *Updates* and *Support*.
+- Not yet in this version: *Export as PDF…* and *Print…*, spell checking, *Focus Mode* and *Typewriter Mode*, the Format bar, the interface size, pasting formatted text as Markdown, *Open Vault in Terminal*.
+
 ## 0.3.1 — 12 November 2026
 
 Noteki can be supported, if you want.

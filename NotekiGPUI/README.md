@@ -8,7 +8,11 @@ scripts/eval.sh                # every check, report in target/eval-report.md
 scripts/eval.sh --mutants      # plus the mutation check of the tests
 ```
 
-`NOTEKI_VAULT=/path/to/vault` opens another vault. `NOTEKI_SETTINGS=/tmp/s.json` uses another preferences file (the default is `~/Library/Application Support/Noteki/gpui-settings.json`).
+`NOTEKI_VAULT=/path/to/vault` opens another vault. `NOTEKI_SETTINGS=/tmp/s.json` uses another preferences file (the default is `~/Library/Application Support/Noteki/gpui-settings.json`; the first launch without it takes the Swift app's preferences).
+
+## The Mac app
+
+`scripts/bundle.sh` builds `target/release/Noteki.app`: the bundle id of the Swift app it replaces (`app.noteki.noteki`), its icon and document types, and Sparkle 2.10.1 for updates, signed ad hoc. `scripts/release.sh --dry-run` builds it signed with the Developer ID, notarized, in its disk image, with the appcast; without `--dry-run` it then publishes the GitHub Release and the Homebrew cask, after asking. The version is `version` in `Cargo.toml`, the build number Sparkle compares `[package.metadata.noteki] build`.
 
 ## Linux
 
