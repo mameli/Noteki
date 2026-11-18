@@ -496,8 +496,9 @@ fn row(label: impl Into<SharedString>, control: impl IntoElement) -> AnyElement 
         .py_1()
         .gap_4()
         .justify_between()
-        .child(div().text_sm().child(label.into()))
-        .child(control)
+        // A long label wraps; the control keeps its size, inside the box.
+        .child(div().flex_1().min_w_0().text_sm().child(label.into()))
+        .child(div().flex_none().child(control))
         .into_any_element()
 }
 
@@ -531,8 +532,8 @@ struct SectionBox {
 impl gpui_kit::RenderOnce for SectionBox {
     fn render(self, _: &mut Window, cx: &mut App) -> impl IntoElement {
         let theme = cx.theme();
-        // Light boxes on the grey page, divided by hairlines, as a grouped form.
-        let (border, surface, muted) = (theme.border, theme.background, theme.muted_foreground);
+        // Outlined boxes on the theme's own page, divided by hairlines.
+        let (border, muted) = (theme.border, theme.muted_foreground);
         let count = self.count;
         v_flex()
             .gap_2()
@@ -548,14 +549,19 @@ impl gpui_kit::RenderOnce for SectionBox {
                     )
                     .children(self.accessory),
             )
-            .child(v_flex().px_3().rounded_lg().bg(surface).children(
-                self.rows.into_iter().enumerate().map(move |(i, r)| {
-                    // Every row but the last has a hairline under it.
-                    div()
-                        .when(i + 1 < count, |d| d.border_b_1().border_color(border))
-                        .child(r)
-                }),
-            ))
+            .child(
+                v_flex()
+                    .px_3()
+                    .rounded_lg()
+                    .border_1()
+                    .border_color(border)
+                    .children(self.rows.into_iter().enumerate().map(move |(i, r)| {
+                        // Every row but the last has a hairline under it.
+                        div()
+                            .when(i + 1 < count, |d| d.border_b_1().border_color(border))
+                            .child(r)
+                    })),
+            )
             .children(
                 self.footer
                     .map(|f| div().px_1().text_xs().text_color(muted).child(f)),
@@ -638,7 +644,7 @@ impl Render for SettingsWindow {
             .child(updates_and_support());
         v_flex()
             .size_full()
-            .bg(cx.theme().secondary)
+            .bg(cx.theme().background)
             .child(TitleBar::new().child(div().text_sm().child("Settings")))
             .child(
                 div()
