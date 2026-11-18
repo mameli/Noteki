@@ -61,6 +61,8 @@ pub fn note_html(
     index: &VaultIndex,
     image: impl Fn(&str) -> Option<(Vec<u8>, &'static str)>,
 ) -> String {
+    let (text, figures) = with_figures(text);
+    let text = text.as_str();
     let md = preprocess_for_html(&export_source(text), path, index);
     let mut options = markdown::Options::gfm();
     // Our own `noteki-link:` and `noteki-embed:` addresses, replaced below.
@@ -70,12 +72,81 @@ pub fn note_html(
         .unwrap_or_else(|_| format!("<pre>{}</pre>", escape(text)));
     let body = unlink_notes(&body);
     let body = inline_images(&body, image);
+    let body = put_figures(&body, &figures);
     format!(
         "<!doctype html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n\
          <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\n\
          <title>{}</title>\n<style>{CSS}</style>\n</head>\n<body>\n<article>\n{body}</article>\n</body>\n</html>\n",
         escape(title)
     )
+}
+
+/// A figure's place in the Markdown, until it is drawn in the page.
+fn placeholder(n: usize) -> String {
+    format!("NOTEKIFIGURE{n}Z")
+}
+
+/// `text` with each `$$` block, `mermaid` fence and `$…$` drawn as Live
+/// preview draws it replaced by a placeholder, and the figures' HTML: SVG
+/// drawn here, so the page needs no script (and a PDF of it neither). One
+/// RaTeX or mermaid-rs-renderer cannot draw stays as written.
+fn with_figures(text: &str) -> (String, Vec<String>) {
+    use crate::core::editor::figures::{figure_blocks, inline_formulas, FigureSource};
+    let all = lines(text);
+    let mut figures = Vec::new();
+    let mut blocks = figure_blocks(&all).into_iter().peekable();
+    let mut out = String::with_capacity(text.len());
+    let mut i = 0;
+    while i < all.len() {
+        if let Some(block) = blocks.next_if(|b| b.lines.start == i) {
+            let drawn = match &block.source {
+                FigureSource::Math(tex) => crate::core::math::typeset(tex, true)
+                    .map(|f| format!("<div class=\"math\">{}</div>", crate::core::math::to_svg(&f))),
+                FigureSource::Mermaid(src) => crate::core::diagram::render(src, false).map(
+                    |(svg, w, h)| {
+                        // At its own size: the editor draws it twice as large.
+                        let svg = svg.replacen(
+                            &format!("width=\"{}\" height=\"{}\"", w * 2., h * 2.),
+                            &format!("width=\"{w}\" height=\"{h}\""),
+                            1,
+                        );
+                        format!("<div class=\"diagram\">{svg}</div>")
+                    },
+                ),
+            };
+            if let Some(html) = drawn {
+                out.push_str(&format!("\n{}\n\n", placeholder(figures.len())));
+                figures.push(html);
+                i = block.lines.end;
+                continue;
+            }
+        }
+        let line = &all[i];
+        let mut shown = line.text.to_string();
+        if line.kind == BlockKind::Text {
+            for (range, tex, display) in inline_formulas(line.text).into_iter().rev() {
+                if let Some(f) = crate::core::math::typeset(&line.text[tex], display) {
+                    shown.replace_range(range, &placeholder(figures.len()));
+                    figures.push(crate::core::math::to_svg(&f));
+                }
+            }
+        }
+        out.push_str(&shown);
+        out.push('\n');
+        i += 1;
+    }
+    (out, figures)
+}
+
+/// The figures in their places.
+fn put_figures(html: &str, figures: &[String]) -> String {
+    let mut html = html.to_string();
+    for (n, figure) in figures.iter().enumerate() {
+        let mark = placeholder(n);
+        html = html.replace(&format!("<p>{mark}</p>"), figure);
+        html = html.replace(&mark, figure);
+    }
+    html
 }
 
 /// Links to Notes are their text: the page stands alone.
@@ -169,7 +240,10 @@ blockquote{margin:1em 0;padding:.2em 1em;border-left:3px solid #d6d6d6;color:#5c
 table{border-collapse:collapse}th,td{border:1px solid #ddd;padding:.3em .7em}\
 strong{color:#2a2d33}\
 hr{border:none;border-top:1px solid #ddd}\
-li input[type=checkbox]{margin-right:.4em}";
+li input[type=checkbox]{margin-right:.4em}\
+.math{text-align:center;margin:1em 0;font-size:1.1em}\
+.diagram{text-align:center;margin:1em 0}.diagram svg{max-width:100%;height:auto}\
+@media print{body{background:none}article{padding:0;max-width:none}pre{white-space:pre-wrap;overflow-wrap:anywhere}pre,table,.math,.diagram,img{break-inside:avoid}}";
 
 #[cfg(test)]
 mod tests {
@@ -206,6 +280,16 @@ mod tests {
         assert!(h.contains("src=\"data:image/png;base64,YWJj\""), "{h}");
         assert_eq!(base64(b"ab"), "YWI=");
         assert_eq!(base64(b"a"), "YQ==");
+    }
+
+    #[test]
+    fn formulas_and_diagrams_are_drawn_in_the_page() {
+        let h = html("Energia $E=mc^2$ qui.\n\n$$\n\\frac{a}{b}\n$$\n\n```mermaid\ngraph TD\nA-->B\n```\n\n`$x$` resta");
+        assert_eq!(h.matches("<svg class=\"formula\"").count(), 2, "{h}");
+        assert!(h.contains("<div class=\"math\"><svg"), "the block centred: {h}");
+        assert!(h.contains("<div class=\"diagram\"><svg"), "{h}");
+        assert!(!h.contains("NOTEKIFIGURE") && !h.contains("graph TD"), "{h}");
+        assert!(h.contains("<code>$x$</code>"), "code stays code: {h}");
     }
 
     #[test]
