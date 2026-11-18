@@ -240,6 +240,30 @@ fn an_empty_folder_is_a_folder_not_a_note_to_open(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
+fn one_button_opens_every_folder_of_files_and_closes_them_again(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let expanded = |cx: &mut TestAppContext| app(cx, &f, |a, _, _| a.expanded_folders().len());
+    assert_eq!(expanded(cx), 0);
+    ui(cx, &f, |w, cx| w.click("files-expand-all", cx));
+    frame(cx, &f);
+    let all = expanded(cx);
+    assert!(all >= 5, "every folder, nested ones too: {all}");
+    assert!(app(cx, &f, |a, _, _| a
+        .expanded_folders()
+        .contains("Projects")));
+    ui(cx, &f, |w, cx| w.click("files-collapse-all", cx));
+    frame(cx, &f);
+    assert_eq!(expanded(cx), 0);
+    // The same row makes a Note.
+    ui(cx, &f, |w, cx| w.click("files-new-note", cx));
+    frame(cx, &f);
+    ui(cx, &f, |window, cx| window.input("Dal bottone", cx));
+    press(cx, &f, "enter");
+    frame(cx, &f);
+    assert!(f.vault.join("Dal bottone.md").exists());
+}
+
+#[gpui_kit::test]
 fn clicking_a_note_in_the_tree_opens_it(cx: &mut TestAppContext) {
     let f = fixture(cx);
     // Folders first (Daily, Media, Meetings, Physics, Projects), then Ideas.md.

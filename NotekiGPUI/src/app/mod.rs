@@ -349,6 +349,15 @@ fn collect_notes(items: &[VaultItem], out: &mut Vec<(String, String)>) {
     }
 }
 
+fn all_folders(items: &[VaultItem], out: &mut HashSet<String>) {
+    for item in items {
+        if let VaultItem::Folder { path, children, .. } = item {
+            out.insert(path.clone());
+            all_folders(children, out);
+        }
+    }
+}
+
 fn empty_folders(items: &[VaultItem], out: &mut HashSet<String>) {
     for item in items {
         if let VaultItem::Folder { path, children, .. } = item {
@@ -1217,6 +1226,30 @@ impl NotekiApp {
             }
             ix += 1;
         }
+        self.rebuild_tree(cx);
+    }
+
+    /// Whether any folder of Files is open: the button then collapses them all.
+    pub fn any_folder_expanded(&self) -> bool {
+        !self.expanded_folders.is_empty()
+    }
+
+    /// Expand All or Collapse All, the button over Files.
+    pub fn set_all_folders_expanded(&mut self, expanded: bool, cx: &mut Context<Self>) {
+        self.expanded_folders.clear();
+        if expanded {
+            if let Some(vault) = &self.vault {
+                all_folders(&vault.scan, &mut self.expanded_folders);
+            }
+        }
+        self.rebuild_tree(cx);
+        self.persist_session();
+        cx.notify();
+    }
+
+    /// The tree's items from the Vault, its folders open as `expanded_folders`.
+    fn rebuild_tree(&mut self, cx: &mut Context<Self>) {
+        let Some(vault) = &self.vault else { return };
         self.expanded_folders.retain(|p| vault.is_folder(p));
         let items = tree_items(&vault.scan, &self.expanded_folders);
         let mut empty = HashSet::new();

@@ -11,6 +11,8 @@ icon_assets!(
     ExtraIcons,
     [
         CalendarDays,
+        ChevronsDownUp,
+        ChevronsUpDown,
         Command,
         Download,
         FilePlus,

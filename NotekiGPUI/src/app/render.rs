@@ -399,34 +399,74 @@ impl NotekiApp {
             let b = if pane == p { b.primary() } else { b.ghost() };
             b.on_click(cx.listener(move |this, _, w, cx| this.show_left_pane(p, w, cx)))
         };
+        // In Files: a new Note, a new folder, and every folder opened or closed.
+        let files_actions = (pane == LeftPane::Files && self.vault.is_some()).then(|| {
+            let collapse = self.any_folder_expanded();
+            let action = |id: &'static str, tip: &'static str, icon: AssetIcon| {
+                Button::new(id)
+                    .icon(Icon::new(icon))
+                    .small()
+                    .ghost()
+                    .tooltip(crate::keys::tooltip(tip))
+            };
+            h_flex()
+                .gap_0p5()
+                .child(
+                    action("files-new-note", "New Note (⌘N)", AssetIcon::FilePlus)
+                        .on_click(|_, w, cx| w.dispatch_action(Box::new(NewNoteAction), cx)),
+                )
+                .child(
+                    action("files-new-folder", "New Folder", AssetIcon::FolderPlus)
+                        .on_click(|_, w, cx| w.dispatch_action(Box::new(NewFolderAction), cx)),
+                )
+                .child(
+                    if collapse {
+                        action(
+                            "files-collapse-all",
+                            "Collapse All",
+                            AssetIcon::ChevronsDownUp,
+                        )
+                    } else {
+                        action("files-expand-all", "Expand All", AssetIcon::ChevronsUpDown)
+                    }
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        this.set_all_folders_expanded(!collapse, cx)
+                    })),
+                )
+        });
         let tabs = h_flex()
-            .justify_center()
+            .justify_between()
             .px_2()
             .py_1()
             .gap_2()
             .border_b_1()
             .border_color(border)
-            .child(tab(
-                "pane-files",
-                "Files (⌃⌘1)",
-                AssetIcon::Folder,
-                LeftPane::Files,
-                cx,
-            ))
-            .child(tab(
-                "pane-tags",
-                "Tags (⌃⌘2)",
-                AssetIcon::Tag,
-                LeftPane::Tags,
-                cx,
-            ))
-            .child(tab(
-                "pane-search",
-                "Search (⇧⌘F)",
-                AssetIcon::Search,
-                LeftPane::Search,
-                cx,
-            ));
+            .child(
+                h_flex()
+                    .gap_2()
+                    .child(tab(
+                        "pane-files",
+                        "Files (⌃⌘1)",
+                        AssetIcon::Folder,
+                        LeftPane::Files,
+                        cx,
+                    ))
+                    .child(tab(
+                        "pane-tags",
+                        "Tags (⌃⌘2)",
+                        AssetIcon::Tag,
+                        LeftPane::Tags,
+                        cx,
+                    ))
+                    .child(tab(
+                        "pane-search",
+                        "Search (⇧⌘F)",
+                        AssetIcon::Search,
+                        LeftPane::Search,
+                        cx,
+                    )),
+            )
+            .children(files_actions);
         let body: AnyElement = match pane {
             LeftPane::Files => self.render_files_pane(cx).into_any_element(),
             LeftPane::Tags => self.render_tags_pane(cx).into_any_element(),
