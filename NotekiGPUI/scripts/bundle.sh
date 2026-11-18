@@ -17,10 +17,10 @@ mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$app/Contents/Framewor
 cp target/release/noteki "$app/Contents/MacOS/noteki"
 
 icons="../Noteki/Assets.xcassets/AppIcon.appiconset"
-iconset="$(mktemp -d)/Noteki.iconset"
+iconset="$(mktemp -d)/AppIcon.iconset"
 mkdir -p "$iconset"
 cp "$icons"/icon_*.png "$iconset/"
-iconutil -c icns "$iconset" -o "$app/Contents/Resources/Noteki.icns"
+iconutil -c icns "$iconset" -o "$app/Contents/Resources/AppIcon.icns"
 rm -rf "$(dirname "$iconset")"
 
 # Sparkle, as released (its framework, and sign_update for the appcast),
@@ -49,7 +49,7 @@ cat > "$app/Contents/Info.plist" <<PLIST
 	<key>CFBundleDisplayName</key><string>Noteki</string>
 	<key>CFBundleIdentifier</key><string>app.noteki.noteki</string>
 	<key>CFBundleExecutable</key><string>noteki</string>
-	<key>CFBundleIconFile</key><string>Noteki</string>
+	<key>CFBundleIconFile</key><string>AppIcon</string>
 	<key>CFBundlePackageType</key><string>APPL</string>
 	<key>CFBundleShortVersionString</key><string>$version</string>
 	<key>CFBundleVersion</key><string>$build</string>
