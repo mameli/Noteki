@@ -2831,3 +2831,19 @@ fn the_menu_bar_has_settings_under_the_apps_name(cx: &mut TestAppContext) {
         assert!(names.contains(&menu.to_string()), "{names:?}");
     }
 }
+
+#[gpui_kit::test]
+fn the_caret_is_as_tall_as_the_letters_not_the_whole_row(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    editor_with(cx, &f, "testo\naltro", 2);
+    frame(cx, &f);
+    let (row, drawn) = app(cx, &f, |a, _, cx| {
+        let ed = a.editor().read(cx);
+        (ed.caret_bounds(2).unwrap(), ed.drawn_caret_bounds(2).unwrap())
+    });
+    assert!(
+        drawn.size.height < row.size.height,
+        "shorter than its row: {drawn:?} in {row:?}"
+    );
+    assert!(drawn.top() > row.top() && drawn.bottom() < row.bottom(), "centred in it");
+}

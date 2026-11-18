@@ -236,6 +236,22 @@ impl Layout {
         ))
     }
 
+    /// The caret as drawn: as tall as the letters (their ascent and descent),
+    /// centred in its row like them, not the whole row with its spacing.
+    pub(super) fn drawn_caret(&self, text: &str, offset: usize) -> Option<Bounds<Pixels>> {
+        let row = self.caret(text, offset)?;
+        let line = &self.lines[self.line_of(offset)];
+        let font = &line.shaped.unwrapped_layout;
+        let letters = font.ascent + font.descent;
+        if letters <= px(0.) || letters >= line.line_height {
+            return Some(row);
+        }
+        Some(Bounds::new(
+            point(row.left(), row.top() + (line.line_height - letters) / 2.),
+            size(CARET_WIDTH, letters),
+        ))
+    }
+
     /// The offset under `p`: above the text, its start; below it, its end.
     pub(super) fn offset_for_point(&self, text: &str, p: Point<Pixels>) -> usize {
         let Some(last) = self.lines.last() else {
@@ -1468,7 +1484,7 @@ impl Element for EditorElement {
             let sel = s.range();
             if sel.is_empty() {
                 if show_caret {
-                    carets.extend(layout.caret(ed.buf.text(), s.head));
+                    carets.extend(layout.drawn_caret(ed.buf.text(), s.head));
                 }
                 continue;
             }

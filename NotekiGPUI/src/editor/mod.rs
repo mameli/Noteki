@@ -458,6 +458,11 @@ impl NoteEditor {
         self.layout.as_ref()?.caret(self.buf.text(), offset)
     }
 
+    /// The caret at `offset` as it is drawn (for tests).
+    pub fn drawn_caret_bounds(&self, offset: usize) -> Option<Bounds<Pixels>> {
+        self.layout.as_ref()?.drawn_caret(self.buf.text(), offset)
+    }
+
     /// The height of each logical line in the last frame (for tests).
     pub fn line_heights(&self) -> Vec<f32> {
         self.layout
