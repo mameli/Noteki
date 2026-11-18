@@ -55,9 +55,14 @@ htmd = "0.6"
 # Sparkle, loaded from the bundle at launch (see app::updates; already built in by GPUI).
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSBundle", "NSString"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSBundle", "NSString", "NSURL", "NSDictionary", "NSGeometry", "NSObject", "NSError", "NSValue"] }
 # The HTML a copy carries, pasted as Markdown (see editor::clipboard).
-objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSPasteboard"] }
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "objc2-core-foundation", "NSPasteboard", "NSPrintInfo", "NSPrintOperation", "NSView", "NSResponder", "NSWindow", "NSGraphics", "NSApplication", "NSRunningApplication"] }
+# Export as PDF and Print: the exported page laid out by the system's WebKit,
+# paged by AppKit's printing (see app::print); nothing else uses it.
+objc2-web-kit = { version = "0.3", default-features = false, features = ["std", "objc2-app-kit", "objc2-core-foundation", "WKWebView", "WKWebViewConfiguration", "WKNavigation", "WKNavigationDelegate", "block2"] }
+block2 = "0.6"
+dispatch2 = "0.3"
 
 [dev-dependencies]
 gpui-kit = { version = "0.10.0", features = ["syntect", "test-support"] }

@@ -11,6 +11,7 @@ mod settings_window;
 mod swift_prefs;
 pub mod terminal;
 mod format_bar;
+pub mod print;
 pub mod updates;
 
 use std::collections::{HashMap, HashSet};
@@ -94,6 +95,8 @@ actions!(
         OpenVaultInTerminalAction,
         ToggleFocusMode,
         ToggleTypewriterMode,
+        ExportPdfAction,
+        PrintAction,
     ]
 );
 
@@ -143,6 +146,7 @@ pub fn register_keybindings(cx: &mut App) {
             crate::keys::binding("ctrl-`", FormatCodeAction, None),
             crate::keys::binding("cmd-shift-k", InsertWikilinkAction, None),
             crate::keys::binding("cmd-,", OpenSettingsAction, None),
+            crate::keys::binding("cmd-p", PrintAction, None),
             // ⇧⌘/, which macOS sends as ⌘?.
             crate::keys::binding("cmd-?", KeyboardShortcutsAction, None),
             // As in the Finder, only while Files has the keyboard: in the editor ⌘⌫
@@ -595,25 +599,10 @@ impl NotekiApp {
     /// *Export as HTML…*: the Note in front as one page standing alone,
     /// saved where the user says (never in the Vault unasked).
     pub fn export_html(&mut self, cx: &mut Context<Self>) {
-        let (Some(path), Some(vault)) = (self.editor_path.clone(), &self.vault) else {
+        let Some((html, title, root)) = self.export_page() else {
             return;
         };
-        let Some(doc) = self.docs.get(&path) else {
-            return;
-        };
-        let root = vault.root.clone();
-        let folder = root.join(folder_of(&path));
-        let title = note_name(&path).to_string();
-        let html =
-            crate::core::export::note_html(doc.text(), &title, Some(&path), &vault.index, |src| {
-                let mime = crate::core::export::image_mime(src)?;
-                // A path of the Vault, or one relative to the Note.
-                let file = [root.join(src), folder.join(src)]
-                    .into_iter()
-                    .find(|f| f.starts_with(&root) && f.is_file())?;
-                Some((std::fs::read(file).ok()?, mime))
-            });
-        let dir = dirs::download_dir().unwrap_or_else(|| root.clone());
+        let dir = dirs::download_dir().unwrap_or(root);
         let rx = cx.prompt_for_new_path(&dir, Some(&format!("{title}.html")));
         cx.spawn(async move |this, cx| {
             let Ok(Ok(Some(target))) = rx.await else {
@@ -629,6 +618,73 @@ impl NotekiApp {
             });
         })
         .detach();
+    }
+
+    /// The page of the Note in front, standing alone (SPEC › Export), its
+    /// title and the Vault's root.
+    fn export_page(&self) -> Option<(String, String, PathBuf)> {
+        let (path, vault) = (self.editor_path.clone()?, self.vault.as_ref()?);
+        let doc = self.docs.get(&path)?;
+        let root = vault.root.clone();
+        let folder = root.join(folder_of(&path));
+        let title = note_name(&path).to_string();
+        let html =
+            crate::core::export::note_html(doc.text(), &title, Some(&path), &vault.index, |src| {
+                let mime = crate::core::export::image_mime(src)?;
+                // A path of the Vault, or one relative to the Note.
+                let file = [root.join(src), folder.join(src)]
+                    .into_iter()
+                    .find(|f| f.starts_with(&root) && f.is_file())?;
+                Some((std::fs::read(file).ok()?, mime))
+            });
+        Some((html, title, root))
+    }
+
+    /// *Export as PDF…*: the page paged as a print is, on the Mac's paper.
+    pub fn export_pdf(&mut self, cx: &mut Context<Self>) {
+        let Some((html, title, root)) = self.export_page() else {
+            return;
+        };
+        let dir = dirs::download_dir().unwrap_or(root);
+        let rx = cx.prompt_for_new_path(&dir, Some(&format!("{title}.pdf")));
+        cx.spawn(async move |this, cx| {
+            let Ok(Ok(Some(target))) = rx.await else {
+                return;
+            };
+            let (tx, done) = async_channel::bounded(1);
+            let shown = target.clone();
+            let _ = this.update(cx, move |_, _| {
+                print::run(&html, &title, print::Job::Pdf(target), move |r| {
+                    let _ = tx.try_send(r);
+                })
+            });
+            let result = done.recv().await.unwrap_or(Err("cancelled".into()));
+            let _ = this.update(cx, |app, cx| {
+                match result {
+                    Ok(()) => app.set_info(format!("Exported {}", shown.display())),
+                    Err(e) => app.set_error(format!("Could not export: {e}")),
+                }
+                cx.notify();
+            });
+        })
+        .detach();
+    }
+
+    /// *Print…* (⌘P): the page in the print panel.
+    pub fn print_note(&mut self, cx: &mut Context<Self>) {
+        let Some((html, title, _)) = self.export_page() else {
+            return;
+        };
+        let app = cx.entity().downgrade();
+        let mut cx_async = cx.to_async();
+        print::run(&html, &title, print::Job::Print, move |r| {
+            if let Err(e) = r {
+                let _ = app.update(&mut cx_async, |app, cx| {
+                    app.set_error(format!("Could not print: {e}"));
+                    cx.notify();
+                });
+            }
+        });
     }
 
     /// ⇧⌘N: another window of this Vault, with its own Tabs (ADR 0010).
