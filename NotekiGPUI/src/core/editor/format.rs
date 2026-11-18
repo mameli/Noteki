@@ -270,6 +270,135 @@ pub fn format_lines(text: &str, selection: Range<usize>, format: LineFormat) -> 
     }
 }
 
+/// The quote marks a line starts with (`> `, `> > `), its indent before them.
+fn quote_prefix(line: &str) -> usize {
+    let mut i = 0;
+    let b = line.as_bytes();
+    let mut end = 0;
+    while i < b.len() && matches!(b[i], b' ' | b'\t') {
+        i += 1;
+    }
+    while i < b.len() && b[i] == b'>' {
+        i += 1;
+        if i < b.len() && b[i] == b' ' {
+            i += 1;
+        }
+        end = i;
+        while i < b.len() && matches!(b[i], b' ' | b'\t') && b.get(i + 1) == Some(&b'>') {
+            i += 1;
+        }
+    }
+    end
+}
+
+/// Return, as Obsidian has it: in a list the next item (`2.` after `1.`, the
+/// numbers below moved on, `- [ ]` after a task), in a quote the next line of
+/// it; on an empty item or quote line, the list or quote ends there instead.
+pub fn newline(text: &str, selection: Range<usize>) -> Change {
+    let plain = || Change {
+        range: selection.clone(),
+        text: "\n".into(),
+        selection: selection.start + 1..selection.start + 1,
+    };
+    if !selection.is_empty() {
+        return plain();
+    }
+    let at = selection.start;
+    let (start, end) = (line_start(text, at), line_end(text, at));
+    let line = &text[start..end];
+    let quote = quote_prefix(line);
+    let rest = &line[quote..];
+    let item = list_item(rest);
+    let marks = quote + item.as_ref().map_or(0, |i| i.text_start);
+    if marks == 0 || at < start + marks {
+        return plain();
+    }
+    // Nothing written after the marks: the list (or quote) ends here.
+    if line[marks..].trim().is_empty() {
+        return Change {
+            range: start..end,
+            text: String::new(),
+            selection: start..start,
+        };
+    }
+    let mut next = line[..quote].to_string();
+    let mut renumber = None;
+    if let Some(item) = &item {
+        let indent = rest.len() - rest.trim_start_matches([' ', '\t']).len();
+        next.push_str(&rest[..indent]);
+        match item.kind {
+            ListKind::Bullet => next.push_str(&rest[indent..indent + 1]),
+            ListKind::Task { .. } => {
+                next.push_str(&rest[indent..indent + 1]);
+                next.push_str(" [ ]");
+            }
+            ListKind::Number { n, delim } => {
+                next.push_str(&format!("{}{}", n + 1, delim as char));
+                renumber = Some((rest[..indent].to_string(), n + 2, delim));
+            }
+        }
+        next.push(' ');
+    }
+    let inserted = format!("\n{next}");
+    let cursor = at + inserted.len();
+    let mut new = inserted;
+    let mut range_end = at;
+    // The items after it at its level, numbered on from the new one.
+    if let Some((indent, mut n, delim)) = renumber {
+        let mut pos = end;
+        new.push_str(&text[at..end]);
+        while pos < text.len() {
+            let from = pos + 1;
+            let to = line_end(text, from);
+            let below = &text[from..to];
+            let below_rest = &below[quote.min(below.len())..];
+            if below.trim().is_empty() || below[..quote.min(below.len())] != line[..quote] {
+                break;
+            }
+            let own = below_rest.len() - below_rest.trim_start_matches([' ', '\t']).len();
+            let deeper = own > indent.len();
+            match list_item(below_rest) {
+                Some(i) if !deeper && own == indent.len() => {
+                    let ListKind::Number { delim: d, .. } = i.kind else {
+                        break;
+                    };
+                    if d != delim {
+                        break;
+                    }
+                    let digits = below_rest[own..].find(delim as char).unwrap_or(own);
+                    new.push('\n');
+                    new.push_str(&below[..quote]);
+                    new.push_str(&indent);
+                    new.push_str(&format!("{n}"));
+                    new.push_str(&below_rest[own + digits..]);
+                    n += 1;
+                }
+                _ if deeper => {
+                    new.push('\n');
+                    new.push_str(below);
+                }
+                _ => break,
+            }
+            pos = to;
+            range_end = to;
+        }
+        if range_end == at {
+            new.truncate(new.len() - (end - at));
+        } else {
+            return Change {
+                range: at..range_end,
+                text: new,
+                selection: cursor..cursor,
+            };
+        }
+    }
+    Change {
+        range: at..at,
+        text: new,
+        selection: cursor..cursor,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -402,5 +531,48 @@ mod tests {
         assert_eq!(t2, "uno\n%%due%%");
         assert_eq!(apply(&t2, &toggle_comment(&t2, 7..7)), t);
         assert_eq!(apply(t, &toggle_comment(t, 0..2)), "%%un%%o\ndue");
+    }
+
+    fn enter(text: &str, at: usize) -> (String, usize) {
+        let c = newline(text, at..at);
+        (apply(text, &c), c.selection.start)
+    }
+
+    #[test]
+    fn return_continues_a_list_with_the_next_number() {
+        let t = "1. uno";
+        assert_eq!(enter(t, t.len()), ("1. uno\n2. ".into(), 10));
+        let t = "- a\n\t- [x] b";
+        assert_eq!(enter(t, t.len()).0, "- a\n\t- [x] b\n\t- [ ] ");
+        assert_eq!(enter("* a", 3).0, "* a\n* ");
+        assert_eq!(enter("> citato", 8).0, "> citato\n> ");
+        assert_eq!(enter("> - a", 5).0, "> - a\n> - ");
+        assert_eq!(enter("3) tre", 6).0, "3) tre\n4) ");
+    }
+
+    #[test]
+    fn the_numbers_below_move_on() {
+        let t = "1. a\n2. b\n   sotto\n\t- dentro\n3. c\n\nAltro\n1. x";
+        assert_eq!(
+            enter(t, 4).0,
+            "1. a\n2. \n3. b\n   sotto\n\t- dentro\n4. c\n\nAltro\n1. x"
+        );
+        // In the middle of an item, its text goes on in the next one.
+        assert_eq!(enter("1. ab\n2. c", 4).0, "1. a\n2. b\n3. c");
+    }
+
+    #[test]
+    fn return_on_an_empty_item_ends_the_list() {
+        assert_eq!(enter("1. a\n2. ", 8), ("1. a\n".into(), 5));
+        assert_eq!(enter("- [ ] ", 6).0, "");
+        assert_eq!(enter("> ", 2).0, "");
+    }
+
+    #[test]
+    fn elsewhere_return_is_a_newline() {
+        assert_eq!(enter("testo", 5).0, "testo\n");
+        assert_eq!(enter("- a", 1).0, "-\n a", "inside the marker");
+        let c = newline("- abc", 2..4);
+        assert_eq!(c.text, "\n");
     }
 }

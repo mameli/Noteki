@@ -73,6 +73,7 @@ actions!(
         DeleteToLineEnd,
         DeleteToParagraphEnd,
         Newline,
+        SoftNewline,
         TabKey,
         Left,
         Right,
@@ -143,7 +144,7 @@ pub fn register_keybindings(cx: &mut App) {
             crate::keys::binding("ctrl-k", DeleteToParagraphEnd, c),
             crate::keys::binding("enter", Newline, c),
             crate::keys::binding("tab", TabKey, c),
-            crate::keys::binding("shift-enter", Newline, c),
+            crate::keys::binding("shift-enter", SoftNewline, c),
             crate::keys::binding("left", Left, c),
             crate::keys::binding("right", Right, c),
             crate::keys::binding("up", Up, c),
@@ -489,6 +490,21 @@ impl NoteEditor {
             }
             Format::Comment => toggle_comment(text, sel),
         };
+        self.buf.close_undo_step();
+        let changed = self.buf.replace(change.range, &change.text);
+        self.buf
+            .set_selection(change.selection.start, change.selection.end);
+        self.edited(changed, cx);
+    }
+
+    /// Return: the next item of a list or line of a quote (format::newline);
+    /// with several cursors, a newline at each.
+    pub fn newline(&mut self, cx: &mut Context<Self>) {
+        if self.buf.selections().len() > 1 {
+            return self.replace_selection("\n", cx);
+        }
+        let change =
+            crate::core::editor::format::newline(self.buf.text(), self.buf.selection().range());
         self.buf.close_undo_step();
         let changed = self.buf.replace(change.range, &change.text);
         self.buf
@@ -1124,7 +1140,8 @@ handlers! {
     DeleteToLineStart => |ed, cx| ed.delete_row(false, cx);
     DeleteToLineEnd => |ed, cx| ed.delete_row(true, cx);
     DeleteToParagraphEnd => |ed, cx| ed.delete(Motion::LineEnd, cx);
-    Newline => |ed, cx| if !ed.accept_completion(cx) { ed.replace_selection("\n", cx) };
+    Newline => |ed, cx| if !ed.accept_completion(cx) { ed.newline(cx) };
+    SoftNewline => |ed, cx| if !ed.accept_completion(cx) { ed.replace_selection("\n", cx) };
     TabKey => |ed, cx| if !ed.accept_completion(cx) { ed.replace_selection("\t", cx) };
     Left => |ed, cx| ed.motion(Motion::Left, false, cx);
     Right => |ed, cx| ed.motion(Motion::Right, false, cx);

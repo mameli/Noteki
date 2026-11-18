@@ -980,6 +980,29 @@ fn editor_state(cx: &mut TestAppContext, f: &Fixture) -> (String, usize) {
 }
 
 #[gpui_kit::test]
+fn return_in_a_numbered_list_writes_the_next_number(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    editor_with(cx, &f, "", 0);
+    type_in_editor(cx, &f, "1. elemento uno");
+    press(cx, &f, "enter");
+    type_in_editor(cx, &f, "creato quando vado a capo");
+    press(cx, &f, "enter enter");
+    assert_eq!(
+        editor_state(cx, &f).0,
+        "1. elemento uno\n2. creato quando vado a capo\n",
+        "Return on the empty item ends the list"
+    );
+    press(cx, &f, "shift-enter");
+    type_in_editor(cx, &f, "- a");
+    press(cx, &f, "shift-enter");
+    assert_eq!(
+        editor_state(cx, &f).0.lines().last(),
+        Some("- a"),
+        "⇧↩ is a newline alone"
+    );
+}
+
+#[gpui_kit::test]
 fn keys_move_by_character_word_and_line_and_delete(cx: &mut TestAppContext) {
     let f = fixture(cx);
     editor_with(cx, &f, "Ciao, mondo bello\nseconda riga", 0);
