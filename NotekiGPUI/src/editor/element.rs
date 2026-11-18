@@ -13,8 +13,8 @@ use gpui_kit::{
     fill, point, px, size, App, AvailableSpace, Bounds, ContentMask, Corners, DispatchPhase,
     Element, ElementId, ElementInputHandler, Entity, Font, FontWeight, GlobalElementId,
     HighlightStyle, Hsla, ImageAssetLoader, InspectorElementId, IntoElement, LayoutId,
-    MouseMoveEvent, MouseUpEvent, Pixels, Point, Resource, ShapedLine, SharedString, Size, Style,
-    TextAlign, TextRun, UnderlineStyle, Window, WindowTextSystem, WrappedLine,
+    MouseMoveEvent, MouseUpEvent, Pixels, Point, Resource, SharedString, Size, Style, TextAlign,
+    TextRun, UnderlineStyle, Window, WindowTextSystem, WrappedLine,
 };
 
 use crate::core::diagram::Diagram;
@@ -123,13 +123,32 @@ pub(super) struct Cell {
     room: Pixels,
     /// What of its text is hidden (marks), relative to the cell's start.
     hidden: Vec<Range<usize>>,
-    shaped: ShapedLine,
+    /// One row, cut with an ellipsis; in the row being edited, wrapped in its column.
+    shaped: WrappedLine,
 }
 
 impl Cell {
-    fn x_for(&self, local: usize) -> Pixels {
+    /// Where `local` (in the line) is, from the cell's row's top-left.
+    fn position(&self, local: usize, line_height: Pixels) -> Point<Pixels> {
         let i = local.clamp(self.range.start, self.range.end) - self.range.start;
-        self.x + self.shaped.x_for_index(to_display(&self.hidden, i))
+        let shown = to_display(&self.hidden, i);
+        let s = &self.shaped;
+        // At a wrap, the start of the next row (as in the text's own lines).
+        let wrapped_at = s
+            .wrap_boundaries()
+            .iter()
+            .position(|b| s.runs()[b.run_ix].glyphs[b.glyph_ix].index == shown);
+        let p = match wrapped_at {
+            Some(row) => point(px(0.), line_height * (row + 1) as f32),
+            None => s
+                .position_for_index(shown, line_height)
+                .unwrap_or_else(|| point(s.width(), px(0.))),
+        };
+        point(self.x + p.x, p.y)
+    }
+
+    fn rows(&self) -> usize {
+        self.shaped.wrap_boundaries().len() + 1
     }
 }
 
@@ -143,12 +162,13 @@ impl LaidLine {
         let local = offset.clamp(self.range.start, self.range.end) - self.range.start;
         if let Some(cells) = &self.cells {
             // In a cell, or the next cell's start (a pipe, a space).
-            let x = cells
+            return cells
                 .iter()
                 .find(|c| local <= c.range.end)
                 .or(cells.last())
-                .map_or(px(0.), |c| c.x_for(local));
-            return point(x, px(0.));
+                .map_or(point(px(0.), px(0.)), |c| {
+                    c.position(local, self.line_height)
+                });
         }
         let shown = to_display_with(&self.hidden, &self.inserts, local);
         // Where a line wraps, the caret is at the start of the next row (GPUI
@@ -240,8 +260,12 @@ impl Layout {
                 .rev()
                 .find(|c| rel.x >= c.x - CELL_PAD)
                 .or(cells.first());
+            let y = (rel.y - self.top_of(i)).clamp(px(0.), line.text_height - px(0.5));
             let local = cell.map_or(0, |c| {
-                let shown = c.shaped.closest_index_for_x(rel.x - c.x);
+                let at = point((rel.x - c.x).max(px(0.)), y);
+                let shown = match c.shaped.closest_index_for_position(at, line.line_height) {
+                    Ok(i) | Err(i) => i,
+                };
                 c.range.start + to_buffer(&c.hidden, shown)
             });
             return (line.range.start + local).min(line.range.end);
@@ -871,9 +895,17 @@ fn table_cells(
         let runs = runs_for(input, &abs, &cell_style);
         let text = shown_text(&input.text[abs], &cell_style.hidden);
         let room = (*w - CELL_PAD * 2.).max(px(0.));
-        let mut shaped = ts.shape_line(text.clone().into(), input.font_size, &runs, None);
-        // Cut at its column with an ellipsis (ADR 0008).
-        if shaped.width() > room && room > px(0.) {
+        let shape = |text: String, runs: &[TextRun], wrap: Option<Pixels>| {
+            ts.shape_text(text.into(), input.font_size, runs, wrap, None)
+                .ok()
+                .and_then(|mut v| (!v.is_empty()).then(|| v.remove(0)))
+                .unwrap_or_default()
+        };
+        // In the row being edited, all of it, wrapped in its column.
+        let wrap = row.editing.then_some(room.max(px(1.)));
+        let mut shaped = shape(text.clone(), &runs, wrap);
+        // Elsewhere, cut at its column with an ellipsis (ADR 0008).
+        if !row.editing && shaped.width() > room && room > px(0.) {
             let ell = ts.shape_line(
                 "…".into(),
                 input.font_size,
@@ -885,7 +917,12 @@ fn table_cells(
                 )],
                 None,
             );
-            let keep = shaped.closest_index_for_x((room - ell.width()).max(px(0.)));
+            let keep = match shaped.closest_index_for_position(
+                point((room - ell.width()).max(px(0.)), px(0.)),
+                input.font_size * LINE_HEIGHT,
+            ) {
+                Ok(i) | Err(i) => i,
+            };
             let keep = (0..=keep)
                 .rev()
                 .find(|&k| text.is_char_boundary(k))
@@ -907,16 +944,13 @@ fn table_cells(
                 len: "…".len(),
                 ..last
             });
-            shaped = ts.shape_line(
-                format!("{}…", &text[..keep]).into(),
-                input.font_size,
-                &cut_runs,
-                None,
-            );
+            shaped = shape(format!("{}…", &text[..keep]), &cut_runs, None);
         }
+        let wrapped = !shaped.wrap_boundaries().is_empty();
         let x = left
             + CELL_PAD
             + match align {
+                _ if wrapped => px(0.),
                 Align::Left => px(0.),
                 Align::Center => ((room - shaped.width()) / 2.).max(px(0.)),
                 Align::Right => (room - shaped.width()).max(px(0.)),
@@ -958,6 +992,7 @@ fn shape_line(
                 }),
                 kind: RowKind::Body,
                 cells,
+                editing: false,
             };
             table_cells(input, &range, style, &row, &[key_col, width - key_col], ts)
         });
@@ -990,10 +1025,15 @@ fn shape_line(
         let line_height = input.font_size * LINE_HEIGHT;
         // The delimiter row is only the rule under the header. Its height
         // changes only when the cursor is on it, which SPEC allows.
+        // A row being edited is as tall as its cell of most rows.
+        let rows = cells
+            .as_ref()
+            .and_then(|c| c.iter().map(Cell::rows).max())
+            .unwrap_or(1);
         let text_height = if row.kind == RowKind::Delimiter {
             DELIMITER_ROW
         } else {
-            line_height
+            line_height * rows as f32
         };
         return LaidLine {
             range,
@@ -1500,7 +1540,7 @@ impl Element for EditorElement {
         let clip = |cell: &Cell, top: Pixels, line: &LaidLine| ContentMask {
             bounds: Bounds::new(
                 point(layout.origin.x + cell.x, top),
-                size(cell.room, line.line_height),
+                size(cell.room, line.text_height),
             ),
         };
         // Backgrounds first (boxes, rules, inline code), then the selection

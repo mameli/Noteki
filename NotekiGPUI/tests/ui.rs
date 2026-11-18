@@ -1943,18 +1943,59 @@ fn a_table_is_drawn_as_a_grid_in_place(cx: &mut TestAppContext) {
         (caret_at(cx, &f, at(s)).0 + caret_at(cx, &f, at(s) + s.len()).0) / 2.
     };
     assert!((mid(cx, "Testo") - mid(cx, "Codice")).abs() < 1.);
-    // The cursor's row shows its source; the other rows stay a grid.
-    let row = at("| Markdown");
+    // The cursor's row stays in the grid: its cells in their columns.
+    let cell = at("Markdown") + 2;
     app(cx, &f, |a, _, cx| {
         a.editor()
             .clone()
-            .update(cx, |ed, cx| ed.set_selected_range(row..row, cx))
+            .update(cx, |ed, cx| ed.set_selected_range(cell..cell, cx))
     });
-    assert!(
-        caret_at(cx, &f, at("Markdown")).0 > caret_at(cx, &f, row).0,
-        "`| ` shows"
+    assert_eq!(
+        caret_at(cx, &f, at("Markdown")).0,
+        caret_at(cx, &f, at("Swift")).0,
+        "the row being edited keeps its columns"
     );
     assert_eq!(heights(cx, &f), h, "nothing changes height");
+}
+
+#[gpui_kit::test]
+fn a_long_cell_being_edited_shows_all_its_text_in_its_column(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let long =
+        "PROGETTO TABLEAU PER REPORTISTICA SINISTRI E ATTIVITÀ DI CONTROLLO DI GESTIONE ".repeat(3);
+    let text = format!(
+        "| Campo | Valore |\n| --- | --- |\n| Titolo | {long}|\n| Data | 31/03/2026 |\nfine"
+    );
+    let at = |s: &str| text.find(s).unwrap();
+    editor_with(cx, &f, &text, text.len());
+    let h = heights(cx, &f);
+    assert_eq!(
+        h[2], h[0],
+        "cut with an ellipsis while the cursor is elsewhere"
+    );
+    let end = at(long.trim_end()) + long.trim_end().len();
+    app(cx, &f, |a, _, cx| {
+        a.editor()
+            .clone()
+            .update(cx, |ed, cx| ed.set_selected_range(end..end, cx))
+    });
+    let edited = heights(cx, &f);
+    assert!(edited[2] > h[0] * 1.5, "wrapped in its column: {edited:?}");
+    let (start_x, start_y) = caret_at(cx, &f, at(long.trim_end()));
+    let (end_x, end_y) = caret_at(cx, &f, end);
+    assert!(end_y > start_y, "the end on a row below");
+    let column = caret_at(cx, &f, at("31/03")).0;
+    assert!((start_x - column).abs() < 1., "in the Valore column");
+    assert!(end_x >= column, "never left of its column");
+    // Typing goes into the cell; leaving the row cuts it again.
+    type_in_editor(cx, &f, "!");
+    assert!(editor_state(cx, &f).0.contains("GESTIONE!"));
+    app(cx, &f, |a, _, cx| {
+        a.editor()
+            .clone()
+            .update(cx, |ed, cx| ed.set_selected_range(0..0, cx))
+    });
+    assert_eq!(heights(cx, &f)[2], h[0]);
 }
 
 // ---- Undo ----

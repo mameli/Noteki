@@ -37,6 +37,9 @@ pub struct TableRow {
     /// Each cell's text in the line, without its spaces around (relative to
     /// the line's start). A body row's cells past the header's are not shown.
     pub cells: Vec<Range<usize>>,
+    /// The cursor is in it: its cells show all their text, wrapped in their
+    /// columns, instead of cut with an ellipsis (the table stays drawn).
+    pub editing: bool,
 }
 
 /// The cells of a row: the text between unescaped pipes, trimmed; the pipes
@@ -147,6 +150,7 @@ pub fn tables(lines: &[Line]) -> Vec<(usize, TableRow)> {
                     table: table.clone(),
                     kind,
                     cells,
+                    editing: false,
                 },
             ));
         }

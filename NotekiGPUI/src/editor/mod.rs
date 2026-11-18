@@ -677,6 +677,17 @@ impl NoteEditor {
                         Some(Decoration::Image(_) | Decoration::Callout { .. }) => {
                             style.decoration = slot.decoration.clone()
                         }
+                        // A table stays drawn while its row is edited: the
+                        // row's cells show all their text, its marks where
+                        // the cursor is. The rule under the header shows
+                        // its source.
+                        Some(Decoration::Table(ref row))
+                            if row.kind != crate::core::editor::table::RowKind::Delimiter =>
+                        {
+                            let mut row = row.clone();
+                            row.editing = true;
+                            style.decoration = Some(Decoration::Table(row));
+                        }
                         _ => {}
                     }
                     // A setext Heading is one through the line under it.

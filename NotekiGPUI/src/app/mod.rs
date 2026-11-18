@@ -1211,7 +1211,9 @@ impl NotekiApp {
     }
 
     fn refresh_tree(&mut self, cx: &mut Context<Self>) {
-        let Some(vault) = &self.vault else { return };
+        if self.vault.is_none() {
+            return;
+        }
         // Keep what the user expanded or collapsed in the tree itself.
         let tree = self.file_tree.read(cx);
         let mut ix = 0;
