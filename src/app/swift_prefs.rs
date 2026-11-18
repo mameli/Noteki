@@ -114,6 +114,12 @@ pub fn from_swift(get: impl Fn(&str) -> Option<Value>) -> Option<Settings> {
     if let Some(format) = string("dailyNoteFormat") {
         s.daily_note_format = format;
     }
+    if let Some(on) = flag("focusMode") {
+        s.focus_mode = on;
+    }
+    if let Some(on) = flag("typewriterMode") {
+        s.typewriter_mode = on;
+    }
     s.excluded_folders = lists("excludedFolders").into_iter().collect();
     for (root, mut notes) in lists("recentNotes") {
         notes.truncate(MAX_RECENT_NOTES);
@@ -157,6 +163,7 @@ mod tests {
             "rightPane": "backlinks",
             "rightSidebar": false,
             "dailyNoteFolder": "Diario",
+            "typewriterMode": true,
             "excludedFolders": {"/Users/me/Vault/": ["Archive"]},
             "recentNotes": {"/Users/me/Vault/": ["a.md", "b/c.md"]},
             "windows": "data the import leaves",
@@ -176,6 +183,7 @@ mod tests {
         );
         assert!(!s.right_sidebar_open);
         assert_eq!(s.daily_note_folder, "Diario");
+        assert!(s.typewriter_mode && !s.focus_mode);
         assert_eq!(s.daily_note_format, "[Daily_]YYYY/YYYY-MM-DD");
         assert_eq!(
             s.excluded_in(std::path::Path::new("/Users/me/Vault")),

@@ -35,14 +35,19 @@ pub fn set_app_menus(cx: &mut App) {
             let _ = window.update(cx, |_, window, _| window.minimize_window());
         }
     });
-    cx.set_menus(app_menus());
+    cx.set_menus(app_menus(&Settings::default()));
+}
+
+/// The menus again, their ticks after `settings` (the View menu's modes).
+pub fn refresh(settings: &Settings, cx: &mut App) {
+    cx.set_menus(app_menus(settings));
 }
 
 fn action(name: &'static str, action: impl gpui_kit::Action) -> MenuItem {
     MenuItem::action(name, action)
 }
 
-pub fn app_menus() -> Vec<Menu> {
+pub fn app_menus(settings: &Settings) -> Vec<Menu> {
     vec![
         Menu::new("Noteki").items([
             action("Check for Updates…", CheckForUpdatesAction),
@@ -120,6 +125,9 @@ pub fn app_menus() -> Vec<Menu> {
             action("Search", SwitchSearchPane),
             action("Outline", ShowOutlineAction),
             action("Backlinks", ShowBacklinksAction),
+            MenuItem::separator(),
+            action("Focus Mode", ToggleFocusMode).checked(settings.focus_mode),
+            action("Typewriter Mode", ToggleTypewriterMode).checked(settings.typewriter_mode),
             MenuItem::separator(),
             action("Zoom In", ZoomIn),
             action("Zoom Out", ZoomOut),

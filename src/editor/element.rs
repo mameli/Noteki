@@ -1518,12 +1518,14 @@ impl Element for EditorElement {
         window: &mut Window,
         cx: &mut App,
     ) {
-        let (focus, palette, diagrams) = {
+        let (focus, palette, diagrams, (focus_mode, typewriter), cursor) = {
             let ed = self.editor.read(cx);
             (
                 ed.focus_handle.clone(),
                 ed.palette,
                 ed.diagram_images.clone(),
+                ed.modes(),
+                ed.buf.cursor(),
             )
         };
         window.handle_input(
@@ -1594,6 +1596,16 @@ impl Element for EditorElement {
                 cx,
             );
         }
+        // Typewriter Mode: a band of the accent behind the row being written.
+        if typewriter {
+            if let Some(row) = layout.caret(&input.text, cursor) {
+                let band = Bounds::new(
+                    point(layout.origin.x, row.top()),
+                    size(layout.width, row.size.height),
+                );
+                window.paint_quad(fill(band, palette.accent.opacity(0.08)));
+            }
+        }
         // Find's matches, under the selection.
         for r in state.matches.drain(..) {
             window.paint_quad(fill(r, palette.highlight));
@@ -1632,6 +1644,31 @@ impl Element for EditorElement {
                 cx,
             );
         }
+        // Focus Mode: every line but the cursor's paragraph under a veil of
+        // the background.
+        if focus_mode && layout.lines.last().is_some_and(|l| l.range.end == input.text.len()) {
+            let text = &input.text;
+            let paragraph = crate::core::editor::lines::paragraph_of(
+                layout.lines.iter().map(|l| &text[l.range.clone()]),
+                layout.line_of(cursor),
+            );
+            let veil = palette.background.opacity(0.7);
+            for (i, line) in layout.lines.iter().enumerate() {
+                if paragraph.contains(&i) {
+                    continue;
+                }
+                let Some(top) = on_screen(i, line) else {
+                    continue;
+                };
+                // Wider than the text: quote bars and list markers too.
+                let left = layout.origin.x - px(24.);
+                let veiled = Bounds::new(
+                    point(left, top),
+                    size(layout.width + px(48.), line.height()),
+                );
+                window.paint_quad(fill(veiled, veil));
+            }
+        }
         for c in state.carets.drain(..) {
             window.paint_quad(fill(c, palette.caret));
         }
@@ -1651,14 +1688,24 @@ impl Element for EditorElement {
             let scrolled = f32::from(-offset.y);
             let top = f32::from(caret.top() - viewport.top()) + scrolled;
             let height = f32::from(caret.size.height);
-            let wanted = scroll_to_reveal(
-                scrolled,
-                f32::from(viewport.size.height),
-                top,
-                top + height,
-                height,
-                f32::from(scroll.max_offset().y),
-            );
+            let max = f32::from(scroll.max_offset().y);
+            let wanted = if typewriter {
+                crate::core::editor::lines::scroll_to_centre(
+                    f32::from(viewport.size.height),
+                    top,
+                    top + height,
+                    max,
+                )
+            } else {
+                scroll_to_reveal(
+                    scrolled,
+                    f32::from(viewport.size.height),
+                    top,
+                    top + height,
+                    height,
+                    max,
+                )
+            };
             if (wanted - scrolled).abs() > 0.5 {
                 scroll.set_offset(point(offset.x, px(-wanted)));
                 window.refresh();

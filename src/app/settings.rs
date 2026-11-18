@@ -61,6 +61,10 @@ pub struct Settings {
     pub daily_note_folder: String,
     /// moment.js format: `[Daily_]YYYY/YYYY-MM-DD` makes `Daily_2026/2026-11-17.md`.
     pub daily_note_format: String,
+    /// View › Focus Mode: every line but the cursor's paragraph faded.
+    pub focus_mode: bool,
+    /// View › Typewriter Mode: the line being written kept in the middle.
+    pub typewriter_mode: bool,
 }
 
 pub const DEFAULT_FONT_SIZE: f32 = 15.;
@@ -110,6 +114,8 @@ impl Default for Settings {
             excluded_folders: HashMap::new(),
             daily_note_folder: "Journal".into(),
             daily_note_format: "[Daily_]YYYY/YYYY-MM-DD".into(),
+            focus_mode: false,
+            typewriter_mode: false,
         }
     }
 }
@@ -163,6 +169,8 @@ impl Settings {
         self.excluded_folders = from.excluded_folders.clone();
         self.daily_note_folder = from.daily_note_folder.clone();
         self.daily_note_format = from.daily_note_format.clone();
+        self.focus_mode = from.focus_mode;
+        self.typewriter_mode = from.typewriter_mode;
     }
 }
 

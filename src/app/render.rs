@@ -126,6 +126,10 @@ impl Render for NotekiApp {
                 )
             }))
             .on_action(cx.listener(|this, _: &NewWindowAction, _, cx| this.open_another_window(cx)))
+            .on_action(cx.listener(|this, _: &ToggleFocusMode, w, cx| this.toggle_focus_mode(w, cx)))
+            .on_action(cx.listener(|this, _: &ToggleTypewriterMode, w, cx| {
+                this.toggle_typewriter_mode(w, cx)
+            }))
             .on_action(cx.listener(|this, _: &OpenVaultInTerminalAction, _, cx| {
                 this.open_in_terminal("");
                 cx.notify();
@@ -1363,6 +1367,10 @@ impl NotekiApp {
             }),
             ("Light / dark / system", AssetIcon::Sun, |a, w, cx| {
                 a.cycle_appearance(w, cx)
+            }),
+            ("Focus mode", AssetIcon::Sun, |a, w, cx| a.toggle_focus_mode(w, cx)),
+            ("Typewriter mode", AssetIcon::Pencil, |a, w, cx| {
+                a.toggle_typewriter_mode(w, cx)
             }),
             ("Export as HTML…", AssetIcon::Download, |a, _, cx| {
                 a.export_html(cx)

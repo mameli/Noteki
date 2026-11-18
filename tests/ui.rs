@@ -2847,3 +2847,58 @@ fn the_caret_is_as_tall_as_the_letters_not_the_whole_row(cx: &mut TestAppContext
     );
     assert!(drawn.top() > row.top() && drawn.bottom() < row.bottom(), "centred in it");
 }
+
+#[gpui_kit::test]
+fn typewriter_mode_keeps_the_line_being_written_in_the_middle(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let text: String = (0..300).map(|i| format!("Riga {i}\n")).collect();
+    let middle = text.find("Riga 150").unwrap();
+    editor_with(cx, &f, &text, middle);
+    ui(cx, &f, |w, cx| w.dispatch_action(Box::new(noteki::app::ToggleTypewriterMode), cx));
+    frame(cx, &f);
+    assert_eq!(
+        app(cx, &f, |a, _, cx| (a.settings().typewriter_mode, a.editor().read(cx).modes())),
+        (true, (false, true)),
+        "on, and kept in the settings"
+    );
+    let centred_off = |cx: &mut TestAppContext| {
+        app(cx, &f, |a, _, cx| {
+            let ed = a.editor().read(cx);
+            let (view, caret) = (ed.viewport(), ed.caret_bounds(ed.cursor()).unwrap());
+            f32::from(caret.top() + caret.size.height / 2. - view.top() - view.size.height / 2.)
+        })
+    };
+    for keys in ["down", "down down down", "up", "x"] {
+        press(cx, &f, keys);
+        frame(cx, &f);
+        frame(cx, &f);
+        let off = centred_off(cx);
+        assert!(off.abs() < 2., "after {keys}, the line is {off} px from the middle");
+    }
+    // The first line can come to the middle too: half a view of room above it.
+    press(cx, &f, "cmd-up");
+    frame(cx, &f);
+    frame(cx, &f);
+    let off = centred_off(cx);
+    assert!(off.abs() < 2., "the first line is {off} px from the middle");
+}
+
+#[gpui_kit::test]
+fn focus_mode_is_a_setting_of_every_window_ticked_in_the_view_menu(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    editor_with(cx, &f, "uno\n\ndue", 0);
+    ui(cx, &f, |w, cx| w.dispatch_action(Box::new(noteki::app::ToggleFocusMode), cx));
+    frame(cx, &f);
+    assert_eq!(app(cx, &f, |a, _, cx| a.editor().read(cx).modes()), (true, false));
+    let view = noteki::app::menus::app_menus(&app(cx, &f, |a, _, _| a.settings().clone()))
+        .into_iter()
+        .find(|m| m.name == "View")
+        .unwrap();
+    let ticked = view.items.iter().any(|i| {
+        matches!(i, gpui_kit::MenuItem::Action { name, checked: true, .. } if name == "Focus Mode")
+    });
+    assert!(ticked, "View › Focus Mode ticked");
+    ui(cx, &f, |w, cx| w.dispatch_action(Box::new(noteki::app::ToggleFocusMode), cx));
+    frame(cx, &f);
+    assert_eq!(app(cx, &f, |a, _, cx| a.editor().read(cx).modes()), (false, false));
+}

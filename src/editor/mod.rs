@@ -272,6 +272,9 @@ pub struct NoteEditor {
     font_family: Option<SharedString>,
     code_font: SharedString,
     line_limit: Option<u32>,
+    /// View › Focus Mode and Typewriter Mode, from the settings.
+    focus_mode: bool,
+    typewriter_mode: bool,
     /// The Note chosen in the `[[` list, and the link where Esc closed it.
     completion_pick: usize,
     completion_dismissed: Option<usize>,
@@ -358,6 +361,8 @@ impl NoteEditor {
             font_family: None,
             code_font: element::CODE_FONT.into(),
             line_limit: Some(100),
+            focus_mode: false,
+            typewriter_mode: false,
             note_key: None,
             histories: HashMap::new(),
             revision: 0,
@@ -556,6 +561,27 @@ impl NoteEditor {
         self.line_limit = line_limit;
         self.reveal = true;
         cx.notify();
+    }
+
+    /// Focus Mode fades every line but the cursor's paragraph; Typewriter Mode
+    /// keeps the cursor's line in the middle of the view after keys (not
+    /// clicks), with half a view of room before and after the text.
+    pub fn set_modes(&mut self, focus: bool, typewriter: bool, cx: &mut Context<Self>) {
+        if (focus, typewriter) != (self.focus_mode, self.typewriter_mode) {
+            self.focus_mode = focus;
+            self.typewriter_mode = typewriter;
+            self.reveal = true;
+            cx.notify();
+        }
+    }
+
+    pub fn modes(&self) -> (bool, bool) {
+        (self.focus_mode, self.typewriter_mode)
+    }
+
+    /// The view the text scrolls in, in the window (for tests).
+    pub fn viewport(&self) -> Bounds<Pixels> {
+        self.scroll.bounds()
     }
 
     pub fn set_palette(&mut self, palette: NotekiPalette, cx: &mut Context<Self>) {
@@ -1288,8 +1314,14 @@ impl Render for NoteEditor {
             .on_action(cx.listener(|ed, _: &FindPrevious, window, cx| {
                 ed.find_step(false, false, window, cx)
             }));
+        // Typewriter Mode: the first and last lines can come to the middle too.
+        let room = if self.typewriter_mode {
+            self.scroll.bounds().size.height / 2.
+        } else {
+            px(16.)
+        };
         let editor = self.bind_actions(root, cx).child(
-            div().w_full().px_6().py_4().child(
+            div().w_full().px_6().pt(room).pb(room).child(
                 div()
                     .w_full()
                     // A character is half an em (SPEC › Window).

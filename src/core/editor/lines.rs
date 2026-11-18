@@ -81,6 +81,28 @@ pub fn scroll_to_reveal(
     wanted.clamp(0., max.max(0.))
 }
 
+/// Typewriter Mode: the scroll that puts the middle of `top..bottom` in the
+/// middle of a viewport `height` tall, within `0..=max`.
+pub fn scroll_to_centre(height: f32, top: f32, bottom: f32, max: f32) -> f32 {
+    ((top + bottom) / 2. - height / 2.).clamp(0., max.max(0.))
+}
+
+/// Focus Mode: the lines of the paragraph line `line` is in, among `lines`
+/// (each without its line break): the lines around it up to a blank one. A
+/// blank line is a paragraph of its own.
+pub fn paragraph_of<'a>(lines: impl IntoIterator<Item = &'a str>, line: usize) -> Range<usize> {
+    let blank: Vec<bool> = lines.into_iter().map(|l| l.trim().is_empty()).collect();
+    if line >= blank.len() || blank[line] {
+        return line..line + 1;
+    }
+    let start = blank[..line].iter().rposition(|&b| b).map_or(0, |b| b + 1);
+    let end = blank[line..]
+        .iter()
+        .position(|&b| b)
+        .map_or(blank.len(), |b| line + b);
+    start..end
+}
+
 /// While a selection is dragged past the top or bottom of the view, how far
 /// to scroll per frame (negative: up): the further past the edge, the faster.
 pub fn edge_scroll(pointer_y: f32, top: f32, bottom: f32) -> f32 {
@@ -98,6 +120,22 @@ pub fn edge_scroll(pointer_y: f32, top: f32, bottom: f32) -> f32 {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn the_paragraph_is_the_lines_between_blank_ones() {
+        let lines = ["# Title", "", "one", "two", "three", "", "four"];
+        assert_eq!(paragraph_of(lines, 3), 2..5);
+        assert_eq!(paragraph_of(lines, 6), 6..7);
+        assert_eq!(paragraph_of(lines, 0), 0..1);
+        assert_eq!(paragraph_of(lines, 1), 1..2, "a blank line alone");
+    }
+
+    #[test]
+    fn typewriter_puts_the_line_in_the_middle_within_the_text() {
+        assert_eq!(scroll_to_centre(400., 1000., 1020., 5000.), 810.);
+        assert_eq!(scroll_to_centre(400., 10., 30., 5000.), 0.);
+        assert_eq!(scroll_to_centre(400., 4990., 5010., 4800.), 4800.);
+    }
+
     use super::*;
 
     #[test]

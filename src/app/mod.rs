@@ -4,7 +4,7 @@
 //! unit-tested there; this module wires them to GPUI and the file system.
 
 mod loose;
-mod menus;
+pub mod menus;
 mod render;
 pub mod settings;
 mod settings_window;
@@ -91,6 +91,8 @@ actions!(
         CheckForUpdatesAction,
         SupportNotekiAction,
         OpenVaultInTerminalAction,
+        ToggleFocusMode,
+        ToggleTypewriterMode,
     ]
 );
 
@@ -466,8 +468,10 @@ impl NotekiApp {
                 settings.line_limit(),
                 cx,
             );
+            ed.set_modes(settings.focus_mode, settings.typewriter_mode, cx);
             ed
         });
+        menus::refresh(&settings, cx);
         let search_input = cx.new(|cx| {
             InputState::new(window, cx)
                 .placeholder("Search  ·  tag:work  path:Journal  \"a phrase\"")
@@ -916,10 +920,15 @@ impl NotekiApp {
             s.font_size
                 .clamp(settings::MIN_FONT_SIZE, settings::MAX_FONT_SIZE),
         );
+        let modes = (s.focus_mode, s.typewriter_mode);
         self.editor.update(cx, |ed, cx| {
             ed.set_font_size(size, cx);
             ed.set_text_settings(&family, &code, limit, cx);
+            ed.set_modes(modes.0, modes.1, cx);
         });
+        if modes != (before.focus_mode, before.typewriter_mode) {
+            menus::refresh(&self.settings, cx);
+        }
         if let Some(root) = self.vault.as_ref().map(|v| v.root.clone()) {
             let excluded = self.settings.excluded_in(&root).to_vec();
             if excluded != before.excluded_in(&root) {
@@ -963,6 +972,16 @@ impl NotekiApp {
             None => settings::DEFAULT_FONT_SIZE,
         };
         self.update_settings(|s| s.font_size = size, window, cx);
+    }
+
+    /// View › Focus Mode, for every window.
+    pub(crate) fn toggle_focus_mode(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.update_settings(|s| s.focus_mode = !s.focus_mode, window, cx);
+    }
+
+    /// View › Typewriter Mode, for every window.
+    pub(crate) fn toggle_typewriter_mode(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.update_settings(|s| s.typewriter_mode = !s.typewriter_mode, window, cx);
     }
 
     pub(crate) fn cycle_theme(&mut self, window: &mut Window, cx: &mut Context<Self>) {
