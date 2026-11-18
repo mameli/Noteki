@@ -1725,6 +1725,13 @@ fn a_click_on_a_checkbox_toggles_the_task_and_keeps_the_cursor(cx: &mut TestAppC
     };
     let first = text.find("- [ ]").unwrap();
     let at = checkbox(cx, first);
+    let hand = |cx: &mut TestAppContext, at: (f32, f32)| {
+        mouse_move(cx, &f, at);
+        app(cx, &f, |a, _, cx| a.editor().read(cx).shows_pointing_hand())
+    };
+    assert!(hand(cx, at), "the pointing hand over a checkbox");
+    let words = point_at(cx, &f, first + 8);
+    assert!(!hand(cx, words), "the I-beam over its text");
     click(cx, &f, at, 1);
     assert_eq!(
         editor_state(cx, &f),

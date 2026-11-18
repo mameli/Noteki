@@ -264,7 +264,7 @@ pub struct NoteEditor {
     /// Scroll the cursor into view at the next frame (keys and edits, not clicks).
     reveal: bool,
     /// The pointer is over a link that a click would open.
-    over_link: bool,
+    over_clickable: bool,
     /// The text's size, from the settings (⌘+, ⌘−, ⌘0).
     font_size: Pixels,
     /// The text's and the code's fonts, and the longest line in characters,
@@ -349,7 +349,7 @@ impl NoteEditor {
             _edge_scroll: None,
             cursor_on: true,
             reveal: false,
-            over_link: false,
+            over_clickable: false,
             find: None,
             completion_pick: 0,
             completion_dismissed: None,
@@ -510,6 +510,11 @@ impl NoteEditor {
         self.buf
             .set_selection(change.selection.start, change.selection.end);
         self.edited(changed, cx);
+    }
+
+    /// Whether the pointer is the pointing hand: over a link or a checkbox.
+    pub fn shows_pointing_hand(&self) -> bool {
+        self.over_clickable
     }
 
     /// Replaces the selection with `text`, as typing would (inserting a Wikilink).
@@ -1028,12 +1033,15 @@ impl NoteEditor {
         if self.drag.is_some() {
             return;
         }
+        // What a click acts on (a link, a checkbox) shows the pointing hand.
         let over = self.layout.as_ref().is_some_and(|l| {
-            let offset = l.offset_for_point(self.buf.text(), ev.position);
-            self.link_to_open(offset).is_some()
+            l.checkbox_at(ev.position).is_some() || {
+                let offset = l.offset_for_point(self.buf.text(), ev.position);
+                self.link_to_open(offset).is_some()
+            }
         });
-        if over != self.over_link {
-            self.over_link = over;
+        if over != self.over_clickable {
+            self.over_clickable = over;
             cx.notify();
         }
     }
@@ -1234,7 +1242,7 @@ impl Render for NoteEditor {
             .size_full()
             .overflow_y_scroll()
             .track_scroll(&self.scroll)
-            .cursor(if self.over_link {
+            .cursor(if self.over_clickable {
                 CursorStyle::PointingHand
             } else {
                 CursorStyle::IBeam
