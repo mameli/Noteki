@@ -21,7 +21,7 @@ use gpui_kit::{
     Subscription, Window, WindowBounds, WindowOptions,
 };
 
-use super::settings::{self, Settings};
+use super::settings::{self, InterfaceSize, Settings};
 use super::{updates, NotekiApp};
 use crate::core::vault::{folder_to_exclude, today_daily_note_path};
 use crate::theme::{AppearanceMode, NotekiThemeName};
@@ -270,11 +270,31 @@ impl SettingsWindow {
                     apply(&app, main, cx, move |t| t.appearance = m)
                 }
             });
+        let (app, main) = (self.app.clone(), self.main);
+        let sizes = ButtonGroup::new("interface-size")
+            .small()
+            .children(InterfaceSize::ALL.iter().map(|z| {
+                let on = s.interface_size == *z;
+                Button::new(z.label())
+                    .label(z.label())
+                    .selected(on)
+                    .when(on, |b| b.primary())
+                    .when(!on, |b| b.outline())
+            }))
+            .on_click(move |picked: &Vec<usize>, _, cx| {
+                if let Some(z) = picked.first().and_then(|i| InterfaceSize::ALL.get(*i)).copied() {
+                    apply(&app, main, cx, move |t| t.interface_size = z)
+                }
+            });
         section(
             "Appearance",
             None,
-            vec![row("Theme", theme), row("Light or dark", modes)],
-            None,
+            vec![
+                row("Theme", theme),
+                row("Light or dark", modes),
+                row("Interface size", sizes),
+            ],
+            Some("The interface size is the sidebars', the Tabs' and the panes'; the Note's text has its own.".into()),
         )
     }
 

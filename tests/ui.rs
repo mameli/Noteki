@@ -2920,3 +2920,25 @@ fn the_format_bar_chosen_in_settings_formats_the_selection(cx: &mut TestAppConte
     frame(cx, &f);
     assert_eq!(editor_state(cx, &f).0, "- [ ] una **parola**");
 }
+
+#[gpui_kit::test]
+fn the_interface_size_scales_the_interface_not_the_text(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    editor_with(cx, &f, "testo", 0);
+    let measure = |cx: &mut TestAppContext| {
+        frame(cx, &f);
+        let rem = ui(cx, &f, |w, _| f32::from(w.rem_size()));
+        let text = app(cx, &f, |a, _, cx| {
+            f32::from(a.editor().read(cx).caret_bounds(0).unwrap().size.height)
+        });
+        (rem, text)
+    };
+    let (medium, text) = measure(cx);
+    assert_eq!(medium, 16.);
+    app(cx, &f, |a, w, cx| {
+        a.update_settings(|s| s.interface_size = noteki::app::settings::InterfaceSize::Large, w, cx)
+    });
+    let (large, same_text) = measure(cx);
+    assert!(large > medium, "the interface grows: {large}");
+    assert_eq!(same_text, text, "the Note's text keeps its size");
+}

@@ -24,6 +24,39 @@ pub enum RightPane {
     Backlinks,
 }
 
+/// How large the sidebars, the Tabs, the panes and Settings are drawn; the
+/// Note's text has a size of its own (SPEC › Window).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum InterfaceSize {
+    Small,
+    #[default]
+    Medium,
+    Large,
+}
+
+impl InterfaceSize {
+    pub const ALL: [InterfaceSize; 3] = [Self::Small, Self::Medium, Self::Large];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Small => "Small",
+            Self::Medium => "Medium",
+            Self::Large => "Large",
+        }
+    }
+
+    /// The interface's rem, in pixels: every size of GPUI Kit's components
+    /// follows it.
+    pub fn rem(self) -> f32 {
+        match self {
+            Self::Small => 14.,
+            Self::Medium => 16.,
+            Self::Large => 18.,
+        }
+    }
+}
+
 /// What is restored when a vault is opened again.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
@@ -67,6 +100,7 @@ pub struct Settings {
     pub typewriter_mode: bool,
     /// The Format bar over the Note (hidden at first, for those who know the shortcuts).
     pub show_format_bar: bool,
+    pub interface_size: InterfaceSize,
 }
 
 pub const DEFAULT_FONT_SIZE: f32 = 15.;
@@ -119,6 +153,7 @@ impl Default for Settings {
             focus_mode: false,
             typewriter_mode: false,
             show_format_bar: false,
+            interface_size: InterfaceSize::default(),
         }
     }
 }
@@ -175,6 +210,7 @@ impl Settings {
         self.focus_mode = from.focus_mode;
         self.typewriter_mode = from.typewriter_mode;
         self.show_format_bar = from.show_format_bar;
+        self.interface_size = from.interface_size;
     }
 }
 

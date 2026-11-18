@@ -458,6 +458,7 @@ impl NotekiApp {
     pub fn new(config: AppConfig, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let settings = settings::load(config.settings_path.as_deref());
         let palette = apply_noteki_theme(settings.theme_name, settings.appearance, window, cx);
+        crate::theme::set_interface_size(settings.interface_size.rem(), cx);
 
         let font_size = gpui_kit::px(settings.font_size);
         let editor = cx.new(|cx| {
@@ -860,6 +861,7 @@ impl NotekiApp {
             window,
             cx,
         );
+        crate::theme::set_interface_size(self.settings.interface_size.rem(), cx);
         let palette = self.palette;
         self.editor.update(cx, |ed, cx| ed.set_palette(palette, cx));
         cx.notify();
@@ -914,6 +916,8 @@ impl NotekiApp {
         let look = (self.settings.theme_name, self.settings.appearance);
         if look != (before.theme_name, before.appearance) {
             self.apply_theme(window, cx);
+        } else if self.settings.interface_size != before.interface_size {
+            crate::theme::set_interface_size(self.settings.interface_size.rem(), cx);
         }
         let s = &self.settings;
         let (family, code, limit) = (s.font_family.clone(), s.code_font.clone(), s.line_limit());

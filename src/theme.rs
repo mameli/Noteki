@@ -236,6 +236,14 @@ fn hsla_alpha(mut c: Hsla, a: f32) -> Hsla {
     c
 }
 
+/// The interface's size: GPUI Kit's root takes the theme's font size as the
+/// window's rem, which every component's size follows. The Note's text has
+/// its own size.
+pub fn set_interface_size(rem: f32, cx: &mut App) {
+    Theme::update(cx, |theme| theme.font_size = gpui_kit::px(rem));
+    cx.refresh_windows();
+}
+
 pub fn apply_noteki_theme(
     name: NotekiThemeName,
     appearance: AppearanceMode,
