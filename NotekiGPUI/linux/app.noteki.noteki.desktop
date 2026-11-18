@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=Noteki
+GenericName=Markdown Notes
+Comment=Read and write the Markdown vault you keep with Obsidian
+Exec=noteki %F
+Icon=app.noteki.noteki
+Terminal=false
+Categories=Office;TextEditor;Utility;
+MimeType=text/markdown;text/x-markdown;inode/directory;
+Keywords=markdown;notes;obsidian;vault;
+StartupWMClass=app.noteki.noteki

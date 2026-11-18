@@ -10,6 +10,18 @@ scripts/eval.sh --mutants      # plus the mutation check of the tests
 
 `NOTEKI_VAULT=/path/to/vault` opens another vault. `NOTEKI_SETTINGS=/tmp/s.json` uses another preferences file (the default is `~/Library/Application Support/Noteki/gpui-settings.json`).
 
+## Linux
+
+The same app, built on Linux (Wayland or X11): `scripts/package-linux.sh` makes `target/release/noteki-linux-<arch>.tar.gz` (the `noteki` binary, its `.desktop` entry and icon), which installs by unpacking it into a prefix: `tar -xzf noteki-linux-x86_64.tar.gz -C ~/.local`. The workflow `.github/workflows/gpui-linux.yml` runs every test on Ubuntu and keeps the package of each push.
+
+What differs from the Mac, all from `src/keys.rs` and a few `cfg!` checks:
+- Shortcuts are written once, as on the Mac, and given on Linux as its apps have them: Ctrl for ⌘, ⌃⌘ is Ctrl+Alt, ⌥⌘0/1/2 (right sidebar) Alt+0/1/2, Back and Forward Alt+←/→, Tabs Ctrl+PgUp/PgDn too, Replace Ctrl+H, Keyboard Shortcuts F1; words move with Ctrl, a line's ends with Home and End, the Note's with Ctrl+Home and Ctrl+End; Delete trashes the item selected in Files. macOS's own keys are left out (Hide, Minimize, the Emacs keys of its text views, which on Linux would take the command keys). Tooltips show `Ctrl+O`, not `⌘O`.
+- Ctrl-click opens a Note in a new Tab.
+- The Trash is the freedesktop one (`~/.local/share/Trash`, with the `.trashinfo` the file manager puts items back from).
+- Files come as arguments (`noteki Nota.md`, the `.desktop` entry's `%F`); a second `noteki` opens a second app, not a window of the first.
+- No menu bar: everything is in the Command palette and the shortcuts; Settings has its button.
+- Code is in DejaVu Sans Mono unless Settings names another font.
+
 ## Layout
 
 | Path | What | Depends on GPUI |
