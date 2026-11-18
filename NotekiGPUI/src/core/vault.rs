@@ -477,32 +477,83 @@ pub fn make_copy(root: &Path, rel_path: &str) -> Result<String, String> {
     }
 }
 
-/// Moves a file or folder of the vault to the Trash (`~/.Trash` unless
-/// `trash_dir` is given). Never deletes: if it cannot be moved, it stays.
+/// Moves a file or folder of the vault to the Trash: into `trash_dir` when
+/// given, else the system's (`~/.Trash` on the Mac, the freedesktop Trash on
+/// Linux, where the file manager can put it back). Never deletes: if it
+/// cannot be moved, it stays.
 pub fn move_to_trash(root: &Path, rel_path: &str, trash_dir: Option<&Path>) -> Result<(), String> {
     let abs = resolve_vault_path(root, rel_path)?;
     if !abs.exists() {
         return Ok(());
     }
-    let trash_dir = trash_dir
-        .map(Path::to_path_buf)
-        .or_else(|| dirs::home_dir().map(|h| h.join(".Trash")));
-    if let Some(trash_dir) = trash_dir {
-        if trash_dir.is_dir() {
-            let file_name = abs.file_name().and_then(|s| s.to_str()).unwrap_or("item");
-            let mut dest = trash_dir.join(file_name);
-            if dest.exists() {
-                let stamp = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .map(|d| d.as_secs())
-                    .unwrap_or(0);
-                dest = trash_dir.join(format!("{file_name}.{stamp}"));
-            }
-            return fs::rename(&abs, &dest)
-                .map_err(|e| format!("Could not move {rel_path} to the Trash: {e}"));
-        }
+    let moved = match trash_dir {
+        Some(dir) => move_into(&abs, dir),
+        None if cfg!(target_os = "macos") => match dirs::home_dir() {
+            Some(home) => move_into(&abs, &home.join(".Trash")),
+            None => Err("no home folder".into()),
+        },
+        None => match dirs::data_dir() {
+            Some(data) => freedesktop_trash(&abs, &data.join("Trash")),
+            None => Err("no data folder".into()),
+        },
+    };
+    moved.map_err(|e| format!("Could not move {rel_path} to the Trash: {e}"))
+}
+
+/// Into `dir`, under a name of its own if one is there already.
+fn move_into(abs: &Path, dir: &Path) -> Result<(), String> {
+    if !dir.is_dir() {
+        return Err("no Trash folder".into());
     }
-    Err(format!("No Trash folder: {rel_path} was not moved"))
+    let file_name = abs.file_name().and_then(|s| s.to_str()).unwrap_or("item");
+    let mut dest = dir.join(file_name);
+    if dest.exists() {
+        let stamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        dest = dir.join(format!("{file_name}.{stamp}"));
+    }
+    fs::rename(abs, &dest).map_err(|e| e.to_string())
+}
+
+/// The freedesktop Trash at `trash`: the item in `files/`, where it was and
+/// when in `info/<name>.trashinfo`, written first under a name no other item
+/// has (as the specification asks).
+fn freedesktop_trash(abs: &Path, trash: &Path) -> Result<(), String> {
+    let (files, info) = (trash.join("files"), trash.join("info"));
+    fs::create_dir_all(&files).map_err(|e| e.to_string())?;
+    fs::create_dir_all(&info).map_err(|e| e.to_string())?;
+    let name = abs.file_name().and_then(|s| s.to_str()).unwrap_or("item");
+    for n in 1.. {
+        let candidate = if n == 1 {
+            name.to_string()
+        } else {
+            format!("{name}.{n}")
+        };
+        let info_path = info.join(format!("{candidate}.trashinfo"));
+        let Ok(mut file) = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&info_path)
+        else {
+            continue;
+        };
+        let written = write!(
+            file,
+            "[Trash Info]\nPath={}\nDeletionDate={}\n",
+            crate::core::markdown::percent_encode(&abs.to_string_lossy()),
+            Local::now().format("%Y-%m-%dT%H:%M:%S")
+        );
+        let moved = written
+            .map_err(|e| e.to_string())
+            .and_then(|_| fs::rename(abs, files.join(&candidate)).map_err(|e| e.to_string()));
+        if moved.is_err() {
+            let _ = fs::remove_file(&info_path);
+        }
+        return moved;
+    }
+    unreachable!("the names never run out")
 }
 
 pub fn today_daily_note_path(folder: &str, moment_format: &str) -> String {
@@ -669,6 +720,39 @@ mod tests {
     }
 
     use super::*;
+
+    #[test]
+    fn the_freedesktop_trash_keeps_where_an_item_was() {
+        let dir = std::env::temp_dir().join(format!(
+            "noteki-gpui-trash-test-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&dir).unwrap();
+        let note = dir.join("Una nota.md");
+        fs::write(&note, "testo").unwrap();
+        let trash = dir.join("Trash");
+        freedesktop_trash(&note, &trash).unwrap();
+        assert!(!note.exists());
+        assert_eq!(
+            fs::read_to_string(trash.join("files/Una nota.md")).unwrap(),
+            "testo"
+        );
+        let info = fs::read_to_string(trash.join("info/Una nota.md.trashinfo")).unwrap();
+        assert!(info.starts_with("[Trash Info]\nPath=/"), "{info}");
+        assert!(info.contains("Una%20nota.md\nDeletionDate=20"), "{info}");
+        // Another with the same name: a name of its own.
+        fs::write(&note, "altro").unwrap();
+        freedesktop_trash(&note, &trash).unwrap();
+        assert_eq!(
+            fs::read_to_string(trash.join("files/Una nota.md.2")).unwrap(),
+            "altro"
+        );
+        assert!(trash.join("info/Una nota.md.2.trashinfo").is_file());
+        let _ = fs::remove_dir_all(&dir);
+    }
 
     #[test]
     fn scans_notes_and_ignores_excluded() {
