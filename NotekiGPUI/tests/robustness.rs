@@ -6,19 +6,19 @@
 //!
 //! Deterministic (fixed seeds); raise `NOTEKI_FUZZ_CASES` for a longer run.
 
-use noteki_gpui::core::document::NoteDoc;
-use noteki_gpui::core::export::note_html;
-use noteki_gpui::core::index::{
+use noteki::core::document::NoteDoc;
+use noteki::core::export::note_html;
+use noteki::core::index::{
     extract_note_tags, extract_outline, parse_search_tokens, strip_inline_markdown,
 };
-use noteki_gpui::core::markdown::{
+use noteki::core::markdown::{
     compute_markdown_spans, inline_tokens, line_of_offset, lines, percent_decode, percent_encode,
     preprocess_for_html, wikilink_at, wikilinks,
 };
-use noteki_gpui::core::merge::merge_three_way;
-use noteki_gpui::core::tabs::{OpenIn, Tabs};
-use noteki_gpui::core::vault::VaultItem;
-use noteki_gpui::core::wikilink::{VaultIndex, Wikilink};
+use noteki::core::merge::merge_three_way;
+use noteki::core::tabs::{OpenIn, Tabs};
+use noteki::core::vault::VaultItem;
+use noteki::core::wikilink::{VaultIndex, Wikilink};
 
 struct Rng(u64);
 
@@ -144,7 +144,7 @@ fn index() -> VaultIndex {
         VaultItem::Attachment {
             name: "img.png".into(),
             path: "Media/img.png".into(),
-            attachment_kind: noteki_gpui::core::vault::AttachmentKind::Image,
+            attachment_kind: noteki::core::vault::AttachmentKind::Image,
         },
     ])
 }
@@ -406,8 +406,8 @@ fn tabs_invariants_under_random_operations() {
 
 #[test]
 fn editor_edits_and_movements_keep_the_cursor_on_a_char_boundary() {
-    use noteki_gpui::core::editor::lines::{line_index_of, logical_lines};
-    use noteki_gpui::core::editor::{EditBuffer, Motion};
+    use noteki::core::editor::lines::{line_index_of, logical_lines};
+    use noteki::core::editor::{EditBuffer, Motion};
     const MOTIONS: &[Motion] = &[
         Motion::Left,
         Motion::Right,
@@ -472,8 +472,8 @@ fn editor_edits_and_movements_keep_the_cursor_on_a_char_boundary() {
 
 #[test]
 fn editor_line_styles_stay_inside_their_lines() {
-    use noteki_gpui::core::editor::lines::logical_lines;
-    use noteki_gpui::core::editor::styling::style_lines;
+    use noteki::core::editor::lines::logical_lines;
+    use noteki::core::editor::styling::style_lines;
     let idx = index();
     let mut rng = Rng(0xED17_0002);
     for _ in 0..cases() {
@@ -483,8 +483,8 @@ fn editor_line_styles_stay_inside_their_lines() {
         let styles = style_lines(
             &text,
             &spans,
-            noteki_gpui::core::editor::styling::Context {
-                highlight: &mut |l, c| noteki_gpui::core::editor::code::highlight(l, c).into(),
+            noteki::core::editor::styling::Context {
+                highlight: &mut |l, c| noteki::core::editor::code::highlight(l, c).into(),
                 image: &mut |_| None,
             },
         );
@@ -509,9 +509,9 @@ fn editor_line_styles_stay_inside_their_lines() {
 
 #[test]
 fn editor_display_map_never_puts_an_offset_inside_a_hidden_mark() {
-    use noteki_gpui::core::editor::display::{shown_text, to_buffer, to_display};
-    use noteki_gpui::core::editor::lines::logical_lines;
-    use noteki_gpui::core::editor::styling::style_lines;
+    use noteki::core::editor::display::{shown_text, to_buffer, to_display};
+    use noteki::core::editor::lines::logical_lines;
+    use noteki::core::editor::styling::style_lines;
     let idx = index();
     let mut rng = Rng(0xED17_0003);
     let pieces = [
@@ -543,22 +543,22 @@ fn editor_display_map_never_puts_an_offset_inside_a_hidden_mark() {
         let mut styles = style_lines(
             &text,
             &spans,
-            noteki_gpui::core::editor::styling::Context {
-                highlight: &mut |l, c| noteki_gpui::core::editor::code::highlight(l, c).into(),
+            noteki::core::editor::styling::Context {
+                highlight: &mut |l, c| noteki::core::editor::code::highlight(l, c).into(),
                 image: &mut |_| None,
             },
         );
-        let scanned = noteki_gpui::core::markdown::lines(&text);
+        let scanned = noteki::core::markdown::lines(&text);
         let i = line_of_offset(&text, cursor);
         let mut own = Vec::new();
-        noteki_gpui::core::markdown::line_spans(
+        noteki::core::markdown::line_spans(
             &scanned[i],
             Some(cursor - scanned[i].start),
             None,
             &idx,
             &mut own,
         );
-        styles[i] = noteki_gpui::core::editor::styling::style_line(&scanned[i], &own);
+        styles[i] = noteki::core::editor::styling::style_line(&scanned[i], &own);
         for (style, line) in styles.iter().zip(&lines) {
             if line.start <= cursor && cursor <= line.end {
                 let c = cursor - line.start;
@@ -592,7 +592,7 @@ fn editor_display_map_never_puts_an_offset_inside_a_hidden_mark() {
 
 #[test]
 fn link_completion_query_is_a_valid_range_before_the_cursor() {
-    use noteki_gpui::core::editor::completion::link_query;
+    use noteki::core::editor::completion::link_query;
     let mut rng = Rng(0xED17_0004);
     for _ in 0..cases() {
         let mut text = gen_text(&mut rng, 30);

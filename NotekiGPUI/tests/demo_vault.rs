@@ -5,12 +5,12 @@
 use std::path::PathBuf;
 
 use markdown::mdast::Node;
-use noteki_gpui::app::Vault;
-use noteki_gpui::core::index::{extract_outline, find_backlinks, search_vault};
-use noteki_gpui::core::markdown::{
+use noteki::app::Vault;
+use noteki::core::index::{extract_outline, find_backlinks, search_vault};
+use noteki::core::markdown::{
     percent_decode, preprocess_for_html, wikilinks, EMBED_SCHEME, LINK_SCHEME,
 };
-use noteki_gpui::core::wikilink::{ResolvedItem, Wikilink};
+use noteki::core::wikilink::{ResolvedItem, Wikilink};
 
 fn demo() -> Vault {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../docs/demo-vault");

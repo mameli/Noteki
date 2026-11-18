@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
-use noteki_gpui::app::{open_noteki_window, register_keybindings, set_app_menus, AppConfig};
-use noteki_gpui::core::opening::url_to_path;
+use noteki::app::{open_noteki_window, register_keybindings, set_app_menus, AppConfig};
+use noteki::core::opening::url_to_path;
 
 /// Environment overrides, used by `scripts/eval.sh` for a smoke run that
 /// leaves the user's preferences alone:
@@ -20,7 +20,7 @@ fn config() -> AppConfig {
 
 fn main() {
     let config = config();
-    let app = gpui_kit::application().with_assets(noteki_gpui::assets::NotekiAssets);
+    let app = gpui_kit::application().with_assets(noteki::assets::NotekiAssets);
     // The Finder, Takku or `open` hand files over here, at launch too: they
     // wait in the channel until the window is there.
     let (opened_tx, opened_rx) = async_channel::unbounded::<Vec<String>>();
@@ -38,6 +38,7 @@ fn main() {
         gpui_kit::init(cx);
         register_keybindings(cx);
         set_app_menus(cx);
+        noteki::app::updates::start();
 
         let (window, noteki) =
             open_noteki_window(config, cx).expect("failed to open the Noteki window");
@@ -62,7 +63,7 @@ fn file_urls(args: impl Iterator<Item = String>) -> Vec<String> {
         .map(|p| {
             format!(
                 "file://{}",
-                noteki_gpui::core::markdown::percent_encode(&p.to_string_lossy())
+                noteki::core::markdown::percent_encode(&p.to_string_lossy())
             )
         })
         .collect()

@@ -1,15 +1,21 @@
 [package]
-name = "noteki-gpui"
-version = "0.1.0"
+name = "noteki"
+version = "0.4.0"
 edition = "2021"
-description = "Noteki GPUI prototype using gpui-kit"
+description = "Light native editor for an Obsidian Markdown vault"
+license = "MIT"
+
+[package.metadata.noteki]
+# CFBundleVersion: Sparkle compares it, one more at every release (the Swift
+# app's last was 3). scripts/release.sh checks.
+build = 4
 
 [lib]
-name = "noteki_gpui"
+name = "noteki"
 path = "src/lib.rs"
 
 [[bin]]
-name = "noteki-gpui"
+name = "noteki"
 path = "src/main.rs"
 
 [dependencies]
@@ -44,6 +50,11 @@ ratex-katex-fonts = "0.1.16"
 ttf-parser = "0.25"
 # Mermaid diagrams as SVG, drawn by GPUI (see core::diagram).
 mermaid-rs-renderer = { version = "0.3.1", default-features = false }
+
+# Sparkle, loaded from the bundle at launch (see app::updates; already built in by GPUI).
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSBundle", "NSString"] }
 
 [dev-dependencies]
 gpui-kit = { version = "0.10.0", features = ["syntect", "test-support"] }

@@ -8,11 +8,11 @@
 use std::path::Path;
 use std::time::{Duration, Instant};
 
-use noteki_gpui::app::Vault;
-use noteki_gpui::core::index::{
+use noteki::app::Vault;
+use noteki::core::index::{
     build_tag_tree, extract_outline, find_backlinks, quick_switcher_rank, search_vault,
 };
-use noteki_gpui::core::markdown::{compute_markdown_spans, preprocess_for_html};
+use noteki::core::markdown::{compute_markdown_spans, preprocess_for_html};
 
 use gpui_kit::{font, px, TextSystem, WindowTextSystem};
 use std::sync::Arc;
@@ -25,7 +25,7 @@ fn editor_frames(
     text: &str,
 ) -> (Duration, Duration) {
     let frame = |ts: &WindowTextSystem| {
-        noteki_gpui::editor::shape_for_bench(text, font(".SystemUIFont"), px(15.), px(760.), ts)
+        noteki::editor::shape_for_bench(text, font(".SystemUIFont"), px(15.), px(760.), ts)
     };
     let ts = WindowTextSystem::new(Arc::new(TextSystem::new(platform_text.clone())));
     let first = time(|| frame(&ts)).1;
@@ -169,13 +169,11 @@ fn main() {
             "editor styles per line, 100 KB note (per keystroke)",
             best(10, || {
                 let spans = compute_markdown_spans(&big, Some(10), Some("x.md"), &vault.index);
-                noteki_gpui::core::editor::styling::style_lines(
+                noteki::core::editor::styling::style_lines(
                     &big,
                     &spans,
-                    noteki_gpui::core::editor::styling::Context {
-                        highlight: &mut |l, c| {
-                            noteki_gpui::core::editor::code::highlight(l, c).into()
-                        },
+                    noteki::core::editor::styling::Context {
+                        highlight: &mut |l, c| noteki::core::editor::code::highlight(l, c).into(),
                         image: &mut |_| None,
                     },
                 )
@@ -209,9 +207,7 @@ fn main() {
         ),
         (
             "export markdown, 100 KB note",
-            best(10, || {
-                preprocess_for_html(&big, Some("x.md"), &vault.index)
-            }),
+            best(10, || preprocess_for_html(&big, Some("x.md"), &vault.index)),
             Duration::from_millis(30),
         ),
     ];

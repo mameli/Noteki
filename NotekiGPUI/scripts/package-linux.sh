@@ -16,7 +16,7 @@ root="target/release/noteki-linux"
 rm -rf "$root"
 mkdir -p "$root/bin" "$root/share/applications" "$root/share/icons/hicolor/256x256/apps" \
 	"$root/share/icons/hicolor/512x512/apps"
-cp target/release/noteki-gpui "$root/bin/noteki"
+cp target/release/noteki "$root/bin/noteki"
 cp linux/app.noteki.noteki.desktop "$root/share/applications/"
 icons="../Noteki/Assets.xcassets/AppIcon.appiconset"
 cp "$icons/icon_256x256.png" "$root/share/icons/hicolor/256x256/apps/app.noteki.noteki.png"

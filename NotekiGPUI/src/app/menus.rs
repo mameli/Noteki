@@ -25,6 +25,8 @@ pub fn set_app_menus(cx: &mut App) {
         .flatten(),
     );
     cx.on_action(|_: &Quit, cx| cx.quit());
+    cx.on_action(|_: &CheckForUpdatesAction, _| updates::check());
+    cx.on_action(|_: &SupportNotekiAction, cx| cx.open_url(SUPPORT_URL));
     cx.on_action(|_: &Hide, cx| cx.hide());
     cx.on_action(|_: &HideOthers, cx| cx.hide_other_apps());
     cx.on_action(|_: &ShowAll, cx| cx.unhide_other_apps());
@@ -43,6 +45,8 @@ fn action(name: &'static str, action: impl gpui_kit::Action) -> MenuItem {
 pub fn app_menus() -> Vec<Menu> {
     vec![
         Menu::new("Noteki").items([
+            action("Check for Updates…", CheckForUpdatesAction),
+            MenuItem::separator(),
             action("Settings…", OpenSettingsAction),
             MenuItem::separator(),
             MenuItem::os_submenu("Services", SystemMenuType::Services),
@@ -128,6 +132,10 @@ pub fn app_menus() -> Vec<Menu> {
             action("Show Next Tab", NextTabAction),
         ]),
         Menu::new("Window").items([action("Minimize", Minimize)]),
-        Menu::new("Help").items([action("Keyboard Shortcuts", KeyboardShortcutsAction)]),
+        Menu::new("Help").items([
+            action("Keyboard Shortcuts", KeyboardShortcutsAction),
+            MenuItem::separator(),
+            action("Support Noteki…", SupportNotekiAction),
+        ]),
     ]
 }

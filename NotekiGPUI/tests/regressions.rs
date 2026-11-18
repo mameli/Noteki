@@ -1,7 +1,7 @@
 //! Bugs found in the first prototype, reproduced before they were fixed.
-use noteki_gpui::core::index::extract_note_tags;
-use noteki_gpui::core::markdown::{compute_markdown_spans, preprocess_for_html};
-use noteki_gpui::core::wikilink::VaultIndex;
+use noteki::core::index::extract_note_tags;
+use noteki::core::markdown::{compute_markdown_spans, preprocess_for_html};
+use noteki::core::wikilink::VaultIndex;
 
 #[test]
 fn backslash_before_multibyte_char_does_not_panic() {

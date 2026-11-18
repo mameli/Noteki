@@ -11,8 +11,8 @@ use gpui_kit::{
     px, size, AnyWindowHandle, App, AppContext as _, Bounds, Context, Entity, Point,
     TestAppContext, Window, WindowBounds, WindowOptions,
 };
-use noteki_gpui::app::{register_keybindings, AppConfig, NotekiApp, AUTOSAVE_DELAY};
-use noteki_gpui::core::tabs::OpenIn;
+use noteki::app::{register_keybindings, AppConfig, NotekiApp, AUTOSAVE_DELAY};
+use noteki::core::tabs::OpenIn;
 
 // ---- Fixtures ----
 
@@ -470,7 +470,7 @@ fn the_settings_window_opens_once(cx: &mut TestAppContext) {
     click_label(cx, "Everforest");
     assert_eq!(
         app(cx, &f, |a, _, _| a.theme_name()),
-        noteki_gpui::theme::NotekiThemeName::Everforest
+        noteki::theme::NotekiThemeName::Everforest
     );
     let saved = std::fs::read_to_string(f.dir.join("settings.json")).unwrap();
     assert!(saved.to_lowercase().contains("everforest"), "{saved}");
@@ -478,7 +478,7 @@ fn the_settings_window_opens_once(cx: &mut TestAppContext) {
     click_label(cx, "Dark");
     assert_eq!(
         app(cx, &f, |a, _, _| a.settings().appearance),
-        noteki_gpui::theme::AppearanceMode::Dark
+        noteki::theme::AppearanceMode::Dark
     );
     app(cx, &f, |a, w, cx| {
         a.update_settings(|s| s.font_size = 20., w, cx)
@@ -586,7 +586,7 @@ fn a_second_window_has_its_own_tabs_and_follows_the_file(cx: &mut TestAppContext
     assert_eq!(cx.update(|cx| b.read(cx).settings().font_size), 21.);
 
     // Its Tabs come back at the next launch; the first window's stay its own.
-    let saved = noteki_gpui::app::settings::load(Some(&f.dir.join("settings.json")));
+    let saved = noteki::app::settings::load(Some(&f.dir.join("settings.json")));
     let root = app(cx, &f, |a, _, _| {
         a.vault().unwrap().root.to_string_lossy().to_string()
     });
@@ -624,7 +624,7 @@ fn choosing_another_vault_closes_the_other_windows(cx: &mut TestAppContext) {
     app(cx, &f, |a, w, cx| a.open_vault(&other, w, cx)).unwrap();
     cx.run_until_parked();
     assert!(other_apps(cx, &[f.window]).is_empty());
-    let saved = noteki_gpui::app::settings::load(Some(&f.dir.join("settings.json")));
+    let saved = noteki::app::settings::load(Some(&f.dir.join("settings.json")));
     assert!(
         !saved.sessions.keys().any(|k| k.ends_with("#1")),
         "{:?}",
@@ -968,7 +968,7 @@ fn os_key(key: &str) -> Option<String> {
         "cmd-right" => Some("end".into()),
         "cmd-shift-left" => Some("shift-home".into()),
         "cmd-shift-right" => Some("shift-end".into()),
-        _ => noteki_gpui::keys::linux(key),
+        _ => noteki::keys::linux(key),
     }
 }
 
@@ -1540,12 +1540,11 @@ fn walking_down_the_test_note_never_moves_the_lines_above(cx: &mut TestAppContex
         .filter(|&o| o < RENDERING.len())
         .collect();
     editor_with(cx, &f, RENDERING, 0);
-    let blocks: Vec<std::ops::Range<usize>> = noteki_gpui::core::editor::figures::figure_blocks(
-        &noteki_gpui::core::markdown::lines(RENDERING),
-    )
-    .into_iter()
-    .map(|b| b.lines.start + 1..b.lines.end)
-    .collect();
+    let blocks: Vec<std::ops::Range<usize>> =
+        noteki::core::editor::figures::figure_blocks(&noteki::core::markdown::lines(RENDERING))
+            .into_iter()
+            .map(|b| b.lines.start + 1..b.lines.end)
+            .collect();
     let mut tops: Vec<f32> = Vec::new();
     for line in 0..starts.len() {
         // The top of every line up to this one, in the text (the view scrolls
@@ -2544,7 +2543,7 @@ fn a_search_result_line_opens_its_note_there(cx: &mut TestAppContext) {
 
 #[gpui_kit::test]
 fn the_sidebar_shortcuts_are_the_swift_apps(cx: &mut TestAppContext) {
-    use noteki_gpui::app::{LeftPane, RightPane};
+    use noteki::app::{LeftPane, RightPane};
     let f = fixture(cx);
     let layout = |cx: &mut TestAppContext| {
         app(cx, &f, |a, _, _| {
@@ -2630,7 +2629,7 @@ fn the_linux_shortcuts_are_valid_and_never_two_commands(cx: &mut TestAppContext)
         if action.ends_with("TrashSelectedAction") {
             continue;
         }
-        let Some(linux) = noteki_gpui::keys::linux(&mac) else {
+        let Some(linux) = noteki::keys::linux(&mac) else {
             continue;
         };
         assert!(
@@ -2647,7 +2646,7 @@ fn the_linux_shortcuts_are_valid_and_never_two_commands(cx: &mut TestAppContext)
 #[cfg(target_os = "macos")]
 #[gpui_kit::test]
 fn the_menus_show_the_swift_apps_shortcuts(cx: &mut TestAppContext) {
-    use noteki_gpui::app::{SearchInVaultAction, SwitchSearchPane};
+    use noteki::app::{SearchInVaultAction, SwitchSearchPane};
     let _f = fixture(cx);
     // A menu item shows the first binding of its action.
     let first = |cx: &mut TestAppContext, action: &dyn gpui_kit::Action| {
@@ -2688,7 +2687,7 @@ fn shift_cmd_brackets_change_tab_as_the_mac_sends_them(cx: &mut TestAppContext) 
 
 #[gpui_kit::test]
 fn the_menu_bar_has_settings_under_the_apps_name(cx: &mut TestAppContext) {
-    cx.update(noteki_gpui::app::set_app_menus);
+    cx.update(noteki::app::set_app_menus);
     let menus = cx.update(|cx| cx.get_menus()).expect("a menu bar");
     let names: Vec<String> = menus.iter().map(|m| m.name.to_string()).collect();
     assert_eq!(names[0], "Noteki");

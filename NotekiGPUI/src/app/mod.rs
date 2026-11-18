@@ -8,6 +8,8 @@ mod menus;
 mod render;
 pub mod settings;
 mod settings_window;
+mod swift_prefs;
+pub mod updates;
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -85,12 +87,17 @@ actions!(
         SearchInVaultAction,
         TrashSelectedAction,
         KeyboardShortcutsAction,
+        CheckForUpdatesAction,
+        SupportNotekiAction,
     ]
 );
 
 /// The app's id: its windows' on Linux, matched with
 /// `linux/app.noteki.noteki.desktop`; the Swift app's bundle id.
 pub const APP_ID: &str = "app.noteki.noteki";
+
+/// Help › Support Noteki…: an optional payment; the app stays the same without it.
+pub const SUPPORT_URL: &str = "https://buy.stripe.com/6oU5kCeuudcFeoIeac6wE05";
 
 pub fn register_keybindings(cx: &mut App) {
     cx.bind_keys(
@@ -199,8 +206,15 @@ impl AppConfig {
     /// The configuration of the real app: user preferences, file watching, and
     /// the demo vault when nothing was opened before.
     pub fn for_user() -> Self {
+        let settings_path = settings::default_settings_path();
+        // The first launch after the Swift app: its preferences, kept as ours.
+        if let Some(path) = settings_path.as_deref().filter(|p| !p.exists()) {
+            if let Some(imported) = swift_prefs::import() {
+                let _ = settings::save(Some(path), &imported);
+            }
+        }
         Self {
-            settings_path: settings::default_settings_path(),
+            settings_path,
             vault: None,
             watch: true,
             trash_dir: None,

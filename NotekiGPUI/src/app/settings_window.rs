@@ -22,7 +22,7 @@ use gpui_kit::{
 };
 
 use super::settings::{self, Settings};
-use super::NotekiApp;
+use super::{updates, NotekiApp};
 use crate::core::vault::{folder_to_exclude, today_daily_note_path};
 use crate::theme::{AppearanceMode, NotekiThemeName};
 
@@ -427,6 +427,45 @@ impl SettingsWindow {
     }
 }
 
+/// Sparkle's daily check and *Check Now*, where Noteki can update itself (its
+/// bundle; not run from `cargo`); the optional payment, everywhere.
+fn updates_and_support() -> AnyElement {
+    let support = row(
+        "Noteki is free. If it is useful to you, you can support it.",
+        Button::new("support")
+            .label("Support Noteki…")
+            .small()
+            .on_click(|_, _, cx| cx.open_url(super::SUPPORT_URL)),
+    );
+    if !updates::available() {
+        return section("Support", None, vec![support], None);
+    }
+    let automatic = Switch::new("check-for-updates")
+        .checked(updates::checks_automatically())
+        .on_click(|on, window, _| {
+            updates::set_checks_automatically(*on);
+            window.refresh();
+        });
+    let now = Button::new("check-now")
+        .label("Check Now…")
+        .small()
+        .on_click(|_, _, _| updates::check());
+    section(
+        "Updates",
+        None,
+        vec![
+            row("Check for updates automatically", automatic),
+            row("Look for a new version now", now),
+            support,
+        ],
+        Some(
+            "Once a day Noteki asks GitHub for its latest version, sending nothing about you or \
+             your Vault."
+                .into(),
+        ),
+    )
+}
+
 /// The slider shows the setting, wherever it was changed.
 fn sync(state: &Entity<SliderState>, value: f32, window: &mut Window, cx: &mut App) {
     if (state.read(cx).value().start() - value).abs() > f32::EPSILON {
@@ -595,7 +634,8 @@ impl Render for SettingsWindow {
             .child(self.appearance(&s))
             .child(self.text(&s, window, cx))
             .child(self.excluded(cx))
-            .child(self.daily_note(&s, cx));
+            .child(self.daily_note(&s, cx))
+            .child(updates_and_support());
         v_flex()
             .size_full()
             .bg(cx.theme().secondary)

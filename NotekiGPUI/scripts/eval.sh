@@ -28,7 +28,7 @@ smoke() {
   local dir; dir="$(mktemp -d)"
   cp -R ../docs/demo-vault "$dir/vault"
   cargo build -q --release || return 1
-  NOTEKI_SETTINGS="$dir/settings.json" NOTEKI_VAULT="$dir/vault" ./target/release/noteki-gpui >"$dir/out.log" 2>&1 &
+  NOTEKI_SETTINGS="$dir/settings.json" NOTEKI_VAULT="$dir/vault" ./target/release/noteki >"$dir/out.log" 2>&1 &
   local pid=$!
   sleep 4
   # Touch a note as another app would: the watcher must not crash the app.

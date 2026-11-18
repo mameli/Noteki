@@ -7,8 +7,8 @@ use gpui_kit::test::TestWindowExt;
 use gpui_kit::{
     px, size, AppContext as _, Bounds, Point, TestAppContext, WindowBounds, WindowOptions,
 };
-use noteki_gpui::app::{register_keybindings, AppConfig, NotekiApp};
-use noteki_gpui::core::tabs::OpenIn;
+use noteki::app::{register_keybindings, AppConfig, NotekiApp};
+use noteki::core::tabs::OpenIn;
 use std::time::Instant;
 
 #[gpui_kit::test]
