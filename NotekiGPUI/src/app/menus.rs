@@ -14,12 +14,16 @@ actions!(noteki_app, [Quit, Hide, HideOthers, ShowAll, Minimize]);
 
 /// Sets the menu bar and the application's own commands (Quit, Hide…).
 pub fn set_app_menus(cx: &mut App) {
-    cx.bind_keys([
-        KeyBinding::new("cmd-q", Quit, None),
-        KeyBinding::new("cmd-h", Hide, None),
-        KeyBinding::new("alt-cmd-h", HideOthers, None),
-        KeyBinding::new("cmd-m", Minimize, None),
-    ]);
+    cx.bind_keys(
+        [
+            crate::keys::binding("cmd-q", Quit, None),
+            crate::keys::binding("cmd-h", Hide, None),
+            crate::keys::binding("alt-cmd-h", HideOthers, None),
+            crate::keys::binding("cmd-m", Minimize, None),
+        ]
+        .into_iter()
+        .flatten(),
+    );
     cx.on_action(|_: &Quit, cx| cx.quit());
     cx.on_action(|_: &Hide, cx| cx.hide());
     cx.on_action(|_: &HideOthers, cx| cx.hide_other_apps());

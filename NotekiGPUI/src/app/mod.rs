@@ -19,8 +19,8 @@ use notify::{RecommendedWatcher, RecursiveMode, Watcher};
 use gpui_kit::component::input::{InputEvent, InputState};
 use gpui_kit::component::tree::{TreeEvent, TreeItem, TreeState};
 use gpui_kit::{
-    actions, App, AppContext as _, Context, Entity, FocusHandle, Focusable, KeyBinding,
-    ScrollStrategy, SharedString, Subscription, Task, UniformListScrollHandle, Window,
+    actions, App, AppContext as _, Context, Entity, FocusHandle, Focusable, ScrollStrategy,
+    SharedString, Subscription, Task, UniformListScrollHandle, Window,
 };
 
 use crate::core::attachment;
@@ -88,54 +88,64 @@ actions!(
     ]
 );
 
+/// The app's id: its windows' on Linux, matched with
+/// `linux/app.noteki.noteki.desktop`; the Swift app's bundle id.
+pub const APP_ID: &str = "app.noteki.noteki";
+
 pub fn register_keybindings(cx: &mut App) {
-    cx.bind_keys([
-        KeyBinding::new("ctrl-cmd-s", ToggleLeftSidebar, None),
-        KeyBinding::new("alt-cmd-0", ToggleRightSidebar, None),
-        KeyBinding::new("ctrl-cmd-1", SwitchFilesPane, None),
-        KeyBinding::new("ctrl-cmd-2", SwitchTagsPane, None),
-        KeyBinding::new("ctrl-cmd-3", SwitchSearchPane, None),
-        KeyBinding::new("alt-cmd-1", ShowOutlineAction, None),
-        KeyBinding::new("alt-cmd-2", ShowBacklinksAction, None),
-        // Its own action: the menu shows ⇧⌘F for it, ⌃⌘3 for View › Search.
-        KeyBinding::new("cmd-shift-f", SearchInVaultAction, None),
-        KeyBinding::new("cmd-o", OpenQuickSwitcher, None),
-        KeyBinding::new("cmd-t", OpenQuickSwitcherNewTab, None),
-        KeyBinding::new("cmd-shift-p", OpenCommandPalette, None),
-        KeyBinding::new("cmd-n", NewNoteAction, None),
-        KeyBinding::new("cmd-shift-n", NewWindowAction, None),
-        KeyBinding::new("cmd-shift-d", DailyNoteAction, None),
-        KeyBinding::new("cmd-w", CloseTabAction, None),
-        KeyBinding::new("cmd-shift-t", ReopenClosedTabAction, None),
-        KeyBinding::new("ctrl-tab", NextTabAction, None),
-        // macOS gives ⇧⌘] as ⌘}: a `shift-]` binding is never pressed.
-        KeyBinding::new("cmd-}", NextTabAction, None),
-        KeyBinding::new("ctrl-shift-tab", PrevTabAction, None),
-        KeyBinding::new("cmd-{", PrevTabAction, None),
-        // The first is the one the menu shows: ⌘+, as the Swift app's.
-        KeyBinding::new("cmd-+", ZoomIn, None),
-        KeyBinding::new("cmd-=", ZoomIn, None),
-        KeyBinding::new("cmd--", ZoomOut, None),
-        KeyBinding::new("cmd-0", ZoomReset, None),
-        KeyBinding::new("cmd-alt-left", NavigateBackAction, None),
-        KeyBinding::new("cmd-alt-right", NavigateForwardAction, None),
-        KeyBinding::new("cmd-shift-o", OpenVaultAction, None),
-        KeyBinding::new("cmd-b", FormatBoldAction, None),
-        KeyBinding::new("cmd-i", FormatItalicAction, None),
-        KeyBinding::new("cmd-shift-x", FormatStrikeAction, None),
-        KeyBinding::new("ctrl-`", FormatCodeAction, None),
-        KeyBinding::new("cmd-shift-k", InsertWikilinkAction, None),
-        KeyBinding::new("cmd-,", OpenSettingsAction, None),
-        // ⇧⌘/, which macOS sends as ⌘?.
-        KeyBinding::new("cmd-?", KeyboardShortcutsAction, None),
-        // As in the Finder, only while Files has the keyboard: in the editor ⌘⌫
-        // deletes to the start of the line.
-        KeyBinding::new(
-            "cmd-backspace",
-            TrashSelectedAction,
-            Some(gpui_kit::base::tree_key_context()),
-        ),
-    ]);
+    cx.bind_keys(
+        [
+            crate::keys::binding("ctrl-cmd-s", ToggleLeftSidebar, None),
+            crate::keys::binding("alt-cmd-0", ToggleRightSidebar, None),
+            crate::keys::binding("ctrl-cmd-1", SwitchFilesPane, None),
+            crate::keys::binding("ctrl-cmd-2", SwitchTagsPane, None),
+            crate::keys::binding("ctrl-cmd-3", SwitchSearchPane, None),
+            crate::keys::binding("alt-cmd-1", ShowOutlineAction, None),
+            crate::keys::binding("alt-cmd-2", ShowBacklinksAction, None),
+            // Its own action: the menu shows ⇧⌘F for it, ⌃⌘3 for View › Search.
+            crate::keys::binding("cmd-shift-f", SearchInVaultAction, None),
+            crate::keys::binding("cmd-o", OpenQuickSwitcher, None),
+            crate::keys::binding("cmd-t", OpenQuickSwitcherNewTab, None),
+            crate::keys::binding("cmd-shift-p", OpenCommandPalette, None),
+            crate::keys::binding("cmd-n", NewNoteAction, None),
+            crate::keys::binding("cmd-shift-n", NewWindowAction, None),
+            crate::keys::binding("cmd-shift-d", DailyNoteAction, None),
+            crate::keys::binding("cmd-w", CloseTabAction, None),
+            crate::keys::binding("cmd-shift-t", ReopenClosedTabAction, None),
+            crate::keys::binding("ctrl-tab", NextTabAction, None),
+            // macOS gives ⇧⌘] as ⌘}: a `shift-]` binding is never pressed.
+            crate::keys::binding("cmd-}", NextTabAction, None),
+            crate::keys::binding("ctrl-shift-tab", PrevTabAction, None),
+            crate::keys::binding("cmd-{", PrevTabAction, None),
+            // The first is the one the menu shows: ⌘+, as the Swift app's.
+            crate::keys::binding("cmd-+", ZoomIn, None),
+            crate::keys::binding("cmd-=", ZoomIn, None),
+            crate::keys::binding("cmd--", ZoomOut, None),
+            crate::keys::binding("cmd-0", ZoomReset, None),
+            crate::keys::binding("cmd-alt-left", NavigateBackAction, None),
+            crate::keys::binding("cmd-alt-right", NavigateForwardAction, None),
+            crate::keys::binding("cmd-shift-o", OpenVaultAction, None),
+            crate::keys::binding("cmd-b", FormatBoldAction, None),
+            crate::keys::binding("cmd-i", FormatItalicAction, None),
+            crate::keys::binding("cmd-shift-x", FormatStrikeAction, None),
+            crate::keys::binding("ctrl-`", FormatCodeAction, None),
+            crate::keys::binding("cmd-shift-k", InsertWikilinkAction, None),
+            crate::keys::binding("cmd-,", OpenSettingsAction, None),
+            // ⇧⌘/, which macOS sends as ⌘?.
+            crate::keys::binding("cmd-?", KeyboardShortcutsAction, None),
+            // As in the Finder, only while Files has the keyboard: in the editor ⌘⌫
+            // deletes to the start of the line.
+            // Delete there, as in Linux's file managers.
+            Some(crate::keys::binding_os(
+                "cmd-backspace",
+                "delete",
+                TrashSelectedAction,
+                Some(gpui_kit::base::tree_key_context()),
+            )),
+        ]
+        .into_iter()
+        .flatten(),
+    );
     crate::editor::register_keybindings(cx);
 }
 
@@ -155,6 +165,7 @@ pub fn open_noteki_window(
         window_bounds: Some(WindowBounds::Windowed(bounds)),
         titlebar: Some(gpui_kit::component::TitleBar::title_bar_options()),
         window_min_size: Some(size(px(640.), px(420.))),
+        app_id: Some(APP_ID.into()),
         ..Default::default()
     };
     gpui_kit::open_window(options, cx, |window, cx| {
@@ -178,7 +189,7 @@ pub struct AppConfig {
     pub vault: Option<PathBuf>,
     /// Watch the vault for changes made by other apps.
     pub watch: bool,
-    /// Where "Move to Trash" moves files; `None` is `~/.Trash`.
+    /// Where "Move to Trash" moves files; `None` is the system's Trash.
     pub trash_dir: Option<PathBuf>,
     /// Which window of the Vault this is: 0 the first, then ⇧⌘N's.
     pub slot: usize,
@@ -1406,7 +1417,8 @@ impl NotekiApp {
                 self.save_logged(&path);
                 if self.docs.get(&path).is_some_and(NoteDoc::is_only_on_screen) {
                     self.set_info(format!(
-                        "{path}: its text is kept in memory; reopen the tab (⇧⌘T) to resolve it"
+                        "{path}: its text is kept in memory; reopen the tab ({}) to resolve it",
+                        crate::keys::label("⇧⌘T")
                     ));
                 }
             }

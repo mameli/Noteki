@@ -229,7 +229,7 @@ impl NotekiApp {
                 .icon(Icon::new(icon))
                 .ghost()
                 .small()
-                .tooltip(tip)
+                .tooltip(crate::keys::tooltip(tip))
         };
 
         TitleBar::new().child(
@@ -272,7 +272,7 @@ impl NotekiApp {
                                 .icon(Icon::new(AssetIcon::FolderOpen))
                                 .ghost()
                                 .small()
-                                .tooltip("Open Vault (⇧⌘O)")
+                                .tooltip(crate::keys::tooltip("Open Vault (⇧⌘O)"))
                                 .on_click(
                                     cx.listener(|this, _, window, cx| this.pick_vault(window, cx)),
                                 ),
@@ -288,7 +288,7 @@ impl NotekiApp {
                                 .icon(Icon::new(AssetIcon::Search))
                                 .ghost()
                                 .small()
-                                .tooltip("Quick switcher (⌘O)")
+                                .tooltip(crate::keys::tooltip("Quick switcher (⌘O)"))
                                 .on_click(cx.listener(|this, _, window, cx| {
                                     this.open_quick_switcher(OpenIn::CurrentTab, window, cx)
                                 })),
@@ -392,7 +392,10 @@ impl NotekiApp {
                    icon: AssetIcon,
                    p: LeftPane,
                    cx: &mut Context<Self>| {
-            let b = Button::new(id).icon(Icon::new(icon)).small().tooltip(tip);
+            let b = Button::new(id)
+                .icon(Icon::new(icon))
+                .small()
+                .tooltip(crate::keys::tooltip(tip));
             let b = if pane == p { b.primary() } else { b.ghost() };
             b.on_click(cx.listener(move |this, _, w, cx| this.show_left_pane(p, w, cx)))
         };
@@ -903,7 +906,7 @@ impl NotekiApp {
                         .icon(Icon::new(AssetIcon::Plus))
                         .xsmall()
                         .ghost()
-                        .tooltip("New tab (⌘T)")
+                        .tooltip(crate::keys::tooltip("New tab (⌘T)"))
                         .on_click(cx.listener(|this, _, window, cx| {
                             this.open_quick_switcher(OpenIn::NewTab, window, cx)
                         })),
@@ -1353,7 +1356,7 @@ impl NotekiApp {
 }
 
 /// A row that opens `path` (at `line`) in the Tab in front, or in a new Tab
-/// with a ⌘-click or a middle click, as in a browser.
+/// with a ⌘-click (Ctrl on Linux) or a middle click, as in a browser.
 fn opens_note(
     item: ListItem,
     app: Entity<NotekiApp>,
@@ -1371,7 +1374,8 @@ fn opens_note(
     });
     let middle = open.clone();
     item.on_click(move |ev: &ClickEvent, window, cx| {
-        let new_tab = ev.modifiers().platform;
+        // ⌘ on the Mac, Ctrl on Linux.
+        let new_tab = ev.modifiers().secondary(cx);
         open(
             if new_tab {
                 OpenIn::NewTab
@@ -1404,6 +1408,13 @@ fn find_tag_notes(nodes: &[TagNode], full_lower: &str) -> Option<Vec<String>> {
         }
     })
 }
+
+/// Where a file is shown: the Finder on the Mac, the file manager elsewhere.
+const REVEAL: &str = if cfg!(target_os = "macos") {
+    "Reveal in Finder"
+} else {
+    "Show in File Manager"
+};
 
 /// An item of a context menu that calls `act` on the app.
 fn menu_item(
@@ -1464,7 +1475,7 @@ fn file_menu(menu: PopupMenu, app: &Entity<NotekiApp>, path: String, is_folder: 
         .item(menu_item("Copy full path", app, move |app, _, cx| {
             app.copy_path(&abs, true, cx)
         }))
-        .item(menu_item("Reveal in Finder", app, move |app, _, cx| {
+        .item(menu_item(REVEAL, app, move |app, _, cx| {
             app.reveal(&reveal, cx)
         }))
         .separator()
@@ -1493,7 +1504,7 @@ fn tab_menu(menu: PopupMenu, app: &Entity<NotekiApp>, ix: usize, path: String) -
     .item(menu_item("Copy path", app, move |app, _, cx| {
         app.copy_path(&rel, false, cx)
     }))
-    .item(menu_item("Reveal in Finder", app, move |app, _, cx| {
+    .item(menu_item(REVEAL, app, move |app, _, cx| {
         app.reveal(&reveal, cx)
     }))
 }

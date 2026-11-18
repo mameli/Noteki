@@ -10,4 +10,5 @@ pub mod app;
 pub mod assets;
 pub mod core;
 pub mod editor;
+pub mod keys;
 pub mod theme;

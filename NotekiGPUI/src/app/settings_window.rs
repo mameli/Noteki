@@ -76,6 +76,7 @@ impl SettingsWindow {
         let options = WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(bounds)),
             titlebar: Some(TitleBar::title_bar_options()),
+            app_id: Some(super::APP_ID.into()),
             ..Default::default()
         };
         gpui_kit::open_window(options, cx, |window, cx| {
@@ -402,7 +403,7 @@ impl SettingsWindow {
         let muted = cx.theme().muted_foreground;
         let field = |input: &Entity<InputState>| div().w(px(240.)).child(Input::new(input).small());
         section(
-            "Daily note (⇧⌘D)",
+            crate::keys::tooltip("Daily note (⇧⌘D)"),
             None,
             vec![
                 row("Folder", field(&self.daily_folder)),
@@ -463,14 +464,14 @@ fn row(label: impl Into<SharedString>, control: impl IntoElement) -> AnyElement 
 
 /// A titled box of rows, divided by hairlines, with a note under it.
 fn section(
-    title: &'static str,
+    title: impl Into<SharedString>,
     accessory: Option<AnyElement>,
     rows: Vec<AnyElement>,
     footer: Option<SharedString>,
 ) -> AnyElement {
     let count = rows.len();
     SectionBox {
-        title,
+        title: title.into(),
         accessory,
         rows,
         footer,
@@ -481,7 +482,7 @@ fn section(
 
 #[derive(IntoElement)]
 struct SectionBox {
-    title: &'static str,
+    title: SharedString,
     accessory: Option<AnyElement>,
     rows: Vec<AnyElement>,
     footer: Option<SharedString>,

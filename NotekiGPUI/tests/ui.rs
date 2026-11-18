@@ -234,7 +234,14 @@ fn cmd_backspace_trashes_the_note_selected_in_files_only(cx: &mut TestAppContext
         window.within("file-tree").click(5usize, cx)
     }); // Ideas.md
     frame(cx, &f);
-    press(cx, &f, "cmd-backspace");
+    // In Files: ⌘⌫ as in the Finder, Delete on Linux.
+    let trash = if cfg!(target_os = "macos") {
+        "cmd-backspace"
+    } else {
+        "delete"
+    };
+    ui(cx, &f, |window, cx| window.press(trash, cx));
+    cx.run_until_parked();
     assert!(!f.vault.join("Ideas.md").exists());
     assert!(f.dir.join("Trash/Ideas.md").is_file());
 }
@@ -941,11 +948,28 @@ fn editor_with(cx: &mut TestAppContext, f: &Fixture, text: &str, cursor: usize) 
     frame(cx, f);
 }
 
+/// Presses `keys`, written as on the Mac, as this system's keyboard gives them.
 fn press(cx: &mut TestAppContext, f: &Fixture, keys: &str) {
     for key in keys.split_whitespace() {
-        ui(cx, f, |window, cx| window.press(key, cx));
+        let key = os_key(key).unwrap_or_else(|| panic!("{key} is the Mac's only"));
+        ui(cx, f, |window, cx| window.press(&key, cx));
     }
     cx.run_until_parked();
+}
+
+/// A key written as on the Mac, on this system: a line's ends are Home and End
+/// on Linux, the rest as `keys::linux` gives it.
+fn os_key(key: &str) -> Option<String> {
+    if cfg!(target_os = "macos") {
+        return Some(key.to_string());
+    }
+    match key {
+        "cmd-left" => Some("home".into()),
+        "cmd-right" => Some("end".into()),
+        "cmd-shift-left" => Some("shift-home".into()),
+        "cmd-shift-right" => Some("shift-end".into()),
+        _ => noteki_gpui::keys::linux(key),
+    }
 }
 
 fn editor_state(cx: &mut TestAppContext, f: &Fixture) -> (String, usize) {
@@ -1073,14 +1097,17 @@ fn command_arrows_go_to_the_ends_of_the_wrapped_row(cx: &mut TestAppContext) {
         next_row > row_end && next_row < long.len(),
         "start of the second row: {next_row}"
     );
-    press(cx, &f, "ctrl-e");
-    assert_eq!(
-        editor_state(cx, &f).1,
-        long.len(),
-        "⌃E goes to the end of the paragraph"
-    );
-    press(cx, &f, "ctrl-a");
-    assert_eq!(editor_state(cx, &f).1, 0);
+    // macOS's Emacs keys; Ctrl is the command key on Linux.
+    if cfg!(target_os = "macos") {
+        press(cx, &f, "ctrl-e");
+        assert_eq!(
+            editor_state(cx, &f).1,
+            long.len(),
+            "⌃E goes to the end of the paragraph"
+        );
+        press(cx, &f, "ctrl-a");
+        assert_eq!(editor_state(cx, &f).1, 0);
+    }
 }
 
 fn heights(cx: &mut TestAppContext, f: &Fixture) -> Vec<f32> {
@@ -1731,8 +1758,10 @@ fn a_click_on_a_wikilink_opens_its_note_and_cmd_click_a_new_tab(cx: &mut TestApp
         &f,
         at,
         1,
+        // ⌘ on the Mac, Ctrl on Linux.
         gpui_kit::Modifiers {
-            platform: true,
+            platform: cfg!(target_os = "macos"),
+            control: !cfg!(target_os = "macos"),
             ..Default::default()
         },
     );
@@ -2569,6 +2598,53 @@ fn every_shortcut_is_one_a_mac_keyboard_can_send(cx: &mut TestAppContext) {
     assert!(unreachable.is_empty(), "{unreachable:?}");
 }
 
+// The Mac's keystrokes, read back as the Mac writes them.
+#[cfg(target_os = "macos")]
+#[gpui_kit::test]
+fn the_linux_shortcuts_are_valid_and_never_two_commands(cx: &mut TestAppContext) {
+    use std::collections::HashMap;
+    let _f = fixture(cx);
+    let ours = ["noteki::", "noteki_app::", "note_editor::", "note_find::"];
+    let bindings: Vec<(String, String, String)> = cx.update(|cx| {
+        let keymap = cx.key_bindings();
+        let keymap = keymap.borrow();
+        keymap
+            .bindings()
+            .filter(|b| ours.iter().any(|ns| b.action().name().starts_with(ns)))
+            .map(|b| {
+                let mac = b
+                    .keystrokes()
+                    .iter()
+                    .map(|k| k.unparse(gpui_kit::OperatingSystem::Mac))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                let context = format!("{:?}", b.predicate());
+                (mac, context, b.action().name().to_string())
+            })
+            .collect()
+    });
+    assert!(bindings.len() > 100, "{}", bindings.len());
+    let mut seen: HashMap<(String, String), String> = HashMap::new();
+    for (mac, context, action) in bindings {
+        // The Trash in Files is Delete there, given apart.
+        if action.ends_with("TrashSelectedAction") {
+            continue;
+        }
+        let Some(linux) = noteki_gpui::keys::linux(&mac) else {
+            continue;
+        };
+        assert!(
+            gpui_kit::Keystroke::parse_with_os(&linux, gpui_kit::OperatingSystem::Linux).is_ok(),
+            "{mac} → {linux}"
+        );
+        if let Some(other) = seen.insert((linux.clone(), context.clone()), action.clone()) {
+            assert_eq!(other, action, "{linux} ({mac}) in {context}");
+        }
+    }
+}
+
+// The Mac's keystrokes, read back as the Mac writes them.
+#[cfg(target_os = "macos")]
 #[gpui_kit::test]
 fn the_menus_show_the_swift_apps_shortcuts(cx: &mut TestAppContext) {
     use noteki_gpui::app::{SearchInVaultAction, SwitchSearchPane};

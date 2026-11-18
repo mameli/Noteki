@@ -336,7 +336,7 @@ impl NoteEditor {
                                 .label("Previous")
                                 .xsmall()
                                 .ghost()
-                                .tooltip("⇧⌘G")
+                                .tooltip(crate::keys::label("⇧⌘G"))
                                 .on_click(
                                     cx.listener(|ed, _, w, cx| ed.find_step(false, false, w, cx)),
                                 ),
@@ -346,7 +346,7 @@ impl NoteEditor {
                                 .label("Next")
                                 .xsmall()
                                 .ghost()
-                                .tooltip("⌘G")
+                                .tooltip(crate::keys::label("⌘G"))
                                 .on_click(
                                     cx.listener(|ed, _, w, cx| ed.find_step(true, false, w, cx)),
                                 ),
