@@ -51,9 +51,13 @@ const CHECKBOX: Pixels = px(14.);
 /// A code block's text is this far from its box's edges.
 const CODE_PAD: Pixels = px(12.);
 const CODE_RADIUS: Pixels = px(6.);
-/// Code is drawn in the system's monospaced font.
-/// The code's font when the settings name none.
-pub(super) const CODE_FONT: &str = "Menlo";
+/// The code's font when the settings name none: Menlo on the Mac, DejaVu
+/// Sans Mono (on nearly every Linux) elsewhere.
+pub(super) const CODE_FONT: &str = if cfg!(target_os = "macos") {
+    "Menlo"
+} else {
+    "DejaVu Sans Mono"
+};
 /// A table cell's text is this far from its column's edges.
 const CELL_PAD: Pixels = px(8.);
 /// A column is never wider than about 40 characters (ADR 0008), in ems.

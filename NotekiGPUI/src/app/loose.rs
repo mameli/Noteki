@@ -41,6 +41,7 @@ impl LooseFile {
         let options = WindowOptions {
             window_bounds: Some(WindowBounds::Windowed(bounds)),
             titlebar: Some(TitleBar::title_bar_options()),
+            app_id: Some(super::APP_ID.into()),
             window_min_size: Some(size(px(420.), px(300.))),
             ..Default::default()
         };

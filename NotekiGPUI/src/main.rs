@@ -24,6 +24,13 @@ fn main() {
     // The Finder, Takku or `open` hand files over here, at launch too: they
     // wait in the channel until the window is there.
     let (opened_tx, opened_rx) = async_channel::unbounded::<Vec<String>>();
+    // On Linux they come as arguments (`noteki Nota.md`, a `.desktop`'s %F).
+    if !cfg!(target_os = "macos") {
+        let urls = file_urls(std::env::args().skip(1));
+        if !urls.is_empty() {
+            let _ = opened_tx.send_blocking(urls);
+        }
+    }
     app.on_open_urls(move |urls| {
         let _ = opened_tx.send_blocking(urls);
     });
@@ -47,4 +54,16 @@ fn main() {
         })
         .detach();
     });
+}
+
+/// The files named on the command line, as `file://` URLs.
+fn file_urls(args: impl Iterator<Item = String>) -> Vec<String> {
+    args.filter_map(|a| std::fs::canonicalize(a).ok())
+        .map(|p| {
+            format!(
+                "file://{}",
+                noteki_gpui::core::markdown::percent_encode(&p.to_string_lossy())
+            )
+        })
+        .collect()
 }
