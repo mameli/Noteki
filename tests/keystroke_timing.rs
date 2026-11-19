@@ -19,8 +19,14 @@ fn keystroke_timing(cx: &mut TestAppContext) {
     std::fs::create_dir_all(dir.join("vault")).unwrap();
     let para = "Una riga di testo di una nota con **grassetto** e [[link]] e #tag.\n";
     let mut big = String::from("# Titolo\n\n");
+    // NOTEKI_KT_PARAGRAPHS=1: a blank line after every fifth line, as a Note
+    // written in paragraphs (Live preview keeps the styles of each).
+    let paragraphs = std::env::var("NOTEKI_KT_PARAGRAPHS").is_ok();
     for i in 0..1500 {
         big.push_str(&format!("{i} {para}"));
+        if paragraphs && i % 5 == 4 {
+            big.push('\n');
+        }
         if i % 20 == 0 {
             big.push_str("## Sezione\n```swift\nstruct Note {\n    let title: String\n}\nprint(\"Hello\")\n```\n");
         }

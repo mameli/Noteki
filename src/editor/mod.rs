@@ -44,8 +44,7 @@ use crate::core::editor::history::History;
 use crate::core::editor::lines::{edge_scroll, logical_lines};
 use crate::core::editor::movement::{line_range_at, word_range_at};
 use crate::core::editor::styling::{
-    style_line, style_lines, CodeColours, CodePart, Context as StyleContext, Decoration, Image,
-    LineStyle,
+    style_line, CodeColours, CodePart, Context as StyleContext, Decoration, Image, LineStyle,
 };
 use crate::core::editor::{EditBuffer, Motion};
 use crate::core::embeds::resolve_embed;
@@ -323,6 +322,8 @@ pub struct NoteEditor {
     /// The base styles before figures replace blocks and formulas: the
     /// cursor's block or line shows its source from them.
     plain_styles: LineStyles,
+    /// The styles of the Note's blocks, kept from one keystroke to the next.
+    block_styles: crate::core::editor::styling::BlockStyles,
     /// The lines of each block drawn as one figure, in the base styles.
     figure_lines: Vec<Range<usize>>,
     /// The diagram block the cursor was in, not drawn while it was: drawn
@@ -405,6 +406,7 @@ impl NoteEditor {
             diagrams: HashMap::new(),
             diagram_images: HashMap::new(),
             plain_styles: Rc::default(),
+            block_styles: Default::default(),
             figure_lines: Vec::new(),
             deferred_diagram: None,
             code_colours: HashMap::new(),
@@ -479,6 +481,8 @@ impl NoteEditor {
     pub fn set_link_context(&mut self, context: LinkContext, cx: &mut Context<Self>) {
         self.link_context = context;
         self.images.clear();
+        // Wikilinks resolve, and images are found, against the new context.
+        self.block_styles.clear();
         self.revision += 1;
         cx.notify();
     }
@@ -791,7 +795,6 @@ impl NoteEditor {
         // Every line with its marks hidden, once per change of the text. A code
         // block is highlighted again only when its code or language changed.
         if self.base_styles.0 != Some(self.revision) {
-            let spans = compute_markdown_spans(text, None, path.as_deref(), index);
             let cache = &mut self.code_colours;
             let mut used = HashMap::new();
             let mut highlight = |language: &str, code: &str| {
@@ -821,16 +824,19 @@ impl NoteEditor {
                     })
                     .clone()
             };
-            let styles = style_lines(
+            // Block by block: only the one typed in is styled again.
+            let mut spans =
+                |block: &str| compute_markdown_spans(block, None, path.as_deref(), index);
+            let styles = self.block_styles.style(
                 text,
-                &spans,
+                &mut spans,
                 StyleContext {
                     highlight: &mut highlight,
                     image: &mut image,
                 },
             );
             *cache = used;
-            let plain = keep_equal(&self.plain_styles, styles);
+            let plain = keep_equal_rc(&self.plain_styles, styles);
             let figured = self.with_figures(&plain, cx);
             let figured = keep_equal(&self.base_styles.1, figured);
             self.plain_styles = Rc::new(plain);
@@ -1719,6 +1725,18 @@ fn hide(hidden: &mut Vec<Range<usize>>, range: Range<usize>) {
         }
     }
     *hidden = merged;
+}
+
+/// `keep_equal` for styles already shared (`BlockStyles`): the same one is
+/// kept without comparing it.
+fn keep_equal_rc(prev: &[Rc<LineStyle>], new: Vec<Rc<LineStyle>>) -> Vec<Rc<LineStyle>> {
+    new.into_iter()
+        .enumerate()
+        .map(|(i, s)| match prev.get(i) {
+            Some(p) if Rc::ptr_eq(p, &s) || **p == *s => p.clone(),
+            _ => s,
+        })
+        .collect()
 }
 
 fn keep_equal(prev: &[Rc<LineStyle>], new: Vec<LineStyle>) -> Vec<Rc<LineStyle>> {

@@ -120,6 +120,118 @@ pub struct Context<'a> {
     pub image: &'a mut ResolveImage<'a>,
 }
 
+/// The blocks Live preview styles one by one: runs of lines that end at a
+/// blank line of text (not one in code, the Frontmatter, `$$` or a Comment,
+/// which run on). Only one thing a line's style depends on crosses a blank
+/// line: whether the last line with text before is a list item or indented
+/// (then indented text is a continuation, not code). So a block is styled as
+/// if alone in the Note, at its start only if it is its first, else after a
+/// blank line and, when it comes under one, a list item.
+fn blocks(lines: &[Line]) -> Vec<Range<usize>> {
+    let mut out = Vec::new();
+    let mut start = 0;
+    let mut comment = false;
+    for (i, line) in lines.iter().enumerate() {
+        if line.kind != BlockKind::Text {
+            continue;
+        }
+        if line.text.matches("%%").count() % 2 == 1 {
+            comment = !comment;
+        }
+        if !comment && line.text.trim().is_empty() {
+            out.push(start..i + 1);
+            start = i + 1;
+        }
+    }
+    if start < lines.len() {
+        out.push(start..lines.len());
+    }
+    out
+}
+
+/// Line styles kept block by block (`blocks`): at a keystroke only the block
+/// typed in is styled again, not the Note. What it is kept by is the text, so
+/// it is cleared when what else a style depends on changes (`clear`: the
+/// Vault's links and images).
+/// What comes before a block, as far as its styles go (`blocks`).
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+enum Before {
+    Nothing,
+    Text,
+    ListOrIndented,
+}
+
+#[derive(Default)]
+pub struct BlockStyles {
+    kept: std::collections::HashMap<(Before, String), Rc<[Rc<LineStyle>]>>,
+}
+
+impl BlockStyles {
+    pub fn clear(&mut self) {
+        self.kept.clear();
+    }
+
+    /// The styles of `text`'s lines, as [`style_lines`] gives them, its spans
+    /// from `spans` (the Markdown scanner, on a block's text).
+    pub fn style(
+        &mut self,
+        text: &str,
+        spans: &mut dyn FnMut(&str) -> Vec<MdSpan>,
+        cx: Context,
+    ) -> Vec<Rc<LineStyle>> {
+        let lines = lines(text);
+        let mut kept = std::collections::HashMap::new();
+        let mut out = Vec::with_capacity(lines.len());
+        let mut before = Before::Nothing;
+        for block in blocks(&lines) {
+            let (first, last) = (&lines[block.start], &lines[block.end - 1]);
+            let source = &text[first.start..last.start + last.text.len()];
+            let key = (before, source.to_string());
+            if let Some(l) = lines[block.clone()]
+                .iter()
+                .rev()
+                .find(|l| !l.text.trim().is_empty())
+            {
+                before = if list_item(l.text).is_some() || l.text.starts_with([' ', '\t']) {
+                    Before::ListOrIndented
+                } else {
+                    Before::Text
+                };
+            } else if before == Before::Nothing {
+                before = Before::Text;
+            }
+            let styles = match self.kept.remove(&key).or_else(|| kept.get(&key).cloned()) {
+                Some(styles) => styles,
+                None => {
+                    // As it comes in the Note: at its start, or after a blank
+                    // line, under a list item when it is under one or under
+                    // indented text. Those lines are styled and left out.
+                    let (alone, extra) = match key.0 {
+                        Before::Nothing => (source.to_string(), 0),
+                        Before::Text => (format!("\n{source}"), 1),
+                        Before::ListOrIndented => (format!("- x\n\n{source}"), 2),
+                    };
+                    let block_spans = spans(&alone);
+                    let mut styled = style_lines(
+                        &alone,
+                        &block_spans,
+                        Context {
+                            highlight: &mut *cx.highlight,
+                            image: &mut *cx.image,
+                        },
+                    );
+                    styled.drain(..extra);
+                    styled.into_iter().map(Rc::new).collect()
+                }
+            };
+            out.extend(styles.iter().cloned());
+            kept.insert(key, styles);
+        }
+        self.kept = kept;
+        out
+    }
+}
+
 /// One [`LineStyle`] per logical line of `text` (as `lines` splits it).
 /// A span across lines is cut at each line's end. Fenced code is coloured by
 /// `highlight`, which the editor caches per block.
@@ -843,5 +955,126 @@ mod tests {
             None,
         );
         assert_eq!(before[1], after[1]);
+    }
+
+    /// What `BlockStyles` gives is what styling the whole Note gives, on
+    /// every kind of block, edited or not.
+    fn styled_whole(text: &str) -> Vec<LineStyle> {
+        let spans =
+            crate::core::markdown::compute_markdown_spans(text, None, None, &Default::default());
+        let mut highlight =
+            |l: &str, c: &str| -> CodeColours { crate::core::editor::code::highlight(l, c).into() };
+        let mut image = |_: &str| -> Option<Image> { None };
+        style_lines(
+            text,
+            &spans,
+            Context {
+                highlight: &mut highlight,
+                image: &mut image,
+            },
+        )
+    }
+
+    fn styled_by_block(kept: &mut BlockStyles, text: &str) -> Vec<LineStyle> {
+        let mut highlight =
+            |l: &str, c: &str| -> CodeColours { crate::core::editor::code::highlight(l, c).into() };
+        let mut image = |_: &str| -> Option<Image> { None };
+        let mut spans = |t: &str| {
+            crate::core::markdown::compute_markdown_spans(t, None, None, &Default::default())
+        };
+        kept.style(
+            text,
+            &mut spans,
+            Context {
+                highlight: &mut highlight,
+                image: &mut image,
+            },
+        )
+        .into_iter()
+        .map(|s| (*s).clone())
+        .collect()
+    }
+
+    fn same_by_block(kept: &mut BlockStyles, text: &str) {
+        let whole = styled_whole(text);
+        let by_block = styled_by_block(kept, text);
+        assert_eq!(whole.len(), by_block.len(), "lines of {text:?}");
+        for (i, (w, b)) in whole.iter().zip(&by_block).enumerate() {
+            assert_eq!(w, b, "line {i} of {text:?}");
+        }
+    }
+
+    const PIECES: &[&str] = &[
+        "---\ntags: [a, b]\n\ntitle: x\n---",
+        "---",
+        "***",
+        "# Titolo",
+        "Titolo\n===",
+        "Testo\n---",
+        "testo con **grassetto**, *corsivo*, `codice`, [[link]] e #tag",
+        "- uno\n- due\n  - tre",
+        "1. primo\n2. secondo",
+        "- [ ] da fare\n- [x] fatto",
+        "> citazione\n> ancora",
+        "> [!note] Titolo\n> corpo",
+        "| a | b |\n| --- | :-: |\n| 1 | 2 |",
+        "```rust\nfn main() {}\n\nlet x = 1;\n```",
+        "```\nsenza lingua\n```",
+        "    indentato\n\n    ancora",
+        "$$\nx^2\n\ny\n$$",
+        "%% commento\n\nancora commento %%",
+        "testo %% in riga %% fine",
+        "Nota[^1] qui\n\n[^1]: la nota",
+        "![[img.png]]",
+        "<!-- html -->",
+        "",
+        "   ",
+    ];
+
+    #[test]
+    fn block_styles_are_the_whole_notes() {
+        let mut kept = BlockStyles::default();
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+        let mut files = vec![root.join("tests/fixtures/rendering-test.md")];
+        let mut stack = vec![root.join("docs/demo-vault")];
+        while let Some(dir) = stack.pop() {
+            for e in std::fs::read_dir(dir).unwrap().flatten() {
+                let p = e.path();
+                if p.is_dir() {
+                    stack.push(p);
+                } else if p.extension().is_some_and(|x| x == "md") {
+                    files.push(p);
+                }
+            }
+        }
+        for f in files {
+            same_by_block(&mut kept, &std::fs::read_to_string(f).unwrap());
+        }
+        // Notes made of the pieces, in every order a small generator gives,
+        // joined by one or two line breaks; then edited, as typing does.
+        let mut seed = 0x2545_f491_u64;
+        let mut next = move || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed
+        };
+        for _ in 0..1500 {
+            let n = 2 + next() % 7;
+            let mut text = String::new();
+            for _ in 0..n {
+                text.push_str(PIECES[(next() % PIECES.len() as u64) as usize]);
+                text.push_str(if next() % 3 == 0 { "\n" } else { "\n\n" });
+            }
+            same_by_block(&mut kept, &text);
+            let at = (next() as usize) % (text.len() + 1);
+            if text.is_char_boundary(at) {
+                text.insert(
+                    at,
+                    ['x', '\n', '`', '%', '-', '|', '$'][(next() % 7) as usize],
+                );
+                same_by_block(&mut kept, &text);
+            }
+        }
     }
 }
