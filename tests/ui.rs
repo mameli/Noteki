@@ -540,6 +540,12 @@ fn the_settings_window_opens_once(cx: &mut TestAppContext) {
     });
     click_label(cx, "Restore Defaults");
     assert_eq!(app(cx, &f, |a, _, _| a.settings().font_size), 15.);
+    // ⌘W closes it, as any Mac window.
+    let key = os_key("cmd-w").unwrap();
+    cx.update_window(settings, |_, window, cx| window.press(&key, cx))
+        .unwrap();
+    cx.run_until_parked();
+    assert_eq!(cx.update(|cx| cx.windows().len()), before);
 }
 
 // ---- Export ----

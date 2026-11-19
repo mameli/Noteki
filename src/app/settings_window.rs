@@ -53,6 +53,8 @@ pub struct SettingsWindow {
     daily_format: Entity<InputState>,
     /// Why the last folder chosen cannot be left out.
     error: Option<String>,
+    /// The page's own focus, so its shortcuts (⌘W) work with no field active.
+    focus: gpui_kit::FocusHandle,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -155,6 +157,11 @@ impl SettingsWindow {
             daily_folder,
             daily_format,
             error: None,
+            focus: {
+                let focus = cx.focus_handle();
+                window.focus(&focus, cx);
+                focus
+            },
             _subscriptions: subscriptions,
         }
     }
@@ -701,6 +708,9 @@ impl Render for SettingsWindow {
         v_flex()
             .size_full()
             .bg(cx.theme().background)
+            // ⌘W (Close Tab elsewhere) closes it, as any Mac window.
+            .track_focus(&self.focus)
+            .on_action(|_: &super::CloseTabAction, window, _| window.remove_window())
             .child(TitleBar::new().child(div().text_sm().child("Settings")))
             .child(
                 div()
