@@ -62,6 +62,7 @@ mod mac {
     use std::ops::Range;
     use std::sync::OnceLock;
 
+    use objc2::rc::Retained;
     use objc2_app_kit::NSSpellChecker;
     use objc2_foundation::{NSInteger, NSRange, NSString};
 
@@ -107,13 +108,38 @@ mod mac {
             .collect()
     }
 
+    /// The language of the text (the word's paragraph): a word in Italian is
+    /// corrected in Italian, whatever the Mac's first language.
+    fn language_of(checker: &NSSpellChecker, string: &NSString) -> Retained<NSString> {
+        use objc2_foundation::NSTextCheckingType;
+        let mut orthography = None;
+        // SAFETY: no options; the orthography found is written to a local.
+        unsafe {
+            checker.checkString_range_types_options_inSpellDocumentWithTag_orthography_wordCount(
+                string,
+                NSRange::new(0, string.length()),
+                NSTextCheckingType::Orthography.0,
+                None,
+                tag(),
+                Some(&mut orthography),
+                std::ptr::null_mut(),
+            );
+        }
+        orthography
+            .map(|o| o.dominantLanguage())
+            .filter(|l| l.length() > 0 && l.to_string() != "und")
+            .unwrap_or_else(|| checker.language())
+    }
+
     pub fn guesses(text: &str, word: Range<usize>) -> Vec<String> {
         let checker = NSSpellChecker::sharedSpellChecker();
+        let (string, range) = (NSString::from_str(text), utf16_range(text, &word));
+        let language = language_of(&checker, &string);
         checker
             .guessesForWordRange_inString_language_inSpellDocumentWithTag(
-                utf16_range(text, &word),
-                &NSString::from_str(text),
-                None,
+                range,
+                &string,
+                Some(&language),
                 tag(),
             )
             .map(|list| list.iter().map(|g| g.to_string()).collect())
@@ -122,11 +148,12 @@ mod mac {
 
     pub fn correction(text: &str, word: Range<usize>) -> Option<String> {
         let checker = NSSpellChecker::sharedSpellChecker();
-        let language = checker.language();
+        let (string, range) = (NSString::from_str(text), utf16_range(text, &word));
+        let language = language_of(&checker, &string);
         checker
             .correctionForWordRange_inString_language_inSpellDocumentWithTag(
-                utf16_range(text, &word),
-                &NSString::from_str(text),
+                range,
+                &string,
                 &language,
                 tag(),
             )
@@ -154,5 +181,14 @@ mod tests {
         let found = misspelled(text);
         assert_eq!(found, vec![5..13], "{found:?}");
         assert!(guesses(text, 5..13).iter().any(|g| g == "sentence"));
+    }
+
+    #[test]
+    fn a_word_is_corrected_in_the_language_of_its_sentence() {
+        let it = "Questo testo ha un errrore evidente e lo correggiamo subito.";
+        let word = it.find("errrore").unwrap();
+        assert_eq!(correction(it, word..word + 7).as_deref(), Some("errore"));
+        let en = "This sentense is fine";
+        assert_eq!(correction(en, 5..13).as_deref(), Some("sentence"));
     }
 }
