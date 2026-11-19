@@ -1,6 +1,6 @@
 [package]
 name = "noteki"
-version = "0.4.1"
+version = "0.4.2"
 edition = "2021"
 description = "Light native editor for an Obsidian Markdown vault"
 license = "MIT"
@@ -8,7 +8,7 @@ license = "MIT"
 [package.metadata.noteki]
 # CFBundleVersion: Sparkle compares it, one more at every release (the Swift
 # app's last was 3). scripts/release.sh checks.
-build = 5
+build = 6
 
 [lib]
 name = "noteki"
