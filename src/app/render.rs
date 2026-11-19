@@ -1425,7 +1425,10 @@ impl NotekiApp {
             }
         }
         let mut from_menus = Vec::new();
-        for menu in super::menus::app_menus(&self.settings) {
+        // The app's own menu (Settings, Hide, Quit) last: the Note's first.
+        let mut menus = super::menus::app_menus(&self.settings);
+        menus.rotate_left(1);
+        for menu in menus {
             walk(&menu, &menu.name, &mut from_menus);
         }
         for (label, checked, action) in from_menus {
