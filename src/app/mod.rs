@@ -3,15 +3,15 @@
 //! The rules (saving, merging, tabs, links) live in `crate::core` and are
 //! unit-tested there; this module wires them to GPUI and the file system.
 
+mod format_bar;
 mod loose;
 pub mod menus;
+pub mod print;
 mod render;
 pub mod settings;
 mod settings_window;
 mod swift_prefs;
 pub mod terminal;
-mod format_bar;
-pub mod print;
 pub mod updates;
 
 use std::collections::{HashMap, HashSet};
@@ -99,6 +99,10 @@ actions!(
         PrintAction,
         ToggleCheckSpelling,
         ToggleCorrectSpelling,
+        ToggleFormatBar,
+        FormatQuoteAction,
+        FormatBulletAction,
+        FormatNumberedAction,
     ]
 );
 
@@ -994,6 +998,7 @@ impl NotekiApp {
         });
         if modes != (before.focus_mode, before.typewriter_mode)
             || spelling != (before.check_spelling, before.correct_spelling)
+            || s.show_format_bar != before.show_format_bar
         {
             menus::refresh(&self.settings, cx);
         }

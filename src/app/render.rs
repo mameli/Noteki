@@ -21,6 +21,7 @@ use gpui_kit::{
     StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, Window,
 };
 
+use super::settings::InterfaceSize;
 use super::*;
 use crate::core::vault::resolve_vault_path;
 use crate::core::wikilink::note_name;
@@ -126,11 +127,15 @@ impl Render for NotekiApp {
                 )
             }))
             .on_action(cx.listener(|this, _: &NewWindowAction, _, cx| this.open_another_window(cx)))
-            .on_action(cx.listener(|this, _: &ToggleFocusMode, w, cx| this.toggle_focus_mode(w, cx)))
+            .on_action(
+                cx.listener(|this, _: &ToggleFocusMode, w, cx| this.toggle_focus_mode(w, cx)),
+            )
             .on_action(cx.listener(|this, _: &ExportPdfAction, _, cx| this.export_pdf(cx)))
-            .on_action(cx.listener(|this, _: &ToggleCheckSpelling, w, cx| {
-                this.toggle_check_spelling(w, cx)
-            }))
+            .on_action(
+                cx.listener(|this, _: &ToggleCheckSpelling, w, cx| {
+                    this.toggle_check_spelling(w, cx)
+                }),
+            )
             .on_action(cx.listener(|this, _: &ToggleCorrectSpelling, w, cx| {
                 this.toggle_correct_spelling(w, cx)
             }))
@@ -204,6 +209,18 @@ impl Render for NotekiApp {
             }))
             .on_action(cx.listener(|this, _: &FormatCodeAction, window, cx| {
                 this.format(Format::Wrap(Wrap::Code), window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &FormatQuoteAction, window, cx| {
+                this.format(Format::Lines(LineFormat::Quote), window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &FormatBulletAction, window, cx| {
+                this.format(Format::Lines(LineFormat::Bullet), window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &FormatNumberedAction, window, cx| {
+                this.format(Format::Lines(LineFormat::Numbered), window, cx)
+            }))
+            .on_action(cx.listener(|this, _: &ToggleFormatBar, window, cx| {
+                this.update_settings(|s| s.show_format_bar = !s.show_format_bar, window, cx)
             }))
             .on_action(cx.listener(|this, _: &InsertWikilinkAction, window, cx| {
                 this.open_wikilink_picker(window, cx)
@@ -1341,93 +1358,119 @@ impl NotekiApp {
         );
     }
 
+    /// The Command palette (⇧⌘P): every command of the menus, with its
+    /// shortcut and its tick, and those only here (the theme, the interface's
+    /// size). A command runs as its menu item does, on what had the keyboard.
     pub(crate) fn open_command_palette(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        type Run = fn(&mut NotekiApp, &mut Window, &mut Context<NotekiApp>);
-        let commands: Vec<(&'static str, AssetIcon, Run)> = vec![
-            ("New note", AssetIcon::FilePlus, |a, w, cx| {
-                let f = a.target_folder(cx);
-                a.open_name_prompt(PromptKind::NewNote, String::new(), Some(f), w, cx)
-            }),
-            ("New folder", AssetIcon::FolderPlus, |a, w, cx| {
-                let f = a.target_folder(cx);
-                a.open_name_prompt(PromptKind::NewFolder, String::new(), Some(f), w, cx)
-            }),
-            ("Open today's note", AssetIcon::CalendarDays, |a, w, cx| {
-                a.open_daily_note(w, cx)
-            }),
-            ("Quick switcher", AssetIcon::Search, |a, w, cx| {
-                a.open_quick_switcher(OpenIn::CurrentTab, w, cx)
-            }),
-            ("Insert wikilink", AssetIcon::Link, |a, w, cx| {
-                a.open_wikilink_picker(w, cx)
-            }),
-            (
-                "Follow link under cursor",
-                AssetIcon::ArrowRight,
-                |a, w, cx| a.follow_link_under_cursor(w, cx),
-            ),
-            ("Quote", AssetIcon::Pencil, |a, w, cx| {
-                a.format(Format::Lines(LineFormat::Quote), w, cx)
-            }),
-            ("Bulleted list", AssetIcon::Pencil, |a, w, cx| {
-                a.format(Format::Lines(LineFormat::Bullet), w, cx)
-            }),
-            ("Numbered list", AssetIcon::Pencil, |a, w, cx| {
-                a.format(Format::Lines(LineFormat::Numbered), w, cx)
-            }),
-            ("Toggle left sidebar", AssetIcon::PanelLeft, |a, w, cx| {
-                a.toggle_left_sidebar(w, cx)
-            }),
-            ("Toggle right sidebar", AssetIcon::PanelRight, |a, _, cx| {
-                a.toggle_right_sidebar(cx)
-            }),
-            ("Next theme", AssetIcon::Palette, |a, w, cx| {
-                a.cycle_theme(w, cx)
-            }),
-            ("Light / dark / system", AssetIcon::Sun, |a, w, cx| {
+        type Do = fn(&mut NotekiApp, &mut Window, &mut Context<NotekiApp>);
+        enum Run {
+            Action(Box<dyn gpui_kit::Action>),
+            Do(Do),
+        }
+        let editor_focus = self.editor.focus_handle(cx);
+        let mut items = Vec::new();
+        let mut runs = Vec::new();
+        let mut add = |label: String, checked: bool, run: Run, window: &Window| {
+            let stroke = match &run {
+                Run::Action(a) => window
+                    .highest_precedence_binding_for_action_in(a.as_ref(), &editor_focus)
+                    .or_else(|| window.highest_precedence_binding_for_action(a.as_ref()))
+                    .and_then(|b| {
+                        b.keystrokes()
+                            .first()
+                            .map(|k| gpui_kit::AsKeystroke::as_keystroke(k).clone())
+                    }),
+                Run::Do(_) => None,
+            };
+            let text = label.clone();
+            items.push(CommandItem::new().label(label).child(move |_, cx| {
+                h_flex()
+                    .flex_1()
+                    .gap_2()
+                    .items_center()
+                    .child(text.clone())
+                    .child(div().flex_1())
+                    .when_some(stroke.clone(), |row, k| {
+                        row.child(gpui_kit::component::kbd::Kbd::new(k))
+                    })
+                    .when(checked, |row| {
+                        row.child(
+                            Icon::new(AssetIcon::Check)
+                                .xsmall()
+                                .text_color(cx.theme().muted_foreground),
+                        )
+                    })
+            }));
+            runs.push(run);
+        };
+        fn walk(
+            menu: &gpui_kit::Menu,
+            path: &str,
+            out: &mut Vec<(String, bool, Box<dyn gpui_kit::Action>)>,
+        ) {
+            for item in &menu.items {
+                match item {
+                    gpui_kit::MenuItem::Action {
+                        name,
+                        action,
+                        checked,
+                        ..
+                    } => out.push((format!("{path}: {name}"), *checked, action.boxed_clone())),
+                    gpui_kit::MenuItem::Submenu(sub) => {
+                        walk(sub, &format!("{path} › {}", sub.name), out)
+                    }
+                    _ => {}
+                }
+            }
+        }
+        let mut from_menus = Vec::new();
+        for menu in super::menus::app_menus(&self.settings) {
+            walk(&menu, &menu.name, &mut from_menus);
+        }
+        for (label, checked, action) in from_menus {
+            // Itself, and the list of shortcuts that opens it.
+            if action.partial_eq(&OpenCommandPalette) || action.partial_eq(&KeyboardShortcutsAction)
+            {
+                continue;
+            }
+            add(label, checked, Run::Action(action), window);
+        }
+        let own: [(&str, Do); 2] = [
+            ("View: Next Theme", |a, w, cx| a.cycle_theme(w, cx)),
+            ("View: Light / Dark / System", |a, w, cx| {
                 a.cycle_appearance(w, cx)
             }),
-            ("Focus mode", AssetIcon::Sun, |a, w, cx| a.toggle_focus_mode(w, cx)),
-            ("Typewriter mode", AssetIcon::Pencil, |a, w, cx| {
-                a.toggle_typewriter_mode(w, cx)
+        ];
+        for (label, run) in own {
+            add(label.to_string(), false, Run::Do(run), window);
+        }
+        let sizes: [(InterfaceSize, Do); 3] = [
+            (InterfaceSize::Small, |a, w, cx| {
+                a.update_settings(|s| s.interface_size = InterfaceSize::Small, w, cx)
             }),
-            ("Export as HTML…", AssetIcon::Download, |a, _, cx| {
-                a.export_html(cx)
+            (InterfaceSize::Medium, |a, w, cx| {
+                a.update_settings(|s| s.interface_size = InterfaceSize::Medium, w, cx)
             }),
-            ("Export as PDF…", AssetIcon::Download, |a, _, cx| a.export_pdf(cx)),
-            ("Print…", AssetIcon::Download, |a, _, cx| a.print_note(cx)),
-            ("New window", AssetIcon::SquarePlus, |a, _, cx| {
-                a.open_another_window(cx)
-            }),
-            ("Settings…", AssetIcon::Settings, |a, w, cx| {
-                a.open_settings(w, cx)
-            }),
-            ("Open vault…", AssetIcon::FolderOpen, |a, w, cx| {
-                a.pick_vault(w, cx)
-            }),
-            (super::terminal::open_vault_label(), AssetIcon::FolderOpen, |a, _, cx| {
-                a.open_in_terminal("");
-                cx.notify();
-            }),
-            ("Close tab", AssetIcon::X, |a, w, cx| {
-                a.close_active_tab(w, cx)
-            }),
-            ("Reopen closed tab", AssetIcon::RefreshCw, |a, w, cx| {
-                a.reopen_closed_tab(w, cx)
+            (InterfaceSize::Large, |a, w, cx| {
+                a.update_settings(|s| s.interface_size = InterfaceSize::Large, w, cx)
             }),
         ];
-        let items = commands
-            .iter()
-            .map(|(label, icon, _)| CommandItem::new().label(*label).icon(*icon))
-            .collect();
-        let runs: Vec<Run> = commands.into_iter().map(|(_, _, r)| r).collect();
+        for (size, run) in sizes {
+            let label = format!("View: Interface Size › {}", size.label());
+            add(
+                label,
+                self.settings.interface_size == size,
+                Run::Do(run),
+                window,
+            );
+        }
         self.open_command_dialog(
             "Run a command…",
             items,
-            move |app, row, window, cx| {
-                if let Some(run) = runs.get(row) {
-                    run(app, window, cx);
-                }
+            move |app, row, window, cx| match runs.get(row) {
+                Some(Run::Action(action)) => window.dispatch_action(action.boxed_clone(), cx),
+                Some(Run::Do(run)) => run(app, window, cx),
+                None => {}
             },
             window,
             cx,
@@ -1559,10 +1602,14 @@ fn file_menu(menu: PopupMenu, app: &Entity<NotekiApp>, path: String, is_folder: 
         .item(menu_item(REVEAL, app, move |app, _, cx| {
             app.reveal(&reveal, cx)
         }))
-        .item(menu_item(super::terminal::open_in_label(), app, move |app, _, cx| {
-            app.open_in_terminal(&term);
-            cx.notify();
-        }))
+        .item(menu_item(
+            super::terminal::open_in_label(),
+            app,
+            move |app, _, cx| {
+                app.open_in_terminal(&term);
+                cx.notify();
+            },
+        ))
         .separator()
         .item(menu_item("Move to Trash", app, move |app, w, cx| {
             let r = app.trash(&trash, w, cx);

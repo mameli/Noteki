@@ -64,6 +64,7 @@ pub fn app_menus(settings: &Settings) -> Vec<Menu> {
         ]),
         Menu::new("File").items([
             action("New Note", NewNoteAction),
+            action("New Folder", NewFolderAction),
             action("Today's Note", DailyNoteAction),
             action("New Window", NewWindowAction),
             MenuItem::separator(),
@@ -96,12 +97,14 @@ pub fn app_menus(settings: &Settings) -> Vec<Menu> {
             action("Replace…", OpenReplace),
             action("Search in Vault…", SearchInVaultAction),
             MenuItem::separator(),
-            MenuItem::submenu(Menu::new("Spelling and Grammar").items([
-                action("Check Spelling While Typing", ToggleCheckSpelling)
-                    .checked(settings.check_spelling),
-                action("Correct Spelling Automatically", ToggleCorrectSpelling)
-                    .checked(settings.correct_spelling),
-            ])),
+            MenuItem::submenu(
+                Menu::new("Spelling and Grammar").items([
+                    action("Check Spelling While Typing", ToggleCheckSpelling)
+                        .checked(settings.check_spelling),
+                    action("Correct Spelling Automatically", ToggleCorrectSpelling)
+                        .checked(settings.correct_spelling),
+                ]),
+            ),
         ]),
         Menu::new("Format").items([
             action("Bold", FormatBoldAction),
@@ -119,6 +122,10 @@ pub fn app_menus(settings: &Settings) -> Vec<Menu> {
             action("Heading 4", Heading4),
             action("Heading 5", Heading5),
             action("Heading 6", Heading6),
+            MenuItem::separator(),
+            action("Quote", FormatQuoteAction),
+            action("Bulleted List", FormatBulletAction),
+            action("Numbered List", FormatNumberedAction),
             action("Task", ToggleTask),
             MenuItem::separator(),
             action("Indent", Indent),
@@ -138,6 +145,7 @@ pub fn app_menus(settings: &Settings) -> Vec<Menu> {
             MenuItem::separator(),
             action("Focus Mode", ToggleFocusMode).checked(settings.focus_mode),
             action("Typewriter Mode", ToggleTypewriterMode).checked(settings.typewriter_mode),
+            action("Format Bar", ToggleFormatBar).checked(settings.show_format_bar),
             MenuItem::separator(),
             action("Zoom In", ZoomIn),
             action("Zoom Out", ZoomOut),
@@ -146,6 +154,7 @@ pub fn app_menus(settings: &Settings) -> Vec<Menu> {
         Menu::new("Go").items([
             action("Back", NavigateBackAction),
             action("Forward", NavigateForwardAction),
+            action("Follow Link", FollowLinkUnderCursorAction),
             MenuItem::separator(),
             action("Show Previous Tab", PrevTabAction),
             action("Show Next Tab", NextTabAction),

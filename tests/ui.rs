@@ -2595,6 +2595,36 @@ fn shift_cmd_slash_lists_the_shortcuts_in_the_palette(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
+fn the_palette_runs_every_menu_command_on_the_note(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    editor_with(cx, &f, "- uno", 3);
+    let run = |cx: &mut TestAppContext, what: &str| {
+        press(cx, &f, "cmd-shift-p");
+        frame(cx, &f);
+        ui(cx, &f, |window, cx| window.input(what, cx));
+        frame(cx, &f);
+        press(cx, &f, "enter");
+        frame(cx, &f);
+    };
+    // A Format command reaches the editor, as its menu item does.
+    run(cx, "Numbered List");
+    let text = app(cx, &f, |a, _, cx| a.editor().read(cx).text().to_string());
+    assert_eq!(text, "1. uno");
+    // The Format bar, from View, and back.
+    run(cx, "Format Bar");
+    assert!(app(cx, &f, |a, _, _| a.settings().show_format_bar));
+    assert!(ui(cx, &f, |w, _| w.try_find("format-bar").is_some()));
+    run(cx, "Format Bar");
+    assert!(!app(cx, &f, |a, _, _| a.settings().show_format_bar));
+    // And what only the palette has.
+    run(cx, "Interface Size › Large");
+    assert_eq!(
+        app(cx, &f, |a, _, _| a.settings().interface_size),
+        noteki::app::settings::InterfaceSize::Large
+    );
+}
+
+#[gpui_kit::test]
 fn the_name_prompt_takes_the_keyboard_at_once(cx: &mut TestAppContext) {
     let f = fixture(cx);
     editor_with(cx, &f, "", 0);
@@ -2839,13 +2869,19 @@ fn the_caret_is_as_tall_as_the_letters_not_the_whole_row(cx: &mut TestAppContext
     frame(cx, &f);
     let (row, drawn) = app(cx, &f, |a, _, cx| {
         let ed = a.editor().read(cx);
-        (ed.caret_bounds(2).unwrap(), ed.drawn_caret_bounds(2).unwrap())
+        (
+            ed.caret_bounds(2).unwrap(),
+            ed.drawn_caret_bounds(2).unwrap(),
+        )
     });
     assert!(
         drawn.size.height < row.size.height,
         "shorter than its row: {drawn:?} in {row:?}"
     );
-    assert!(drawn.top() > row.top() && drawn.bottom() < row.bottom(), "centred in it");
+    assert!(
+        drawn.top() > row.top() && drawn.bottom() < row.bottom(),
+        "centred in it"
+    );
 }
 
 #[gpui_kit::test]
@@ -2854,10 +2890,15 @@ fn typewriter_mode_keeps_the_line_being_written_in_the_middle(cx: &mut TestAppCo
     let text: String = (0..300).map(|i| format!("Riga {i}\n")).collect();
     let middle = text.find("Riga 150").unwrap();
     editor_with(cx, &f, &text, middle);
-    ui(cx, &f, |w, cx| w.dispatch_action(Box::new(noteki::app::ToggleTypewriterMode), cx));
+    ui(cx, &f, |w, cx| {
+        w.dispatch_action(Box::new(noteki::app::ToggleTypewriterMode), cx)
+    });
     frame(cx, &f);
     assert_eq!(
-        app(cx, &f, |a, _, cx| (a.settings().typewriter_mode, a.editor().read(cx).modes())),
+        app(cx, &f, |a, _, cx| (
+            a.settings().typewriter_mode,
+            a.editor().read(cx).modes()
+        )),
         (true, (false, true)),
         "on, and kept in the settings"
     );
@@ -2873,7 +2914,10 @@ fn typewriter_mode_keeps_the_line_being_written_in_the_middle(cx: &mut TestAppCo
         frame(cx, &f);
         frame(cx, &f);
         let off = centred_off(cx);
-        assert!(off.abs() < 2., "after {keys}, the line is {off} px from the middle");
+        assert!(
+            off.abs() < 2.,
+            "after {keys}, the line is {off} px from the middle"
+        );
     }
     // The first line can come to the middle too: half a view of room above it.
     press(cx, &f, "cmd-up");
@@ -2887,9 +2931,14 @@ fn typewriter_mode_keeps_the_line_being_written_in_the_middle(cx: &mut TestAppCo
 fn focus_mode_is_a_setting_of_every_window_ticked_in_the_view_menu(cx: &mut TestAppContext) {
     let f = fixture(cx);
     editor_with(cx, &f, "uno\n\ndue", 0);
-    ui(cx, &f, |w, cx| w.dispatch_action(Box::new(noteki::app::ToggleFocusMode), cx));
+    ui(cx, &f, |w, cx| {
+        w.dispatch_action(Box::new(noteki::app::ToggleFocusMode), cx)
+    });
     frame(cx, &f);
-    assert_eq!(app(cx, &f, |a, _, cx| a.editor().read(cx).modes()), (true, false));
+    assert_eq!(
+        app(cx, &f, |a, _, cx| a.editor().read(cx).modes()),
+        (true, false)
+    );
     let view = noteki::app::menus::app_menus(&app(cx, &f, |a, _, _| a.settings().clone()))
         .into_iter()
         .find(|m| m.name == "View")
@@ -2898,9 +2947,14 @@ fn focus_mode_is_a_setting_of_every_window_ticked_in_the_view_menu(cx: &mut Test
         matches!(i, gpui_kit::MenuItem::Action { name, checked: true, .. } if name == "Focus Mode")
     });
     assert!(ticked, "View › Focus Mode ticked");
-    ui(cx, &f, |w, cx| w.dispatch_action(Box::new(noteki::app::ToggleFocusMode), cx));
+    ui(cx, &f, |w, cx| {
+        w.dispatch_action(Box::new(noteki::app::ToggleFocusMode), cx)
+    });
     frame(cx, &f);
-    assert_eq!(app(cx, &f, |a, _, cx| a.editor().read(cx).modes()), (false, false));
+    assert_eq!(
+        app(cx, &f, |a, _, cx| a.editor().read(cx).modes()),
+        (false, false)
+    );
 }
 
 #[gpui_kit::test]
@@ -2909,7 +2963,9 @@ fn the_format_bar_chosen_in_settings_formats_the_selection(cx: &mut TestAppConte
     editor_with(cx, &f, "una parola", 4);
     let shown = |cx: &mut TestAppContext| ui(cx, &f, |w, _| w.try_find("format-bar").is_some());
     assert!(!shown(cx), "hidden at first");
-    app(cx, &f, |a, w, cx| a.update_settings(|s| s.show_format_bar = true, w, cx));
+    app(cx, &f, |a, w, cx| {
+        a.update_settings(|s| s.show_format_bar = true, w, cx)
+    });
     frame(cx, &f);
     assert!(shown(cx));
     press(cx, &f, "alt-shift-right");
@@ -2936,7 +2992,11 @@ fn the_interface_size_scales_the_interface_not_the_text(cx: &mut TestAppContext)
     let (medium, text) = measure(cx);
     assert_eq!(medium, 16.);
     app(cx, &f, |a, w, cx| {
-        a.update_settings(|s| s.interface_size = noteki::app::settings::InterfaceSize::Large, w, cx)
+        a.update_settings(
+            |s| s.interface_size = noteki::app::settings::InterfaceSize::Large,
+            w,
+            cx,
+        )
     });
     let (large, same_text) = measure(cx);
     assert!(large > medium, "the interface grows: {large}");
@@ -2949,12 +3009,18 @@ fn misspelled_words_of_the_prose_are_marked_not_the_one_being_typed(cx: &mut Tes
     let f = fixture(cx);
     let text = "This sentense is fine\n\n`sentense` in code\n\nAnd then";
     editor_with(cx, &f, text, text.len());
-    let marked = |cx: &mut TestAppContext| app(cx, &f, |a, _, cx| a.editor().update(cx, |e, _| (*e.misspelled()).clone()));
+    let marked = |cx: &mut TestAppContext| {
+        app(cx, &f, |a, _, cx| {
+            a.editor().update(cx, |e, _| (*e.misspelled()).clone())
+        })
+    };
     assert_eq!(marked(cx), vec![5..13], "the prose's word, not the code's");
     // The word the cursor is in is being typed: left alone until it moves on.
     type_in_editor(cx, &f, " wrod");
     assert_eq!(marked(cx), vec![5..13]);
-    app(cx, &f, |a, w, cx| a.update_settings(|s| s.check_spelling = false, w, cx));
+    app(cx, &f, |a, w, cx| {
+        a.update_settings(|s| s.check_spelling = false, w, cx)
+    });
     assert!(marked(cx).is_empty(), "turned off in Settings");
 }
 
@@ -2968,7 +3034,9 @@ fn a_misspelled_word_is_corrected_as_it_ends_and_undo_puts_it_back(cx: &mut Test
     assert_eq!(editor_state(cx, &f).0, "I will receive ");
     press(cx, &f, "cmd-z");
     assert_eq!(editor_state(cx, &f).0, "I will recieve ");
-    app(cx, &f, |a, w, cx| a.update_settings(|s| s.correct_spelling = false, w, cx));
+    app(cx, &f, |a, w, cx| {
+        a.update_settings(|s| s.correct_spelling = false, w, cx)
+    });
     type_in_editor(cx, &f, "agian ");
     assert!(editor_state(cx, &f).0.ends_with("agian "), "turned off");
 }
