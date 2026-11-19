@@ -3298,3 +3298,53 @@ fn a_misspelled_word_is_corrected_as_it_ends_and_undo_puts_it_back(cx: &mut Test
     type_in_editor(cx, &f, "agian ");
     assert!(editor_state(cx, &f).0.ends_with("agian "), "turned off");
 }
+
+/// ADR 0005: Takku writes, you type, and autosave runs before Noteki has
+/// handled the file event (FS_SETTLE). The save reads the file first and
+/// merges, instead of writing over Takku's Summary (found by a statechart).
+#[gpui_kit::test]
+fn autosave_before_the_file_event_merges_takku_s_summary(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    app(cx, &f, |a, w, cx| {
+        a.open_path("Ideas.md", OpenIn::CurrentTab, w, cx)
+    });
+    let before = read(&f, "Ideas.md");
+    let takku = format!("{before}\n## Summary\nBy Takku\n");
+    std::fs::write(f.vault.join("Ideas.md"), &takku).unwrap(); // no event handled yet
+    type_in_editor(cx, &f, "Mie note ");
+    wait_autosave(cx);
+    let disk = read(&f, "Ideas.md");
+    assert!(
+        disk.starts_with("Mie note ") && disk.contains("By Takku"),
+        "{disk}"
+    );
+    let shown = app(cx, &f, |a, _, cx| a.editor_text(cx));
+    assert_eq!(shown, disk, "the editor shows the merge at once");
+    // The event that comes later changes nothing.
+    let abs = f.vault.join("Ideas.md");
+    app(cx, &f, |a, w, cx| {
+        a.handle_fs_changes(std::slice::from_ref(&abs), w, cx)
+    });
+    assert_eq!(read(&f, "Ideas.md"), disk);
+}
+
+/// The same, when Takku and you changed the same line: nothing is written,
+/// and the Conflict is shown.
+#[gpui_kit::test]
+fn autosave_before_the_file_event_never_writes_over_a_conflict(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    app(cx, &f, |a, w, cx| {
+        a.open_path("Ideas.md", OpenIn::CurrentTab, w, cx)
+    });
+    let before = read(&f, "Ideas.md");
+    let theirs = format!("Takku {before}");
+    std::fs::write(f.vault.join("Ideas.md"), &theirs).unwrap();
+    type_in_editor(cx, &f, "Mie note ");
+    wait_autosave(cx);
+    assert_eq!(
+        read(&f, "Ideas.md"),
+        theirs,
+        "the file is left as Takku wrote it"
+    );
+    assert!(status(cx, &f).contains("choose a version"));
+}

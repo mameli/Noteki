@@ -386,8 +386,8 @@ impl NotekiApp {
                     this.apply_theme(window, cx);
                 }
             }),
-            cx.on_app_quit(|this, _| {
-                this.flush_all();
+            cx.on_app_quit(|this, cx| {
+                this.flush_all(cx);
                 async {}
             }),
         ];

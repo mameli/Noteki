@@ -151,7 +151,7 @@ impl NotekiApp {
             ));
         }
         for p in to_save {
-            self.save_logged(&p);
+            self.save_logged(&p, cx);
         }
         self.refresh_outline();
         self.persist_session();
@@ -183,7 +183,7 @@ impl NotekiApp {
     pub fn keep_mine(&mut self, path: &str, cx: &mut Context<Self>) {
         if let Some(doc) = self.docs.get_mut(path) {
             doc.keep_mine();
-            self.save_logged(path);
+            self.save_logged(path, cx);
             self.status = None;
         }
         cx.notify();
@@ -207,7 +207,7 @@ impl NotekiApp {
     pub fn save_again(&mut self, path: &str, cx: &mut Context<Self>) {
         if let Some(doc) = self.docs.get_mut(path) {
             doc.save_again();
-            self.save_logged(path);
+            self.save_logged(path, cx);
             let changed = HashSet::from([path.to_string()]);
             self.refresh_vault(&changed, cx);
             self.status = None;

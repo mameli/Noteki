@@ -47,7 +47,7 @@ impl NotekiApp {
             return false;
         }
         if let Some(leaving) = leaving.filter(|l| l != path) {
-            self.save_logged(&leaving);
+            self.save_logged(&leaving, cx);
         }
         self.show_active(window, cx);
         true
@@ -116,7 +116,7 @@ impl NotekiApp {
 
     /// Makes the editor, inspector and tree follow the active tab.
     pub(super) fn show_active(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.prune_docs();
+        self.prune_docs(cx);
         let active = self.tabs.active().map(|t| (t.path.clone(), t.cursor));
         match active {
             Some((path, cursor)) if self.docs.contains_key(&path) => {
@@ -155,7 +155,7 @@ impl NotekiApp {
     }
 
     /// Drops documents no tab shows, unless their text exists only on screen.
-    pub(super) fn prune_docs(&mut self) {
+    pub(super) fn prune_docs(&mut self, cx: &mut Context<Self>) {
         let shown: HashSet<String> = self.tabs.iter().map(|t| t.path.clone()).collect();
         let unsaved: Vec<String> = self
             .docs
@@ -164,7 +164,7 @@ impl NotekiApp {
             .map(|(p, _)| p.clone())
             .collect();
         for p in unsaved {
-            self.save_logged(&p);
+            self.save_logged(&p, cx);
         }
         self.docs
             .retain(|p, d| shown.contains(p) || d.is_only_on_screen() || d.should_save());
@@ -194,7 +194,7 @@ impl NotekiApp {
         let leaving = self.active_path().map(str::to_string);
         if self.tabs.activate(index) {
             if let Some(l) = leaving.filter(|l| Some(l.as_str()) != self.active_path()) {
-                self.save_logged(&l);
+                self.save_logged(&l, cx);
             }
             self.show_active(window, cx);
         }
@@ -204,7 +204,7 @@ impl NotekiApp {
         self.remember_cursor(cx);
         if let Some(path) = self.tabs.close(index) {
             if !self.tabs.contains(&path) {
-                self.save_logged(&path);
+                self.save_logged(&path, cx);
                 if self.docs.get(&path).is_some_and(NoteDoc::is_only_on_screen) {
                     self.set_info(format!(
                         "{path}: its text is kept in memory; reopen the tab ({}) to resolve it",
@@ -289,7 +289,7 @@ impl NotekiApp {
             self.tabs.prev()
         }
         if let Some(l) = leaving.filter(|l| Some(l.as_str()) != self.active_path()) {
-            self.save_logged(&l);
+            self.save_logged(&l, cx);
         }
         self.show_active(window, cx);
     }
@@ -311,7 +311,7 @@ impl NotekiApp {
             }
         }
         if let Some(l) = leaving {
-            self.save_logged(&l);
+            self.save_logged(&l, cx);
         }
         self.show_active(window, cx);
     }

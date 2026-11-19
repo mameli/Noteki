@@ -69,7 +69,7 @@ impl NotekiApp {
     ) -> Result<String, String> {
         // Unsaved text is saved first, under the old name (SPEC › Files),
         // in every window of the Vault.
-        self.save_under(path)?;
+        self.save_under(path, cx)?;
         self.others_save_under(path, cx)?;
         let vault = self.vault.as_ref().ok_or("No vault open")?;
         let is_folder = vault.is_folder(path);
@@ -93,7 +93,7 @@ impl NotekiApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Result<(), String> {
-        self.save_under(path)?;
+        self.save_under(path, cx)?;
         self.others_save_under(path, cx)?;
         let vault = self.vault.as_ref().ok_or("No vault open")?;
         move_to_trash(&vault.root, path, self.config.trash_dir.as_deref())?;
@@ -105,7 +105,7 @@ impl NotekiApp {
     }
 
     /// Saves the unsaved Notes at `path` or under it (a folder).
-    fn save_under(&mut self, path: &str) -> Result<(), String> {
+    fn save_under(&mut self, path: &str, cx: &mut Context<Self>) -> Result<(), String> {
         let under: Vec<String> = self
             .docs
             .keys()
@@ -113,7 +113,7 @@ impl NotekiApp {
             .cloned()
             .collect();
         for p in &under {
-            self.save_note(p)?;
+            self.save_note(p, cx)?;
         }
         Ok(())
     }
@@ -129,7 +129,7 @@ impl NotekiApp {
 
     fn others_save_under(&mut self, path: &str, cx: &mut Context<Self>) -> Result<(), String> {
         for other in self.vault_windows(cx) {
-            other.update(cx, |o, _| o.save_under(path))?;
+            other.update(cx, |o, cx| o.save_under(path, cx))?;
         }
         Ok(())
     }
@@ -198,7 +198,7 @@ impl NotekiApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Result<String, String> {
-        self.save_note(path)?;
+        self.save_note(path, cx)?;
         let vault = self.vault.as_ref().ok_or("No vault open")?;
         let new_path = make_copy(&vault.root, path)?;
         self.refresh_vault(&HashSet::from([new_path.clone()]), cx);

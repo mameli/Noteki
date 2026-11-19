@@ -64,14 +64,19 @@ impl NotekiApp {
         self.autosave = Some(cx.spawn_in(window, async move |this, cx| {
             cx.background_executor().timer(AUTOSAVE_DELAY).await;
             let _ = this.update(cx, |app, cx| {
-                app.flush_all();
+                app.flush_all(cx);
                 cx.notify();
             });
         }));
     }
 
     /// Writes the note if it has unsaved edits and may be saved. Returns whether it wrote.
-    pub fn save_note(&mut self, path: &str) -> Result<bool, String> {
+    ///
+    /// The file is read first: another app may have written it since Noteki
+    /// last loaded or saved it, and the event telling so comes only after
+    /// FS_SETTLE. Writing blind would erase that write (Takku's Summary,
+    /// ADR 0005), so it is reconciled first, as an External change.
+    pub fn save_note(&mut self, path: &str, cx: &mut Context<Self>) -> Result<bool, String> {
         let Some(vault) = self.vault.as_mut() else {
             return Ok(false);
         };
@@ -81,6 +86,36 @@ impl NotekiApp {
         if !doc.should_save() {
             return Ok(false);
         }
+        let on_disk = std::fs::read_to_string(vault.root.join(path)).ok();
+        if let Some(disk) = on_disk.filter(|d| d != doc.base()) {
+            let outcome = doc.on_disk_changed(Some(&disk));
+            if matches!(outcome, ExternalOutcome::Merged | ExternalOutcome::Reloaded)
+                && self.editor_path.as_deref() == Some(path)
+            {
+                let text = doc.text().to_string();
+                self.editor.update(cx, |ed, cx| {
+                    let cursor = ed.cursor();
+                    ed.set_text(&text, cursor, cx)
+                });
+            }
+            if outcome == ExternalOutcome::Conflict {
+                self.set_error(format!(
+                    "{path} changed on disk and in Noteki: choose a version"
+                ));
+                return Ok(false);
+            }
+            let (Some(vault), Some(doc)) = (self.vault.as_mut(), self.docs.get_mut(path)) else {
+                return Ok(false);
+            };
+            if !doc.should_save() {
+                return Ok(false);
+            }
+            return Self::write_doc(vault, doc, path).map(|()| true);
+        }
+        Self::write_doc(vault, doc, path).map(|()| true)
+    }
+
+    fn write_doc(vault: &mut Vault, doc: &mut NoteDoc, path: &str) -> Result<(), String> {
         let text = doc.text().to_string();
         write_note_atomic(&vault.root, path, &text)?;
         doc.mark_saved(&text);
@@ -88,17 +123,17 @@ impl NotekiApp {
             vault.corpus.set(path, &text);
             vault.tag_tree = build_tag_tree(&vault.corpus);
         }
-        Ok(true)
+        Ok(())
     }
 
-    pub(super) fn save_logged(&mut self, path: &str) {
-        if let Err(e) = self.save_note(path) {
+    pub(super) fn save_logged(&mut self, path: &str, cx: &mut Context<Self>) {
+        if let Err(e) = self.save_note(path, cx) {
             self.set_error(format!("Could not save {path}: {e}"));
         }
     }
 
     /// Saves every open note with unsaved edits.
-    pub fn flush_all(&mut self) {
+    pub fn flush_all(&mut self, cx: &mut Context<Self>) {
         let paths: Vec<String> = self
             .docs
             .iter()
@@ -106,7 +141,7 @@ impl NotekiApp {
             .map(|(p, _)| p.clone())
             .collect();
         for p in paths {
-            self.save_logged(&p);
+            self.save_logged(&p, cx);
         }
     }
 }

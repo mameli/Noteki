@@ -168,7 +168,7 @@ impl NotekiApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Result<(), String> {
-        self.flush_all();
+        self.flush_all(cx);
         let canonical = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
         let excluded = self.settings.excluded_in(&canonical).to_vec();
         let vault = match Vault::load_excluding(root, &excluded) {
@@ -191,8 +191,8 @@ impl NotekiApp {
         if switching {
             for other in self.other_windows(cx) {
                 let handle = other.read(cx).window;
-                other.update(cx, |o, _| {
-                    o.flush_all();
+                other.update(cx, |o, cx| {
+                    o.flush_all(cx);
                     o.forget_session();
                 });
                 cx.defer(move |cx| {
