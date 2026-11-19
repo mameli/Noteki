@@ -1107,16 +1107,22 @@ impl NoteEditor {
         };
         let x = *self.goal_x.get_or_insert(caret.origin.x);
         let text = self.buf.text();
+        // In a table's row: out of the row once the cell's own rows end.
+        let (above, below) = match layout.past_cell(head, up) {
+            Some(y) if up => (y + px(1.), caret.bottom()),
+            Some(y) => (caret.top(), y - px(1.)),
+            None => (caret.top(), caret.bottom()),
+        };
         let mut target = if up {
-            if caret.top() <= layout.text_top() + px(0.5) {
+            if above <= layout.text_top() + px(0.5) {
                 0
             } else {
-                layout.offset_for_point(text, point(x, caret.top() - px(1.)))
+                layout.offset_for_point(text, point(x, above - px(1.)))
             }
-        } else if caret.bottom() >= layout.text_bottom() - px(0.5) {
+        } else if below >= layout.text_bottom() - px(0.5) {
             text.len()
         } else {
-            layout.offset_for_point(text, point(x, caret.bottom() + px(1.)))
+            layout.offset_for_point(text, point(x, below + px(1.)))
         };
         // Over a table's rule to the row past it, unless already on the rule.
         if layout.past_rule(head, up).is_none() {

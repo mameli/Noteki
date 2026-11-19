@@ -1990,6 +1990,28 @@ fn down_and_up_go_to_the_same_place_in_the_cell_below_and_above(cx: &mut TestApp
 }
 
 #[gpui_kit::test]
+fn down_leaves_a_row_whose_other_cell_wraps_for_the_row_below(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let long = "una dipendenza lunga che va a capo nella sua colonna ".repeat(4);
+    let text = format!(
+        "| Nome | Dipende da | Fine |\n| --- | --- | --- |\n| Collaudo | {long}| x |\n| Rilascio | breve | y |\nfine"
+    );
+    let at = |s: &str| text.find(s).unwrap();
+    editor_with(cx, &f, &text, at("Collaudo") + 3);
+    let cursor = |cx: &mut TestAppContext| app(cx, &f, |a, _, cx| a.editor().read(cx).cursor());
+    press(cx, &f, "down");
+    frame(cx, &f);
+    assert_eq!(
+        cursor(cx),
+        at("Rilascio") + 3,
+        "the row below, not the next wrapped row"
+    );
+    press(cx, &f, "up");
+    frame(cx, &f);
+    assert_eq!(cursor(cx), at("Collaudo") + 3);
+}
+
+#[gpui_kit::test]
 fn a_long_cell_being_edited_shows_all_its_text_in_its_column(cx: &mut TestAppContext) {
     let f = fixture(cx);
     let long =

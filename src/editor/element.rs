@@ -221,6 +221,31 @@ impl Layout {
             .saturating_sub(1)
     }
 
+    /// In a table's row, ↑ from its cell's first row and ↓ from its last go to
+    /// the row above or below (its y), not to another cell's wrapped rows in
+    /// the same row: `None` elsewhere, or within a wrapped cell.
+    pub(super) fn past_cell(&self, offset: usize, up: bool) -> Option<Pixels> {
+        let i = self.line_of(offset);
+        let line = self.lines.get(i)?;
+        let cells = line.cells.as_ref()?;
+        let local = offset.clamp(line.range.start, line.range.end) - line.range.start;
+        let cell = cells
+            .iter()
+            .find(|c| local <= c.range.end)
+            .or(cells.last())?;
+        let row = (f32::from(cell.position(local, line.line_height).y)
+            / f32::from(line.line_height))
+        .round() as usize;
+        let top = self.origin.y + self.top_of(i);
+        if up && row == 0 {
+            Some(top - px(1.))
+        } else if !up && row + 1 >= cell.rows() {
+            Some(top + line.height() + px(1.))
+        } else {
+            None
+        }
+    }
+
     /// A table's delimiter row, drawn as a rule: ↑ and ↓ go over it, to the
     /// row past it (its y, above for `up`), as over the line it is.
     pub(super) fn past_rule(&self, offset: usize, up: bool) -> Option<Pixels> {
