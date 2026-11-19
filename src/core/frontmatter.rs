@@ -65,40 +65,41 @@ fn is_indicator(u: u16) -> bool {
 
 /// Returns the 1-based line number of the closing `---` (or `...`) if frontmatter is present.
 pub fn frontmatter_end_line(text: &str) -> Option<usize> {
-    let units: Vec<u16> = text.encode_utf16().collect();
-    let lines = split_utf16_lines(&units);
-    let first = lines.first()?;
-    if !is_delimiter(first, false) {
-        return None;
+    frontmatter_lines(text).map(|(_, end)| end + 1)
+}
+
+/// The Note's lines up to its Frontmatter's closing delimiter (at index
+/// `end`), in UTF-16; `None` without a Frontmatter. Only those lines are read
+/// and encoded: this runs at every keystroke, on Notes of any length.
+fn frontmatter_lines(text: &str) -> Option<(Vec<Vec<u16>>, usize)> {
+    let mut lines = Vec::new();
+    for (i, line) in text.split('\n').enumerate() {
+        let line = line.strip_suffix('\r').unwrap_or(line);
+        let units: Vec<u16> = line.encode_utf16().collect();
+        let closes = i > 0 && is_delimiter(&units, true);
+        if i == 0 && !is_delimiter(&units, false) {
+            return None;
+        }
+        lines.push(units);
+        if closes {
+            return Some((lines, i));
+        }
     }
-    let end = (1..lines.len()).find(|&idx| is_delimiter(lines[idx], true))?;
-    Some(end + 1)
+    None
 }
 
 /// Parses the YAML Frontmatter subset matching NotekiCore's `Frontmatter.swift`.
 pub fn parse_frontmatter(text: &str) -> Option<FrontmatterReading> {
-    let units: Vec<u16> = text.encode_utf16().collect();
-    let lines = split_utf16_lines(&units);
-    let first = lines.first()?;
-    if !is_delimiter(first, false) {
-        return None;
-    }
-    let end = (1..lines.len()).find(|&idx| is_delimiter(lines[idx], true))?;
+    let (owned, end) = frontmatter_lines(text)?;
+    let lines: Vec<&[u16]> = owned.iter().map(Vec::as_slice).collect();
     Some(read_lines(&lines[1..end]))
 }
 
 pub fn extract_frontmatter_tags(text: &str) -> Vec<String> {
-    let units: Vec<u16> = text.encode_utf16().collect();
-    let lines = split_utf16_lines(&units);
-    let Some(first) = lines.first() else {
+    let Some((owned, end)) = frontmatter_lines(text) else {
         return Vec::new();
     };
-    if !is_delimiter(first, false) {
-        return Vec::new();
-    }
-    let Some(end) = (1..lines.len()).find(|&idx| is_delimiter(lines[idx], true)) else {
-        return Vec::new();
-    };
+    let lines: Vec<&[u16]> = owned.iter().map(Vec::as_slice).collect();
     let FrontmatterReading::Properties { properties } = read_lines(&lines[1..end]) else {
         return Vec::new();
     };
@@ -162,26 +163,6 @@ fn span_text(lines: &[&[u16]], span: &LineSpan) -> String {
         return String::new();
     }
     String::from_utf16_lossy(&line[from..to])
-}
-
-fn split_utf16_lines(units: &[u16]) -> Vec<&[u16]> {
-    let mut out = Vec::new();
-    let mut start = 0usize;
-    let mut i = 0usize;
-    while i < units.len() {
-        if units[i] == b'\n' as u16 {
-            let line_end = if i > start && units[i - 1] == b'\r' as u16 {
-                i - 1
-            } else {
-                i
-            };
-            out.push(&units[start..line_end]);
-            start = i + 1;
-        }
-        i += 1;
-    }
-    out.push(&units[start..]);
-    out
 }
 
 fn is_delimiter(line: &[u16], allow_dots: bool) -> bool {
