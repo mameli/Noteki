@@ -182,8 +182,13 @@ mod tests {
     use super::*;
 
     /// The Mac's checker, read only: nothing learned or ignored.
+    /// The Mac's checker is one per process and not for threads at once, as
+    /// the tests run: one at a time (the app asks it from the main thread).
+    static CHECKER: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn the_macs_checker_finds_a_misspelled_word_and_guesses() {
+        let _one = CHECKER.lock().unwrap_or_else(|e| e.into_inner());
         let text = "This sentense is fine";
         let found = misspelled(text);
         assert_eq!(found, vec![5..13], "{found:?}");
@@ -192,6 +197,7 @@ mod tests {
 
     #[test]
     fn a_word_is_corrected_in_the_language_of_its_sentence() {
+        let _one = CHECKER.lock().unwrap_or_else(|e| e.into_inner());
         let it = "Questo testo ha un errrore evidente. This sentence is English.";
         let word = it.find("errrore").unwrap();
         assert_eq!(correction(it, word..word + 7).as_deref(), Some("errore"));
