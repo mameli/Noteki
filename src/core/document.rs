@@ -34,13 +34,6 @@ pub enum ExternalOutcome {
     Deleted,
 }
 
-impl ExternalOutcome {
-    /// Whether the editor must be refreshed with [`NoteDoc::text`].
-    pub fn changes_text(self) -> bool {
-        matches!(self, Self::Reloaded | Self::Merged)
-    }
-}
-
 impl NoteDoc {
     pub fn new(text: impl Into<String>) -> Self {
         let text = text.into();
@@ -63,10 +56,6 @@ impl NoteDoc {
 
     pub fn is_dirty(&self) -> bool {
         self.buffer != self.base || self.force_write
-    }
-
-    pub fn conflict_text(&self) -> Option<&str> {
-        self.conflict.as_deref()
     }
 
     pub fn has_conflict(&self) -> bool {

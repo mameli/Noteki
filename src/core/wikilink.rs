@@ -92,10 +92,6 @@ impl VaultIndex {
         Self { by_name, notes }
     }
 
-    pub fn all_notes(&self) -> &[(String, String)] {
-        &self.notes
-    }
-
     pub fn resolve(&self, target: &str, source_path: Option<&str>) -> Option<ResolvedItem> {
         if target.is_empty() {
             return source_path.map(|p| ResolvedItem::Note {

@@ -26,7 +26,7 @@ use gpui_kit::{
     StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, Window,
 };
 
-use super::parts::{Part, PartKind};
+use super::parts::Part;
 use super::settings::InterfaceSize;
 use super::*;
 use crate::core::vault::resolve_vault_path;
@@ -52,12 +52,7 @@ impl Render for NotekiApp {
                 resizable_panel()
                     .size(px(260.))
                     .size_range(px(180.)..px(480.))
-                    .child(
-                        self.parts
-                            .left
-                            .clone()
-                            .cached(Part::style(PartKind::LeftSidebar)),
-                    ),
+                    .child(Part::cached(&self.parts.left, cx)),
             );
         }
         split = split.child(
@@ -70,12 +65,7 @@ impl Render for NotekiApp {
                 resizable_panel()
                     .size(px(250.))
                     .size_range(px(180.)..px(480.))
-                    .child(
-                        self.parts
-                            .right
-                            .clone()
-                            .cached(Part::style(PartKind::RightSidebar)),
-                    ),
+                    .child(Part::cached(&self.parts.right, cx)),
             );
         }
 
@@ -256,19 +246,9 @@ impl Render for NotekiApp {
                     this.follow_link_under_cursor(window, cx)
                 }),
             )
-            .child(
-                self.parts
-                    .title
-                    .clone()
-                    .cached(Part::style(PartKind::TitleBar)),
-            )
+            .child(Part::cached(&self.parts.title, cx))
             .child(div().flex_1().min_h_0().child(split))
-            .child(
-                self.parts
-                    .status
-                    .clone()
-                    .cached(Part::style(PartKind::StatusBar)),
-            )
+            .child(Part::cached(&self.parts.status, cx))
     }
 }
 

@@ -345,46 +345,6 @@ pub fn create_empty_note(root: &Path, rel_path: &str) -> Result<String, String> 
     Ok(rel_path.to_string())
 }
 
-pub fn next_untitled_path(root: &Path, folder_rel: &str) -> String {
-    let mut index = 0usize;
-    loop {
-        let name = if index == 0 {
-            "Untitled.md".to_string()
-        } else {
-            format!("Untitled {index}.md")
-        };
-        let rel = if folder_rel.is_empty() {
-            name
-        } else {
-            format!("{folder_rel}/{name}")
-        };
-        if !exists_case_insensitive(root, &rel) {
-            return rel;
-        }
-        index += 1;
-    }
-}
-
-pub fn next_untitled_folder_path(root: &Path, parent_rel: &str) -> String {
-    let mut index = 0usize;
-    loop {
-        let name = if index == 0 {
-            "Untitled".to_string()
-        } else {
-            format!("Untitled {index}")
-        };
-        let rel = if parent_rel.is_empty() {
-            name
-        } else {
-            format!("{parent_rel}/{name}")
-        };
-        if !exists_case_insensitive(root, &rel) {
-            return rel;
-        }
-        index += 1;
-    }
-}
-
 pub fn create_folder(root: &Path, rel_path: &str) -> Result<(), String> {
     let abs = resolve_vault_path(root, rel_path)?;
     fs::create_dir_all(&abs).map_err(|e| format!("Could not create folder: {e}"))
@@ -656,38 +616,6 @@ fn exists_case_insensitive(root: &Path, rel_path: &str) -> bool {
             .to_str()
             .is_some_and(|n| n.eq_ignore_ascii_case(target_name))
     })
-}
-
-pub fn relative_path_from_disk(
-    root: &Path,
-    abs_path: &Path,
-    excluded: &HashSet<String>,
-) -> Option<String> {
-    let root_canon = fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
-    let abs_canon = if abs_path.exists() {
-        fs::canonicalize(abs_path).unwrap_or_else(|_| abs_path.to_path_buf())
-    } else if let (Some(parent), Some(name)) = (abs_path.parent(), abs_path.file_name()) {
-        fs::canonicalize(parent)
-            .map(|p| p.join(name))
-            .unwrap_or_else(|_| abs_path.to_path_buf())
-    } else {
-        abs_path.to_path_buf()
-    };
-
-    let rel = abs_canon.strip_prefix(&root_canon).ok()?;
-    let rel_str = rel
-        .components()
-        .filter_map(|c| match c {
-            Component::Normal(s) => s.to_str(),
-            _ => None,
-        })
-        .collect::<Vec<_>>()
-        .join("/");
-
-    if rel_str.is_empty() || is_in_excluded_folder(&root_canon, &rel_str, excluded) {
-        return None;
-    }
-    Some(rel_str)
 }
 
 #[cfg(test)]

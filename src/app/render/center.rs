@@ -18,12 +18,7 @@ impl NotekiApp {
         };
         v_flex()
             .size_full()
-            .child(
-                self.parts
-                    .tabs
-                    .clone()
-                    .cached(Part::style(PartKind::TabBar)),
-            )
+            .child(Part::cached(&self.parts.tabs, cx))
             .child(self.render_banners(cx))
             .child(div().flex_1().min_h_0().child(content))
             .into_any_element()

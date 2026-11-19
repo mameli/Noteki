@@ -10,8 +10,8 @@
 //! click, a Vault event) or when one of its own elements does (a hover).
 
 use gpui_kit::{
-    div, px, relative, AppContext as _, Context, Entity, IntoElement, Render, StyleRefinement,
-    Styled as _, Subscription, WeakEntity, Window,
+    div, px, AppContext as _, Context, Entity, IntoElement, Render, Styled as _, Subscription,
+    WeakEntity, Window,
 };
 
 use super::NotekiApp;
@@ -44,20 +44,17 @@ impl Part {
         })
     }
 
-    /// Its size, which a cached view needs: it is not measured from what it draws.
-    pub(super) fn style(kind: PartKind) -> StyleRefinement {
-        let s = div();
-        let s = match kind {
-            PartKind::TitleBar => s.w_full().h(gpui_kit::component::TITLE_BAR_HEIGHT),
-            PartKind::TabBar => s.w_full().h(super::render::TAB_BAR_HEIGHT),
-            PartKind::StatusBar => s.w_full().h(super::render::STATUS_BAR_HEIGHT),
-            PartKind::LeftSidebar | PartKind::RightSidebar => {
-                s.w(relative(1.)).h(relative(1.)).min_w(px(0.))
-            }
-        }
-        .flex_shrink_0();
-        let mut s = s;
-        std::mem::take(s.style())
+    /// `part` as a cached view, at its size: a cached view is not measured
+    /// from what it draws.
+    pub(super) fn cached(part: &Entity<Self>, cx: &gpui_kit::App) -> impl IntoElement {
+        let size = div().flex_shrink_0();
+        let mut size = match part.read(cx).kind {
+            PartKind::TitleBar => size.w_full().h(gpui_kit::component::TITLE_BAR_HEIGHT),
+            PartKind::TabBar => size.w_full().h(super::render::TAB_BAR_HEIGHT),
+            PartKind::StatusBar => size.w_full().h(super::render::STATUS_BAR_HEIGHT),
+            PartKind::LeftSidebar | PartKind::RightSidebar => size.size_full().min_w(px(0.)),
+        };
+        part.clone().cached(std::mem::take(size.style()))
     }
 }
 
