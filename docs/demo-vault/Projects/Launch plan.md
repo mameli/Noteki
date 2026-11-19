@@ -21,14 +21,15 @@ flowchart LR
 | :--- | :--- | :---: | ---: |
 | Feature freeze | Luca | Nov 9 | done |
 | Dry run of the release | Luca | Nov 11 | done |
-| Release 0.3.0 | Anna | Nov 12 | today |
+| Release 0.4.0 | Anna | Nov 12 | today |
 | Landing page | Anna | Nov 13 | next |
 
 > [!warning] Before publishing
-> Raise both `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION`: Sparkle compares the build number.
+> Raise both `version` and `build` in `Cargo.toml`: Sparkle compares the build number.
 
-```swift
-let updater = SPUStandardUpdaterController(startingUpdater: true,
-                                           updaterDelegate: nil,
-                                           userDriverDelegate: nil)
+```rust
+fn is_newer(latest: u32, installed: u32) -> bool {
+    // Sparkle compares the build, not the version people read.
+    latest > installed
+}
 ```

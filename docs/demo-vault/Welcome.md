@@ -3,7 +3,7 @@ tags: [noteki]
 ---
 # Welcome to Noteki
 
-Noteki reads and writes the Markdown of an **Obsidian** vault: the same files, side by side with Obsidian, in a light native Mac app.
+Noteki reads and writes the Markdown of an **Obsidian** vault: the same files, side by side with Obsidian, in a light native app.
 
 ![[noteki.png|120]]
 
