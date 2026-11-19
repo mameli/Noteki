@@ -313,12 +313,19 @@ impl Layout {
         let i = self.tops.line_at(f32::from(rel.y));
         let line = &self.lines[i];
         if let Some(cells) = &line.cells {
-            // The cell whose column holds `x`, else the nearest.
-            let cell = cells
-                .iter()
-                .rev()
-                .find(|c| rel.x >= c.x - CELL_PAD)
-                .or(cells.first());
+            // The cell whose column holds `x` (by the column's edges: a cell
+            // aligned right or centred starts its text further in), else the nearest.
+            let cell = match &line.columns {
+                Some(edges) => {
+                    let column = edges[1..].iter().take_while(|&&e| e <= rel.x).count();
+                    cells.get(column.min(cells.len().saturating_sub(1)))
+                }
+                None => cells
+                    .iter()
+                    .rev()
+                    .find(|c| rel.x >= c.x - CELL_PAD)
+                    .or(cells.first()),
+            };
             let y = (rel.y - self.top_of(i)).clamp(px(0.), line.text_height - px(0.5));
             let local = cell.map_or(0, |c| {
                 let at = point((rel.x - c.x).max(px(0.)), y);

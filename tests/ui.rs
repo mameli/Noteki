@@ -2012,6 +2012,33 @@ fn down_leaves_a_row_whose_other_cell_wraps_for_the_row_below(cx: &mut TestAppCo
 }
 
 #[gpui_kit::test]
+fn down_stays_in_a_column_aligned_right_or_centred(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let text = "| Nome | Tipo | Stato lungo |\n| :--- | :---: | ---: |\n| Markdown | Testo | OK |\n| Swift | Codice | TODO |\nfine";
+    let at = |s: &str| text.find(s).unwrap();
+    let cursor = |cx: &mut TestAppContext| app(cx, &f, |a, _, cx| a.editor().read(cx).cursor());
+    // The header's x is left of the short text aligned right below it.
+    editor_with(cx, &f, text, at("Stato") + 1);
+    press(cx, &f, "down");
+    frame(cx, &f);
+    let ok = at("OK");
+    assert!(
+        (ok..=ok + 2).contains(&cursor(cx)),
+        "in OK, not Testo: {}",
+        cursor(cx)
+    );
+    editor_with(cx, &f, text, at("Tipo"));
+    press(cx, &f, "down");
+    frame(cx, &f);
+    let testo = at("Testo");
+    assert!(
+        (testo..=testo + 5).contains(&cursor(cx)),
+        "in Testo: {}",
+        cursor(cx)
+    );
+}
+
+#[gpui_kit::test]
 fn a_long_cell_being_edited_shows_all_its_text_in_its_column(cx: &mut TestAppContext) {
     let f = fixture(cx);
     let long =
