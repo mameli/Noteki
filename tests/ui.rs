@@ -3086,6 +3086,52 @@ fn misspelled_words_of_the_prose_are_marked_not_the_one_being_typed(cx: &mut Tes
 
 #[cfg(target_os = "macos")]
 #[gpui_kit::test]
+fn a_right_click_on_a_misspelled_word_offers_its_guesses(cx: &mut TestAppContext) {
+    use gpui_kit::test::TestQueryExt;
+    use gpui_kit::{Modifiers, MouseButton, MouseDownEvent, MouseUpEvent, PlatformInput};
+    let f = fixture(cx);
+    let text = "This sentense is fine\n\nAnd then";
+    editor_with(cx, &f, text, text.len());
+    let (x, y) = caret_at(cx, &f, 8);
+    let at = gpui_kit::point(gpui_kit::px(x + 1.), gpui_kit::px(y + 6.));
+    ui(cx, &f, |window, cx| {
+        window.dispatch_event(
+            PlatformInput::MouseDown(MouseDownEvent {
+                button: MouseButton::Right,
+                position: at,
+                modifiers: Modifiers::default(),
+                click_count: 1,
+                first_mouse: false,
+            }),
+            cx,
+        );
+        window.dispatch_event(
+            PlatformInput::MouseUp(MouseUpEvent {
+                button: MouseButton::Right,
+                position: at,
+                modifiers: Modifiers::default(),
+                click_count: 1,
+            }),
+            cx,
+        );
+    });
+    frame(cx, &f);
+    // The cursor went into the word: it stays marked, it was not typed.
+    let marked = app(cx, &f, |a, _, cx| {
+        a.editor().update(cx, |e, _| (*e.misspelled()).clone())
+    });
+    assert_eq!(marked, vec![5..13]);
+    let guess = ui(cx, &f, |w, _| {
+        w.try_find_by_label("sentence").map(|e| e.bounds().center())
+    });
+    let guess = guess.expect("the guess in the menu");
+    click(cx, &f, (f32::from(guess.x), f32::from(guess.y)), 1);
+    frame(cx, &f);
+    assert_eq!(editor_state(cx, &f).0, "This sentence is fine\n\nAnd then");
+}
+
+#[cfg(target_os = "macos")]
+#[gpui_kit::test]
 fn a_misspelled_word_is_corrected_as_it_ends_and_undo_puts_it_back(cx: &mut TestAppContext) {
     let f = fixture(cx);
     editor_with(cx, &f, "I will ", 7);

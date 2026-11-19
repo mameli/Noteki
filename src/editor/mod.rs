@@ -613,8 +613,10 @@ impl NoteEditor {
         }
         let key = (self.revision, self.buf.cursor());
         if self.spell_marks.0 != Some(key) {
-            // The word the cursor touches is being typed: not marked yet.
-            let cursor = self.buf.selection().is_empty().then(|| self.buf.cursor());
+            // The word just typed is not marked yet; one the cursor was only
+            // moved to (a click, the arrows, a right-click) is.
+            let cursor = (self.buf.selection().is_empty() && self.typed_at == Some(key))
+                .then(|| self.buf.cursor());
             let found = crate::core::editor::spelling::misspelled(
                 text,
                 cursor,
