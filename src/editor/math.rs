@@ -1,16 +1,20 @@
 //! A formula drawn by GPUI itself, from RaTeX's display list: each glyph in
 //! its KaTeX font through GPUI's text system (sharp at any zoom, shared with
 //! the text's glyph cache), rules as quads, radicals and large delimiters as
-//! paths. GPUI loads no font without an `m`: the glyphs of KaTeX's Size fonts
-//! (large integrals, sums, delimiters) are drawn as their outlines. Laid out
-//! once with the line, painted every frame.
+//! small SVG images of their paths. GPUI loads no font without an `m`: the
+//! glyphs of KaTeX's Size fonts (large integrals, sums, delimiters) are drawn
+//! as their outlines, as images too. Not with GPUI's own paths: the first one
+//! makes it keep a texture as large as the window, 16 MB and more for one `∫`.
+//! Laid out once with the line, painted every frame.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::fmt::Write as _;
 use std::rc::Rc;
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 use gpui_kit::{
-    point, px, size, Bounds, Font, FontId, FontStyle, FontWeight, GlyphId, Hsla, PathBuilder,
+    point, px, size, App, Bounds, Corners, Font, FontId, FontStyle, FontWeight, GlyphId, Hsla,
     Pixels, Point, SharedString, TextRun, Window, WindowTextSystem,
 };
 use ratex_types::{Color, DisplayItem, PathCommand};
@@ -44,10 +48,128 @@ enum Item {
     },
     Path {
         origin: Point<Pixels>,
-        commands: Rc<[PathCommand]>,
-        fill: bool,
+        image: Rc<PathImage>,
         color: Option<Hsla>,
     },
+}
+
+/// A path of a formula as an SVG image: where it falls from its item's origin,
+/// its outline in pixels from there, and the image in each colour it was drawn in.
+struct PathImage {
+    bounds: Bounds<Pixels>,
+    data: String,
+    fill: bool,
+    drawn: RefCell<Vec<(Hsla, Arc<gpui_kit::Image>)>>,
+}
+
+impl PathImage {
+    /// `commands` (in ems) at `em` pixels to the em.
+    fn new(commands: &[PathCommand], fill: bool, em: Pixels) -> Rc<Self> {
+        let em = f32::from(em) as f64;
+        let points = commands.iter().flat_map(|c| match *c {
+            PathCommand::MoveTo { x, y } | PathCommand::LineTo { x, y } => vec![(x, y)],
+            PathCommand::QuadTo { x1, y1, x, y } => vec![(x1, y1), (x, y)],
+            PathCommand::CubicTo {
+                x1,
+                y1,
+                x2,
+                y2,
+                x,
+                y,
+            } => vec![(x1, y1), (x2, y2), (x, y)],
+            PathCommand::Close => vec![],
+        });
+        let (mut x0, mut y0, mut x1, mut y1) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
+        for (x, y) in points {
+            (x0, y0, x1, y1) = (
+                x0.min(x * em),
+                y0.min(y * em),
+                x1.max(x * em),
+                y1.max(y * em),
+            );
+        }
+        if x0 > x1 {
+            (x0, y0, x1, y1) = (0., 0., 0., 0.);
+        }
+        // A pixel of room around: the stroke's half and the anti-aliasing.
+        let (left, top) = (x0 - 1., y0 - 1.);
+        let mut data = String::new();
+        let p = |x: f64, y: f64| (x * em - left, y * em - top);
+        for c in commands {
+            let _ = match *c {
+                PathCommand::MoveTo { x, y } => {
+                    let (x, y) = p(x, y);
+                    write!(data, "M{x:.2} {y:.2}")
+                }
+                PathCommand::LineTo { x, y } => {
+                    let (x, y) = p(x, y);
+                    write!(data, "L{x:.2} {y:.2}")
+                }
+                PathCommand::QuadTo { x1, y1, x, y } => {
+                    let ((a, b), (x, y)) = (p(x1, y1), p(x, y));
+                    write!(data, "Q{a:.2} {b:.2} {x:.2} {y:.2}")
+                }
+                PathCommand::CubicTo {
+                    x1,
+                    y1,
+                    x2,
+                    y2,
+                    x,
+                    y,
+                } => {
+                    let ((a, b), (c, d), (x, y)) = (p(x1, y1), p(x2, y2), p(x, y));
+                    write!(data, "C{a:.2} {b:.2} {c:.2} {d:.2} {x:.2} {y:.2}")
+                }
+                PathCommand::Close => write!(data, "Z"),
+            };
+        }
+        Rc::new(Self {
+            bounds: Bounds::new(
+                point(px(left as f32), px(top as f32)),
+                size(px((x1 - left + 1.) as f32), px((y1 - top + 1.) as f32)),
+            ),
+            data,
+            fill,
+            drawn: RefCell::default(),
+        })
+    }
+
+    /// The image in `color`, made the first time it is asked for.
+    fn in_color(&self, color: Hsla) -> Arc<gpui_kit::Image> {
+        let mut drawn = self.drawn.borrow_mut();
+        if let Some((_, image)) = drawn.iter().find(|(c, _)| *c == color) {
+            return image.clone();
+        }
+        let rgba = gpui_kit::Rgba::from(color);
+        let hex = format!(
+            "#{:02x}{:02x}{:02x}",
+            (rgba.r * 255.).round() as u8,
+            (rgba.g * 255.).round() as u8,
+            (rgba.b * 255.).round() as u8
+        );
+        let paint = if self.fill {
+            format!("fill=\"{hex}\" fill-opacity=\"{}\"", rgba.a)
+        } else {
+            format!(
+                "fill=\"none\" stroke=\"{hex}\" stroke-opacity=\"{}\" stroke-width=\"1\"",
+                rgba.a
+            )
+        };
+        let (w, h) = (
+            f32::from(self.bounds.size.width),
+            f32::from(self.bounds.size.height),
+        );
+        let svg = format!(
+            "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{w}\" height=\"{h}\" viewBox=\"0 0 {w} {h}\"><path d=\"{}\" {paint}/></svg>",
+            self.data
+        );
+        let image = Arc::new(gpui_kit::Image::from_bytes(
+            gpui_kit::ImageFormat::Svg,
+            svg.into_bytes(),
+        ));
+        drawn.push((color, image.clone()));
+        image
+    }
 }
 
 impl MathPaint {
@@ -72,8 +194,7 @@ impl MathPaint {
                     if let Some(commands) = outline(font, ch, *scale) {
                         return Some(Item::Path {
                             origin: at(*x, *y),
-                            commands,
-                            fill: true,
+                            image: PathImage::new(&commands, true, em),
                             color: own_color(color),
                         });
                     }
@@ -119,8 +240,7 @@ impl MathPaint {
                     color,
                 } => Some(Item::Path {
                     origin: at(*x, *y),
-                    commands: commands.clone().into(),
-                    fill: *fill,
+                    image: PathImage::new(commands, *fill, em),
                     color: own_color(color),
                 }),
             })
@@ -135,7 +255,7 @@ impl MathPaint {
 
     /// Paints the formula with its top-left at `origin`, in `color` where it
     /// names none of its own (`\color`).
-    pub fn paint(&self, origin: Point<Pixels>, em: Pixels, color: Hsla, window: &mut Window) {
+    pub fn paint(&self, origin: Point<Pixels>, color: Hsla, window: &mut Window, cx: &mut App) {
         for item in &self.items {
             match item {
                 Item::Glyph {
@@ -161,34 +281,22 @@ impl MathPaint {
                 }
                 Item::Path {
                     origin: o,
-                    commands,
-                    fill,
+                    image,
                     color: c,
                 } => {
-                    let mut b = if *fill {
-                        PathBuilder::fill()
-                    } else {
-                        PathBuilder::stroke(px(1.))
-                    };
-                    let p = |x: f64, y: f64| origin + *o + point(em * x as f32, em * y as f32);
-                    for cmd in commands.iter() {
-                        match *cmd {
-                            PathCommand::MoveTo { x, y } => b.move_to(p(x, y)),
-                            PathCommand::LineTo { x, y } => b.line_to(p(x, y)),
-                            PathCommand::QuadTo { x1, y1, x, y } => b.curve_to(p(x, y), p(x1, y1)),
-                            PathCommand::CubicTo {
-                                x1,
-                                y1,
-                                x2,
-                                y2,
-                                x,
-                                y,
-                            } => b.cubic_bezier_to(p(x, y), p(x1, y1), p(x2, y2)),
-                            PathCommand::Close => b.close(),
-                        }
-                    }
-                    if let Ok(path) = b.build() {
-                        window.paint_path(path, c.unwrap_or(color));
+                    // Drawn once it is rasterized (GPUI draws the editor again then).
+                    let svg = image.in_color(c.unwrap_or(color));
+                    if let Some(raster) = svg.use_render_image(window, cx) {
+                        let at = image.bounds.origin + origin + *o;
+                        let bounds = Bounds::new(at, image.bounds.size);
+                        let _ = window.paint_image(
+                            bounds,
+                            bounds,
+                            Corners::default(),
+                            raster,
+                            0,
+                            false,
+                        );
                     }
                 }
             }

@@ -97,8 +97,8 @@ pub(super) struct LaidLine {
 pub(super) enum Figure {
     /// An image of the Vault, at the left.
     File(Rc<Path>),
-    /// A `$$` block's formula at its em, centred, a little room above and under.
-    Formula(Rc<MathPaint>, Pixels),
+    /// A `$$` block's formula, centred, a little room above and under.
+    Formula(Rc<MathPaint>),
     /// A `mermaid` block's diagram, centred.
     Diagram(Rc<Diagram>),
 }
@@ -110,7 +110,6 @@ pub(super) struct InlineFormula {
     at: usize,
     room: Pixels,
     paint: Rc<MathPaint>,
-    em: Pixels,
 }
 
 /// One table cell as drawn: its text in the line, its place, its shaped text.
@@ -824,8 +823,8 @@ fn paint_figure(
                 }
             }
         }
-        Figure::Formula(paint, em) => {
-            paint.paint(point(centred, y + pad), *em, input.palette.text, window);
+        Figure::Formula(paint) => {
+            paint.paint(point(centred, y + pad), input.palette.text, window, cx);
         }
         Figure::Diagram(d) => {
             let bounds = Bounds::new(
@@ -850,6 +849,7 @@ fn paint_inline_formulas(
     (left, top): (Pixels, Pixels),
     input: &ShapeInput,
     window: &mut Window,
+    cx: &mut App,
 ) {
     let layout = &line.shaped.unwrapped_layout;
     let baseline = (line.line_height - layout.ascent - layout.descent) / 2. + layout.ascent;
@@ -859,7 +859,7 @@ fn paint_inline_formulas(
         };
         let x = left + line.indent + p.x + (f.room - f.paint.width) / 2.;
         let y = top + p.y + baseline - f.paint.height;
-        f.paint.paint(point(x, y), f.em, input.palette.text, window);
+        f.paint.paint(point(x, y), input.palette.text, window, cx);
     }
 }
 
@@ -1187,7 +1187,7 @@ fn shape_line(
             }
             let h = paint.height + paint.depth + font_size * (2. * FORMULA_PAD);
             let w = paint.width;
-            Some((Figure::Formula(Rc::new(paint), em), size(w, h)))
+            Some((Figure::Formula(Rc::new(paint)), size(w, h)))
         }
         // A diagram as wide as drawn, or as the text if narrower.
         Some(Decoration::Diagram(d)) if d.width > 0. => {
@@ -1252,7 +1252,6 @@ fn inline_formulas(
             at: to_display(&style.hidden, range.start) + shift,
             room: space * n as f32,
             paint: Rc::new(paint),
-            em,
         });
         shift += text.len();
         inserts.push(Insert {
@@ -1685,7 +1684,7 @@ impl Element for EditorElement {
                 window,
                 cx,
             );
-            paint_inline_formulas(line, (layout.origin.x, top), input, window);
+            paint_inline_formulas(line, (layout.origin.x, top), input, window, cx);
             // A cell's text never overflows its column: cut at its edge.
             for cell in line.cells.iter().flat_map(|c| c.iter()) {
                 let at = point(layout.origin.x + cell.x, top);
