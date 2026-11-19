@@ -442,6 +442,8 @@ pub struct NotekiApp {
     search_input: Entity<InputState>,
     search_results: Vec<SearchResult>,
     search_scroll: UniformListScrollHandle,
+    /// The Outline's and Backlinks' lists, only their rows in view drawn.
+    inspector_scroll: UniformListScrollHandle,
 
     editor: Entity<NoteEditor>,
 
@@ -540,6 +542,7 @@ impl NotekiApp {
             search_input,
             search_results: Vec::new(),
             search_scroll: UniformListScrollHandle::new(),
+            inspector_scroll: UniformListScrollHandle::new(),
             editor,
             outline: Vec::new(),
             backlinks: Vec::new(),

@@ -846,46 +846,77 @@ impl NotekiApp {
         };
         let body: AnyElement = match pane {
             RightPane::Outline if self.outline.is_empty() => empty("No headings"),
-            RightPane::Outline => v_flex()
-                .gap(px(1.))
-                .children(self.outline.iter().enumerate().map(|(ix, h)| {
-                    let line = h.line;
-                    ListItem::new(("heading", ix))
-                        .rounded(px(5.))
-                        .py(px(2.))
-                        .pl(px(8. + (h.level.saturating_sub(1)) as f32 * 12.))
-                        .pr_2()
-                        .child(div().text_sm().truncate().child(h.text.clone()))
-                        .on_click(cx.listener(move |this, _, window, cx| {
-                            this.jump_to_line(line, window, cx)
-                        }))
-                }))
-                .into_any_element(),
+            // One row per Heading or Backlink, all as tall: only those in view
+            // are drawn and laid out, at every frame of typing too.
+            RightPane::Outline => {
+                let entity = cx.entity();
+                uniform_list("outline-list", self.outline.len(), move |range, _, cx| {
+                    let outline = &entity.read(cx).outline;
+                    range
+                        .map(|ix| {
+                            let h = &outline[ix];
+                            let line = h.line;
+                            let entity = entity.clone();
+                            ListItem::new(("heading", ix))
+                                .h(px(24.))
+                                .rounded(px(5.))
+                                .pl(px(8. + (h.level.saturating_sub(1)) as f32 * 12.))
+                                .pr_2()
+                                .child(div().text_sm().truncate().child(h.text.clone()))
+                                .on_click(move |_, window, cx| {
+                                    entity
+                                        .update(cx, |this, cx| this.jump_to_line(line, window, cx))
+                                })
+                        })
+                        .collect::<Vec<_>>()
+                })
+                .track_scroll(&self.inspector_scroll)
+                .size_full()
+                .into_any_element()
+            }
             RightPane::Backlinks if self.backlinks.is_empty() => empty("No other note links here"),
-            RightPane::Backlinks => v_flex()
-                .gap_1()
-                .children(self.backlinks.iter().enumerate().map(|(ix, b)| {
-                    let (path, line) = (b.source_path.clone(), b.line);
-                    let item = ListItem::new(("backlink", ix)).rounded(px(6.)).p_2().child(
-                        v_flex()
-                            .child(
-                                div()
-                                    .text_sm()
-                                    .font_semibold()
-                                    .truncate()
-                                    .child(b.source_name.clone()),
-                            )
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .text_color(muted)
-                                    .truncate()
-                                    .child(b.snippet.clone()),
-                            ),
-                    );
-                    opens_note(item, cx.entity(), path, Some(line))
-                }))
-                .into_any_element(),
+            RightPane::Backlinks => {
+                let entity = cx.entity();
+                uniform_list(
+                    "backlink-list",
+                    self.backlinks.len(),
+                    move |range, _, cx| {
+                        let muted = cx.theme().muted_foreground;
+                        let backlinks = &entity.read(cx).backlinks;
+                        range
+                            .map(|ix| {
+                                let b = &backlinks[ix];
+                                let (path, line) = (b.source_path.clone(), b.line);
+                                let item = ListItem::new(("backlink", ix))
+                                    .h(px(52.))
+                                    .rounded(px(6.))
+                                    .px_2()
+                                    .child(
+                                        v_flex()
+                                            .child(
+                                                div()
+                                                    .text_sm()
+                                                    .font_semibold()
+                                                    .truncate()
+                                                    .child(b.source_name.clone()),
+                                            )
+                                            .child(
+                                                div()
+                                                    .text_xs()
+                                                    .text_color(muted)
+                                                    .truncate()
+                                                    .child(b.snippet.clone()),
+                                            ),
+                                    );
+                                opens_note(item, entity.clone(), path, Some(line))
+                            })
+                            .collect::<Vec<_>>()
+                    },
+                )
+                .track_scroll(&self.inspector_scroll)
+                .size_full()
+                .into_any_element()
+            }
         };
         v_flex()
             .size_full()
@@ -897,9 +928,10 @@ impl NotekiApp {
                     .id("inspector")
                     .flex_1()
                     .min_h_0()
-                    .overflow_y_scrollbar()
+                    .relative()
                     .p_2()
-                    .child(body),
+                    .child(body)
+                    .vertical_scrollbar(&self.inspector_scroll),
             )
     }
 
