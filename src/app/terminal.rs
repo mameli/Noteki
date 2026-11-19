@@ -96,7 +96,12 @@ pub fn open_in_label() -> &'static str {
 /// "Open Vault in Ghostty".
 pub fn open_vault_label() -> &'static str {
     static LABEL: OnceLock<String> = OnceLock::new();
-    LABEL.get_or_init(|| format!("Open Vault in {}", terminal().map_or("Terminal", |t| t.name)))
+    LABEL.get_or_init(|| {
+        format!(
+            "Open Vault in {}",
+            terminal().map_or("Terminal", |t| t.name)
+        )
+    })
 }
 
 /// A new window of the terminal, in `folder`.

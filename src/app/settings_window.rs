@@ -27,8 +27,7 @@ use crate::core::vault::{folder_to_exclude, today_daily_note_path};
 use crate::theme::{AppearanceMode, NotekiThemeName};
 
 /// The app's icon, as the bundle has it.
-const ICON: &[u8] =
-    include_bytes!("../../icons/icon_128x128@2x.png");
+const ICON: &[u8] = include_bytes!("../../icons/icon_128x128@2x.png");
 
 const THEMES: [NotekiThemeName; 3] = [
     NotekiThemeName::Ayu,
@@ -282,7 +281,11 @@ impl SettingsWindow {
                     .when(!on, |b| b.outline())
             }))
             .on_click(move |picked: &Vec<usize>, _, cx| {
-                if let Some(z) = picked.first().and_then(|i| InterfaceSize::ALL.get(*i)).copied() {
+                if let Some(z) = picked
+                    .first()
+                    .and_then(|i| InterfaceSize::ALL.get(*i))
+                    .copied()
+                {
                     apply(&app, main, cx, move |t| t.interface_size = z)
                 }
             });

@@ -152,7 +152,10 @@ mod mac {
         let paper = info.paperSize();
         // As wide as the paper's printable width, so the page is laid out as it prints.
         let width = paper.width - info.leftMargin() - info.rightMargin();
-        let frame = NSRect::new(NSPoint::new(-20000., -20000.), NSSize::new(width, paper.height));
+        let frame = NSRect::new(
+            NSPoint::new(-20000., -20000.),
+            NSSize::new(width, paper.height),
+        );
         let id = next_id();
         // SAFETY: a borderless window, never ordered in: WebKit lays a page
         // out only in a window.
@@ -248,7 +251,11 @@ mod mac {
             _ => window,
         };
         PRINTING.with(|p| {
-            if let Some(x) = p.borrow_mut().iter_mut().find(|x| x._delegate.ivars().id == id) {
+            if let Some(x) = p
+                .borrow_mut()
+                .iter_mut()
+                .find(|x| x._delegate.ivars().id == id)
+            {
                 x.op = Some(op.clone());
             }
         });

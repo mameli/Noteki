@@ -201,7 +201,10 @@ mod tests {
         assert_eq!(s.daily_note_folder, "Diario");
         assert!(s.typewriter_mode && !s.focus_mode && s.show_format_bar);
         assert_eq!(s.interface_size, crate::app::settings::InterfaceSize::Large);
-        assert!(s.check_spelling && !s.correct_spelling, "on unless turned off there");
+        assert!(
+            s.check_spelling && !s.correct_spelling,
+            "on unless turned off there"
+        );
         assert_eq!(s.daily_note_format, "[Daily_]YYYY/YYYY-MM-DD");
         assert_eq!(
             s.excluded_in(std::path::Path::new("/Users/me/Vault")),

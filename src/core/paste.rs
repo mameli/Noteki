@@ -17,8 +17,24 @@ use super::markdown::{self, BlockKind, MdSpanKind};
 /// turning into Markdown.
 fn has_structure(html: &str) -> bool {
     const TAGS: [&str; 18] = [
-        "h1", "h2", "h3", "h4", "h5", "h6", "b", "strong", "em", "i", "a", "ul", "ol",
-        "blockquote", "table", "pre", "code", "img",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+        "b",
+        "strong",
+        "em",
+        "i",
+        "a",
+        "ul",
+        "ol",
+        "blockquote",
+        "table",
+        "pre",
+        "code",
+        "img",
     ];
     const MORE: [&str; 5] = ["li", "del", "s", "strike", "hr"];
     let lower = html.to_ascii_lowercase();
@@ -69,18 +85,25 @@ fn converter() -> &'static HtmlToMarkdown {
             })
             // Not text: what a page carries besides it.
             .skip_tags(vec!["script", "style", "title", "meta", "head"])
-            .add_handler(vec!["del", "s", "strike"], |h: &dyn Handlers, e: &Element| {
-                let text = children(h, e);
-                let trimmed = text.trim();
-                Some(if trimmed.is_empty() {
-                    text.into()
-                } else {
-                    format!("~~{trimmed}~~").into()
-                })
-            })
+            .add_handler(
+                vec!["del", "s", "strike"],
+                |h: &dyn Handlers, e: &Element| {
+                    let text = children(h, e);
+                    let trimmed = text.trim();
+                    Some(if trimmed.is_empty() {
+                        text.into()
+                    } else {
+                        format!("~~{trimmed}~~").into()
+                    })
+                },
+            )
             // Google Docs wraps all it copies in a `<b style="font-weight:normal">`: not bold.
             .add_handler(vec!["b", "strong"], |h: &dyn Handlers, e: &Element| {
-                let style = e.node.attr("style").map(|s| s.to_string()).unwrap_or_default();
+                let style = e
+                    .node
+                    .attr("style")
+                    .map(|s| s.to_string())
+                    .unwrap_or_default();
                 let plain = style
                     .replace(' ', "")
                     .split(';')
@@ -177,7 +200,8 @@ mod tests {
 
     #[test]
     fn a_web_page_becomes_markdown() {
-        let html = "<meta charset='utf-8'><h2>Piano</h2><p>Un <b>grassetto</b>, un <em>corsivo</em>, \
+        let html =
+            "<meta charset='utf-8'><h2>Piano</h2><p>Un <b>grassetto</b>, un <em>corsivo</em>, \
             <del>barrato</del> e un <a href=\"https://noteki.app\">link</a>.</p>\
             <ul><li>uno</li><li>due</li></ul><ol><li>primo</li><li>secondo</li></ol>\
             <blockquote><p>citazione</p></blockquote><pre><code>let x = 1;</code></pre><hr>";
@@ -190,7 +214,8 @@ mod tests {
 
     #[test]
     fn a_table_becomes_a_markdown_table() {
-        let html = "<table><tr><th>Nome</th><th>Ruolo</th></tr><tr><td>Ada</td><td>Dev</td></tr></table>";
+        let html =
+            "<table><tr><th>Nome</th><th>Ruolo</th></tr><tr><td>Ada</td><td>Dev</td></tr></table>";
         let out = md(html).unwrap();
         assert!(out.contains("| Nome | Ruolo |"), "{out}");
         assert!(out.contains("| Ada"), "{out}");

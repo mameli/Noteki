@@ -133,11 +133,26 @@ fn faces() -> &'static std::collections::HashMap<String, ttf_parser::Face<'stati
         OnceLock::new();
     FACES.get_or_init(|| {
         let names = [
-            "AMS-Regular", "Caligraphic-Bold", "Caligraphic-Regular", "Fraktur-Bold",
-            "Fraktur-Regular", "Main-Bold", "Main-BoldItalic", "Main-Italic", "Main-Regular",
-            "Math-BoldItalic", "Math-Italic", "SansSerif-Bold", "SansSerif-Italic",
-            "SansSerif-Regular", "Script-Regular", "Size1-Regular", "Size2-Regular",
-            "Size3-Regular", "Size4-Regular", "Typewriter-Regular",
+            "AMS-Regular",
+            "Caligraphic-Bold",
+            "Caligraphic-Regular",
+            "Fraktur-Bold",
+            "Fraktur-Regular",
+            "Main-Bold",
+            "Main-BoldItalic",
+            "Main-Italic",
+            "Main-Regular",
+            "Math-BoldItalic",
+            "Math-Italic",
+            "SansSerif-Bold",
+            "SansSerif-Italic",
+            "SansSerif-Regular",
+            "Script-Regular",
+            "Size1-Regular",
+            "Size2-Regular",
+            "Size3-Regular",
+            "Size4-Regular",
+            "Typewriter-Regular",
         ];
         names
             .into_iter()
@@ -215,9 +230,23 @@ fn path_data(commands: &[PathCommand], dx: f64, dy: f64) -> String {
             PathCommand::MoveTo { x, y } => write!(d, "M{:.4} {:.4}", x + dx, y + dy),
             PathCommand::LineTo { x, y } => write!(d, "L{:.4} {:.4}", x + dx, y + dy),
             PathCommand::QuadTo { x1, y1, x, y } => {
-                write!(d, "Q{:.4} {:.4} {:.4} {:.4}", x1 + dx, y1 + dy, x + dx, y + dy)
+                write!(
+                    d,
+                    "Q{:.4} {:.4} {:.4} {:.4}",
+                    x1 + dx,
+                    y1 + dy,
+                    x + dx,
+                    y + dy
+                )
             }
-            PathCommand::CubicTo { x1, y1, x2, y2, x, y } => write!(
+            PathCommand::CubicTo {
+                x1,
+                y1,
+                x2,
+                y2,
+                x,
+                y,
+            } => write!(
                 d,
                 "C{:.4} {:.4} {:.4} {:.4} {:.4} {:.4}",
                 x1 + dx,
@@ -253,8 +282,17 @@ pub fn to_svg(f: &Formula) -> String {
     let mut body = String::new();
     for item in &list.items {
         match item {
-            DisplayItem::GlyphPath { x, y, scale, font, char_code, color } => {
-                let Some(ch) = char::from_u32(*char_code) else { continue };
+            DisplayItem::GlyphPath {
+                x,
+                y,
+                scale,
+                font,
+                char_code,
+                color,
+            } => {
+                let Some(ch) = char::from_u32(*char_code) else {
+                    continue;
+                };
                 if let Some(commands) = glyph_outline(font, ch, *scale) {
                     let _ = write!(
                         body,
@@ -264,7 +302,14 @@ pub fn to_svg(f: &Formula) -> String {
                     );
                 }
             }
-            DisplayItem::Line { x, y, width, thickness, color, .. } => {
+            DisplayItem::Line {
+                x,
+                y,
+                width,
+                thickness,
+                color,
+                ..
+            } => {
                 let t = thickness.max(0.04);
                 let _ = write!(
                     body,
@@ -273,21 +318,37 @@ pub fn to_svg(f: &Formula) -> String {
                     y - t / 2.
                 );
             }
-            DisplayItem::Rect { x, y, width, height, color } => {
+            DisplayItem::Rect {
+                x,
+                y,
+                width,
+                height,
+                color,
+            } => {
                 let _ = write!(
                     body,
                     "<rect fill=\"{}\" x=\"{x:.4}\" y=\"{y:.4}\" width=\"{width:.4}\" height=\"{height:.4}\"/>",
                     fill(color)
                 );
             }
-            DisplayItem::Path { x, y, commands, fill: filled, color } => {
+            DisplayItem::Path {
+                x,
+                y,
+                commands,
+                fill: filled,
+                color,
+            } => {
                 let paint = fill(color);
                 let style = if *filled {
                     format!("fill=\"{paint}\"")
                 } else {
                     format!("fill=\"none\" stroke=\"{paint}\" stroke-width=\"0.04\"")
                 };
-                let _ = write!(body, "<path {style} d=\"{}\"/>", path_data(commands, *x, *y));
+                let _ = write!(
+                    body,
+                    "<path {style} d=\"{}\"/>",
+                    path_data(commands, *x, *y)
+                );
             }
         }
     }

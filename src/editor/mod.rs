@@ -8,11 +8,11 @@
 //! and dispatches.
 
 mod clipboard;
-pub mod spelling;
 mod element;
 mod find_bar;
 mod link_completion;
 mod math;
+pub mod spelling;
 mod style;
 
 use std::cell::RefCell;
@@ -656,7 +656,9 @@ impl NoteEditor {
         }
         // Only a word the checker marks, in the language of its paragraph.
         let line = text[..word.start].rfind('\n').map_or(0, |i| i + 1);
-        let line_end = text[word.end..].find('\n').map_or(text.len(), |i| word.end + i);
+        let line_end = text[word.end..]
+            .find('\n')
+            .map_or(text.len(), |i| word.end + i);
         let paragraph = &text[line..line_end];
         let local = word.start - line..word.end - line;
         if !crate::core::editor::spelling::misspelled(
@@ -1447,14 +1449,18 @@ fn context_menu(
         let (e1, e2, w1, w2) = (editor.clone(), editor.clone(), word.clone(), word);
         menu = menu
             .separator()
-            .item(PopupMenuItem::new("Ignore Spelling").on_click(move |_, _, cx| {
-                spelling::ignore(&w1);
-                e1.update(cx, |ed, cx| ed.forget_spelling(cx));
-            }))
-            .item(PopupMenuItem::new("Learn Spelling").on_click(move |_, _, cx| {
-                spelling::learn(&w2);
-                e2.update(cx, |ed, cx| ed.forget_spelling(cx));
-            }))
+            .item(
+                PopupMenuItem::new("Ignore Spelling").on_click(move |_, _, cx| {
+                    spelling::ignore(&w1);
+                    e1.update(cx, |ed, cx| ed.forget_spelling(cx));
+                }),
+            )
+            .item(
+                PopupMenuItem::new("Learn Spelling").on_click(move |_, _, cx| {
+                    spelling::learn(&w2);
+                    e2.update(cx, |ed, cx| ed.forget_spelling(cx));
+                }),
+            )
             .separator();
     }
     menu.menu("Cut", Box::new(Cut))

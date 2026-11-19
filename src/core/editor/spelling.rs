@@ -132,7 +132,9 @@ mod tests {
 
     /// A checker that knows one wrong word: "erore".
     fn check(text: &str) -> Vec<Range<usize>> {
-        text.match_indices("erore").map(|(i, w)| i..i + w.len()).collect()
+        text.match_indices("erore")
+            .map(|(i, w)| i..i + w.len())
+            .collect()
     }
 
     #[test]
@@ -158,7 +160,11 @@ mod tests {
         let text2 = "erore uno\nerore due e tre";
         assert_eq!(misspelled(text2, None, &mut checked, counting).len(), 2);
         assert_eq!(calls.get(), 2, "only the changed line again");
-        assert_eq!(misspelled(text2, Some(3), &mut checked, counting).len(), 1, "the cursor's word left");
+        assert_eq!(
+            misspelled(text2, Some(3), &mut checked, counting).len(),
+            1,
+            "the cursor's word left"
+        );
         assert_eq!(calls.get(), 2);
     }
 

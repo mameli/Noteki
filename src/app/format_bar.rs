@@ -20,16 +20,36 @@ pub type OnAttach = Rc<dyn Fn(&mut Window, &mut App)>;
 
 /// The buttons, by id: their icon, tooltip and Format.
 const BUTTONS: [(&str, AssetIcon, &str, Format); 9] = [
-    ("bold", AssetIcon::Bold, "Bold (⌘B)", Format::Wrap(Wrap::Bold)),
-    ("italic", AssetIcon::Italic, "Italic (⌘I)", Format::Wrap(Wrap::Italic)),
+    (
+        "bold",
+        AssetIcon::Bold,
+        "Bold (⌘B)",
+        Format::Wrap(Wrap::Bold),
+    ),
+    (
+        "italic",
+        AssetIcon::Italic,
+        "Italic (⌘I)",
+        Format::Wrap(Wrap::Italic),
+    ),
     (
         "strikethrough",
         AssetIcon::Strikethrough,
         "Strikethrough (⇧⌘X)",
         Format::Wrap(Wrap::Strikethrough),
     ),
-    ("quote", AssetIcon::TextQuote, "Quote", Format::Lines(LineFormat::Quote)),
-    ("code", AssetIcon::Code, "Inline Code (⌃`)", Format::Wrap(Wrap::Code)),
+    (
+        "quote",
+        AssetIcon::TextQuote,
+        "Quote",
+        Format::Lines(LineFormat::Quote),
+    ),
+    (
+        "code",
+        AssetIcon::Code,
+        "Inline Code (⌃`)",
+        Format::Wrap(Wrap::Code),
+    ),
     ("link", AssetIcon::Link, "Link (⌘K)", Format::Link),
     (
         "numbered",
@@ -37,8 +57,18 @@ const BUTTONS: [(&str, AssetIcon, &str, Format); 9] = [
         "Numbered List",
         Format::Lines(LineFormat::Numbered),
     ),
-    ("bulleted", AssetIcon::List, "Bulleted List", Format::Lines(LineFormat::Bullet)),
-    ("task", AssetIcon::ListTodo, "Task (⌘↩)", Format::Lines(LineFormat::Task)),
+    (
+        "bulleted",
+        AssetIcon::List,
+        "Bulleted List",
+        Format::Lines(LineFormat::Bullet),
+    ),
+    (
+        "task",
+        AssetIcon::ListTodo,
+        "Task (⌘↩)",
+        Format::Lines(LineFormat::Task),
+    ),
 ];
 
 fn divider(cx: &App) -> AnyElement {
@@ -54,21 +84,20 @@ fn divider(cx: &App) -> AnyElement {
 /// way of the text's start.
 pub fn format_bar(on_format: OnFormat, on_attach: Option<OnAttach>, cx: &App) -> AnyElement {
     let headings = on_format.clone();
-    let heading = Button::new("format-bar-heading")
-        .icon(Icon::new(AssetIcon::Heading))
-        .xsmall()
-        .ghost()
-        .tooltip("Heading")
-        .dropdown_menu(move |menu, _, _| {
-            (1..=6u8).fold(menu, |menu, level| {
-                let on = headings.clone();
-                menu.item(
-                    PopupMenuItem::new(format!("Heading {level}")).on_click(move |_, w, cx| {
-                        on(Format::Lines(LineFormat::Heading(level)), w, cx)
-                    }),
-                )
-            })
-        });
+    let heading =
+        Button::new("format-bar-heading")
+            .icon(Icon::new(AssetIcon::Heading))
+            .xsmall()
+            .ghost()
+            .tooltip("Heading")
+            .dropdown_menu(move |menu, _, _| {
+                (1..=6u8).fold(menu, |menu, level| {
+                    let on = headings.clone();
+                    menu.item(PopupMenuItem::new(format!("Heading {level}")).on_click(
+                        move |_, w, cx| on(Format::Lines(LineFormat::Heading(level)), w, cx),
+                    ))
+                })
+            });
     let button = |(id, icon, tip, format): (&'static str, AssetIcon, &'static str, Format)| {
         let on = on_format.clone();
         Button::new(format!("format-bar-{id}"))

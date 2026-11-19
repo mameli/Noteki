@@ -100,10 +100,14 @@ fn with_figures(text: &str) -> (String, Vec<String>) {
     while i < all.len() {
         if let Some(block) = blocks.next_if(|b| b.lines.start == i) {
             let drawn = match &block.source {
-                FigureSource::Math(tex) => crate::core::math::typeset(tex, true)
-                    .map(|f| format!("<div class=\"math\">{}</div>", crate::core::math::to_svg(&f))),
-                FigureSource::Mermaid(src) => crate::core::diagram::render(src, false).map(
-                    |(svg, w, h)| {
+                FigureSource::Math(tex) => crate::core::math::typeset(tex, true).map(|f| {
+                    format!(
+                        "<div class=\"math\">{}</div>",
+                        crate::core::math::to_svg(&f)
+                    )
+                }),
+                FigureSource::Mermaid(src) => {
+                    crate::core::diagram::render(src, false).map(|(svg, w, h)| {
                         // At its own size: the editor draws it twice as large.
                         let svg = svg.replacen(
                             &format!("width=\"{}\" height=\"{}\"", w * 2., h * 2.),
@@ -111,8 +115,8 @@ fn with_figures(text: &str) -> (String, Vec<String>) {
                             1,
                         );
                         format!("<div class=\"diagram\">{svg}</div>")
-                    },
-                ),
+                    })
+                }
             };
             if let Some(html) = drawn {
                 out.push_str(&format!("\n{}\n\n", placeholder(figures.len())));
@@ -286,9 +290,15 @@ mod tests {
     fn formulas_and_diagrams_are_drawn_in_the_page() {
         let h = html("Energia $E=mc^2$ qui.\n\n$$\n\\frac{a}{b}\n$$\n\n```mermaid\ngraph TD\nA-->B\n```\n\n`$x$` resta");
         assert_eq!(h.matches("<svg class=\"formula\"").count(), 2, "{h}");
-        assert!(h.contains("<div class=\"math\"><svg"), "the block centred: {h}");
+        assert!(
+            h.contains("<div class=\"math\"><svg"),
+            "the block centred: {h}"
+        );
         assert!(h.contains("<div class=\"diagram\"><svg"), "{h}");
-        assert!(!h.contains("NOTEKIFIGURE") && !h.contains("graph TD"), "{h}");
+        assert!(
+            !h.contains("NOTEKIFIGURE") && !h.contains("graph TD"),
+            "{h}"
+        );
         assert!(h.contains("<code>$x$</code>"), "code stays code: {h}");
     }
 

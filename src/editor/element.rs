@@ -1666,16 +1666,21 @@ impl Element for EditorElement {
             let dot = px(2.);
             let mut x = r.left();
             while x + dot <= r.right() {
-                window.paint_quad(gpui_kit::fill(
-                    Bounds::new(point(x, y), size(dot, dot)),
-                    red,
-                ).corner_radii(px(1.)));
+                window.paint_quad(
+                    gpui_kit::fill(Bounds::new(point(x, y), size(dot, dot)), red)
+                        .corner_radii(px(1.)),
+                );
                 x += dot * 2.;
             }
         }
         // Focus Mode: every line but the cursor's paragraph under a veil of
         // the background.
-        if focus_mode && layout.lines.last().is_some_and(|l| l.range.end == input.text.len()) {
+        if focus_mode
+            && layout
+                .lines
+                .last()
+                .is_some_and(|l| l.range.end == input.text.len())
+        {
             let text = &input.text;
             let paragraph = crate::core::editor::lines::paragraph_of(
                 layout.lines.iter().map(|l| &text[l.range.clone()]),
