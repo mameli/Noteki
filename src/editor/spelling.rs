@@ -200,6 +200,9 @@ mod tests {
         let _one = CHECKER.lock().unwrap_or_else(|e| e.into_inner());
         let it = "Questo testo ha un errrore evidente. This sentence is English.";
         let word = it.find("errrore").unwrap();
+        // The Mac's spell service finds languages once it is up: the first
+        // ask after a new build may get the Mac's own language only.
+        let _ = correction(it, word..word + 7);
         assert_eq!(correction(it, word..word + 7).as_deref(), Some("errore"));
         let en = "This sentense is fine";
         assert_eq!(correction(en, 5..13).as_deref(), Some("sentence"));
