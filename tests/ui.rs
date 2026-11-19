@@ -2625,6 +2625,41 @@ fn the_palette_runs_every_menu_command_on_the_note(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
+fn every_menu_item_has_something_to_do_with_a_note_open(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    cx.update(noteki::app::set_app_menus); // Quit, Hide…: the app's own
+    editor_with(cx, &f, "testo", 0);
+    fn walk(menu: &gpui_kit::Menu, out: &mut Vec<(String, Box<dyn gpui_kit::Action>)>) {
+        for item in &menu.items {
+            match item {
+                gpui_kit::MenuItem::Action { name, action, .. } => {
+                    out.push((name.to_string(), action.boxed_clone()))
+                }
+                gpui_kit::MenuItem::Submenu(sub) => walk(sub, out),
+                _ => {}
+            }
+        }
+    }
+    let mut all = Vec::new();
+    for menu in noteki::app::app_menus(&Default::default()) {
+        walk(&menu, &mut all);
+    }
+    let in_window: Vec<bool> = ui(cx, &f, |window, cx| {
+        all.iter()
+            .map(|(_, a)| window.is_action_available(a.as_ref(), cx))
+            .collect()
+    });
+    let greyed: Vec<String> = cx.update(|cx| {
+        all.iter()
+            .zip(in_window)
+            .filter(|((_, a), here)| !here && !cx.is_action_available(a.as_ref()))
+            .map(|((n, _), _)| n.clone())
+            .collect()
+    });
+    assert!(greyed.is_empty(), "greyed in the menus: {greyed:?}");
+}
+
+#[gpui_kit::test]
 fn the_name_prompt_takes_the_keyboard_at_once(cx: &mut TestAppContext) {
     let f = fixture(cx);
     editor_with(cx, &f, "", 0);

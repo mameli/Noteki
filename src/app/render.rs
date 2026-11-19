@@ -131,6 +131,7 @@ impl Render for NotekiApp {
                 cx.listener(|this, _: &ToggleFocusMode, w, cx| this.toggle_focus_mode(w, cx)),
             )
             .on_action(cx.listener(|this, _: &ExportPdfAction, _, cx| this.export_pdf(cx)))
+            .on_action(cx.listener(|this, _: &ExportHtmlAction, _, cx| this.export_html(cx)))
             .on_action(
                 cx.listener(|this, _: &ToggleCheckSpelling, w, cx| {
                     this.toggle_check_spelling(w, cx)
