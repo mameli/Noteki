@@ -2647,6 +2647,35 @@ fn quick_open_takes_the_keyboard_at_once(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
+fn the_caret_stops_blinking_when_nothing_is_typed(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    editor_with(cx, &f, "testo", 5);
+    type_in_editor(cx, &f, "a");
+    let shown = |cx: &mut TestAppContext| app(cx, &f, |a, _, cx| a.editor().read(cx).caret_shown());
+    let mut tick = |cx: &mut TestAppContext| {
+        cx.executor().advance_clock(Duration::from_millis(500));
+        cx.run_until_parked();
+        shown(cx)
+    };
+    let first: Vec<bool> = (0..4).map(|_| tick(cx)).collect();
+    assert!(first.contains(&false), "it blinks after typing: {first:?}");
+    for _ in 0..30 {
+        tick(cx);
+    }
+    let idle: Vec<bool> = (0..6).map(|_| tick(cx)).collect();
+    assert!(
+        idle.iter().all(|&s| s),
+        "then stays on, drawing nothing: {idle:?}"
+    );
+    type_in_editor(cx, &f, "b");
+    let again: Vec<bool> = (0..4).map(|_| tick(cx)).collect();
+    assert!(
+        again.contains(&false),
+        "and blinks again at the next key: {again:?}"
+    );
+}
+
+#[gpui_kit::test]
 fn the_command_palette_takes_the_keyboard_at_once(cx: &mut TestAppContext) {
     let f = fixture(cx);
     editor_with(cx, &f, "", 0);

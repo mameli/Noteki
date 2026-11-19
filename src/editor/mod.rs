@@ -63,6 +63,10 @@ use element::{EditorElement, Layout, ShapeCache};
 
 const CONTEXT: &str = "NoteEditor";
 const BLINK: Duration = Duration::from_millis(500);
+/// The caret blinks this many times after the last key or click, then stays
+/// on (as GTK's after 10 seconds): an idle window draws nothing, and macOS
+/// gives back the 90 MB it keeps for a window that draws all the time.
+const BLINKS_AFTER_INPUT: u8 = 20;
 const EDGE_SCROLL_TICK: Duration = Duration::from_millis(16);
 /// Above this size Live preview is off: the Note is drawn as plain text.
 pub const LIVE_PREVIEW_MAX_BYTES: usize = 1_000_000;
@@ -266,6 +270,8 @@ pub struct NoteEditor {
     drag: Option<Drag>,
     _edge_scroll: Option<Task<()>>,
     cursor_on: bool,
+    /// Blinks to go before the caret stays on (`BLINKS_AFTER_INPUT`).
+    blinks_left: u8,
     /// Scroll the cursor into view at the next frame (keys and edits, not clicks).
     reveal: bool,
     /// The pointer is over a link that a click would open.
@@ -346,8 +352,15 @@ impl NoteEditor {
         let blink = cx.spawn_in(window, async move |this, cx| loop {
             cx.background_executor().timer(BLINK).await;
             let alive = this.update_in(cx, |ed, window, cx| {
-                if ed.focus_handle.is_focused(window) {
+                if !ed.focus_handle.is_focused(window) {
+                    return;
+                }
+                if ed.blinks_left > 0 {
+                    ed.blinks_left -= 1;
                     ed.cursor_on = !ed.cursor_on;
+                    cx.notify();
+                } else if !ed.cursor_on {
+                    ed.cursor_on = true;
                     cx.notify();
                 }
             });
@@ -365,6 +378,7 @@ impl NoteEditor {
             drag: None,
             _edge_scroll: None,
             cursor_on: true,
+            blinks_left: BLINKS_AFTER_INPUT,
             reveal: false,
             over_clickable: false,
             find: None,
@@ -406,6 +420,11 @@ impl NoteEditor {
 
     pub fn text(&self) -> &str {
         self.buf.text()
+    }
+
+    /// Whether the caret is drawn now (it blinks for a while after input).
+    pub fn caret_shown(&self) -> bool {
+        self.cursor_on
     }
 
     pub fn cursor(&self) -> usize {
@@ -1034,6 +1053,7 @@ impl NoteEditor {
 
     fn wake(&mut self, cx: &mut Context<Self>) {
         self.cursor_on = true;
+        self.blinks_left = BLINKS_AFTER_INPUT;
         self.reveal = true;
         cx.notify();
     }
