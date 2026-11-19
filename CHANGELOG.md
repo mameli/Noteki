@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.0 — unreleased
+## 0.4.0 — 19 November 2026
 
 Noteki is rewritten in Rust, drawn by GPUI: no web page inside, the same Notes, Vault and shortcuts.
 
@@ -10,6 +10,8 @@ Noteki is rewritten in Rust, drawn by GPUI: no web page inside, the same Notes, 
 - *Settings* is one page, with *Updates* and *Support*.
 - Return in a list writes the next item (`2.` after `1.`, the numbers below moving on; the same bullet, a new task, a quote); Return on an empty item ends the list, ⇧Return goes to a new line without one.
 - *Files* has *New Note*, *New Folder* and *Expand All* / *Collapse All* beside the panes' buttons; an empty folder is a folder, not a Note that is not found.
+- The Command palette (⇧⌘P) runs every command of the menus, with its shortcut and its tick, and the theme and interface size besides; *View → Format Bar* shows or hides the Format bar.
+- ↑ and ↓ in a table stay in their column, over the header's rule and past cells that wrap.
 - Noteki also builds on Linux (Wayland or X11), from the same code.
 - Everything 0.3 had is here too: *Export as PDF…* and *Print…* (⌘P), with formulas and diagrams drawn in the page (in *Export as HTML…* too), spelling checked and corrected, *Focus Mode* and *Typewriter Mode*, the Format bar, the interface size, text copied with its formatting pasted as Markdown, *Open Vault in Ghostty* (or the terminal installed).
 
