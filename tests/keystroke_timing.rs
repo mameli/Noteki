@@ -65,7 +65,11 @@ fn keystroke_timing(cx: &mut TestAppContext) {
     cx.update_window(window, |_, w, cx| w.render_frame(cx))
         .unwrap();
     println!("text: {} KB", big.len() / 1000);
-    let n = 30;
+    // NOTEKI_KT_KEYS=2000 types for long enough to profile it (`sample`).
+    let n: usize = std::env::var("NOTEKI_KT_KEYS")
+        .ok()
+        .and_then(|k| k.parse().ok())
+        .unwrap_or(30);
     let t = Instant::now();
     for _ in 0..n {
         cx.update_window(window, |_, w, cx| {

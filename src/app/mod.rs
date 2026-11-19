@@ -198,6 +198,8 @@ pub fn open_noteki_window(
 
 /// SPEC › Saving: about one second after the last change.
 pub const AUTOSAVE_DELAY: Duration = Duration::from_millis(1000);
+/// How long typing stops before the window around the editor is drawn again.
+const TYPING_PAUSE: Duration = Duration::from_millis(150);
 /// File-system events are handled once they have been quiet for this long,
 /// so a burst (an atomic write, a git checkout) is one reload.
 pub const FS_SETTLE: Duration = Duration::from_millis(250);
@@ -451,6 +453,8 @@ pub struct NotekiApp {
     pending_fs: HashSet<PathBuf>,
     last_fs_event: Option<Instant>,
     autosave: Option<Task<()>>,
+    /// The window drawn again once typing pauses (`after_text_change`).
+    typing_redraw: Option<Task<()>>,
     settings_window: Option<gpui_kit::AnyWindowHandle>,
     /// This view's window.
     window: gpui_kit::AnyWindowHandle,
@@ -544,6 +548,7 @@ impl NotekiApp {
             pending_fs: HashSet::new(),
             last_fs_event: None,
             autosave: None,
+            typing_redraw: None,
             settings_window: None,
             window: window.window_handle(),
             _subscriptions: subscriptions,
@@ -1766,7 +1771,13 @@ impl NotekiApp {
     fn after_text_change(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.refresh_outline();
         self.schedule_autosave(window, cx);
-        cx.notify();
+        // The editor draws each key itself; the rest of the window (Outline,
+        // the words in the status bar) is drawn again at a pause in typing,
+        // not at every key: laying out the whole window took a quarter of it.
+        self.typing_redraw = Some(cx.spawn_in(window, async move |this, cx| {
+            cx.background_executor().timer(TYPING_PAUSE).await;
+            let _ = this.update(cx, |_, cx| cx.notify());
+        }));
     }
 
     fn schedule_autosave(&mut self, window: &mut Window, cx: &mut Context<Self>) {
