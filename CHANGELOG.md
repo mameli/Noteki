@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.1 — unreleased
+## 0.4.1 — 19 November 2026
 
 Lighter and faster: half the memory at rest, typing in long Notes takes half the time.
 
