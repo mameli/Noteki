@@ -221,6 +221,24 @@ impl Layout {
             .saturating_sub(1)
     }
 
+    /// A table's delimiter row, drawn as a rule: ↑ and ↓ go over it, to the
+    /// row past it (its y, above for `up`), as over the line it is.
+    pub(super) fn past_rule(&self, offset: usize, up: bool) -> Option<Pixels> {
+        let i = self.line_of(offset);
+        let Some(Decoration::Table(row)) = &self.lines.get(i)?.decoration else {
+            return None;
+        };
+        if row.kind != RowKind::Delimiter {
+            return None;
+        }
+        let top = self.origin.y + self.top_of(i);
+        Some(if up {
+            top - px(1.)
+        } else {
+            top + self.lines[i].height() + px(1.)
+        })
+    }
+
     /// The caret's rectangle at `offset`, as tall as its row. `None` when the
     /// layout is of another text (the text changed since the last frame).
     pub(super) fn caret(&self, text: &str, offset: usize) -> Option<Bounds<Pixels>> {

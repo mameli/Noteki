@@ -1104,17 +1104,24 @@ impl NoteEditor {
             return;
         };
         let x = *self.goal_x.get_or_insert(caret.origin.x);
-        let target = if up {
+        let text = self.buf.text();
+        let mut target = if up {
             if caret.top() <= layout.text_top() + px(0.5) {
                 0
             } else {
-                layout.offset_for_point(self.buf.text(), point(x, caret.top() - px(1.)))
+                layout.offset_for_point(text, point(x, caret.top() - px(1.)))
             }
         } else if caret.bottom() >= layout.text_bottom() - px(0.5) {
-            self.buf.text().len()
+            text.len()
         } else {
-            layout.offset_for_point(self.buf.text(), point(x, caret.bottom() + px(1.)))
+            layout.offset_for_point(text, point(x, caret.bottom() + px(1.)))
         };
+        // Over a table's rule to the row past it, unless already on the rule.
+        if layout.past_rule(head, up).is_none() {
+            if let Some(y) = layout.past_rule(target, up) {
+                target = layout.offset_for_point(text, point(x, y));
+            }
+        }
         self.buf.move_to(target, extend);
         self.wake(cx);
     }

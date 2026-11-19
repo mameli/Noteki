@@ -1959,6 +1959,31 @@ fn a_table_is_drawn_as_a_grid_in_place(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
+fn down_and_up_go_to_the_same_place_in_the_cell_below_and_above(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let text = "testo\n| Nome | Tipo | Stato |\n| :--- | :---: | ---: |\n| Markdown | Testo | OK |\n| Swift | Codice | TODO |\nfine";
+    let at = |s: &str| text.find(s).unwrap();
+    editor_with(cx, &f, text, at("Nome") + 2);
+    let cursor = |cx: &mut TestAppContext| app(cx, &f, |a, _, cx| a.editor().read(cx).cursor());
+    press(cx, &f, "down");
+    frame(cx, &f);
+    assert_eq!(
+        cursor(cx),
+        at("Markdown") + 2,
+        "from the header row, over the rule"
+    );
+    press(cx, &f, "down");
+    frame(cx, &f);
+    assert_eq!(cursor(cx), at("Swift") + 2);
+    press(cx, &f, "up");
+    frame(cx, &f);
+    assert_eq!(cursor(cx), at("Markdown") + 2);
+    press(cx, &f, "up");
+    frame(cx, &f);
+    assert_eq!(cursor(cx), at("Nome") + 2);
+}
+
+#[gpui_kit::test]
 fn a_long_cell_being_edited_shows_all_its_text_in_its_column(cx: &mut TestAppContext) {
     let f = fixture(cx);
     let long =
