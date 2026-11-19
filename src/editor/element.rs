@@ -101,6 +101,9 @@ pub(super) enum Figure {
     Formula(Rc<MathPaint>),
     /// A `mermaid` block's diagram, centred.
     Diagram(Rc<Diagram>),
+    /// A Properties list drawn on its key's row: each item a chip, at its
+    /// place from the line's top-left, its width and text.
+    Chips(Rc<[(Point<Pixels>, Pixels, gpui_kit::ShapedLine)]>),
 }
 
 /// A formula drawn in a line's text, over the room its insert takes.
@@ -800,6 +803,31 @@ fn paint_figure(
     let Some((figure, size)) = &line.figure else {
         return;
     };
+    if let Figure::Chips(chips) = figure {
+        let size_ = input.font_size * CHIP_SCALE;
+        let (pad, chip_h) = (size_ * 0.45, size_ * 1.45);
+        let p = &input.palette;
+        let bg = gpui_kit::hsla(p.syntax.h, p.syntax.s, p.syntax.l, 0.14);
+        let top = top + line.text_height;
+        for (at, w, shaped) in chips.iter() {
+            let origin = point(left + at.x, top + at.y);
+            window.paint_quad(
+                fill(Bounds::new(origin, gpui_kit::size(*w, chip_h)), bg).corner_radii(px(5.)),
+            );
+            let clip = Bounds::new(origin, gpui_kit::size(*w - pad, chip_h));
+            window.with_content_mask(Some(ContentMask { bounds: clip }), |window| {
+                let _ = shaped.paint(
+                    point(origin.x + pad, origin.y),
+                    chip_h,
+                    TextAlign::Left,
+                    None,
+                    window,
+                    cx,
+                );
+            });
+        }
+        return;
+    }
     let room = width - line.indent;
     let pad = input.font_size * FORMULA_PAD;
     let centred = left + line.indent + ((room - size.width) / 2.).max(px(0.));
@@ -826,6 +854,7 @@ fn paint_figure(
         Figure::Formula(paint) => {
             paint.paint(point(centred, y + pad), input.palette.text, window, cx);
         }
+        Figure::Chips(_) => {}
         Figure::Diagram(d) => {
             let bounds = Bounds::new(
                 point(centred, y + pad),
@@ -1033,6 +1062,54 @@ fn table_cells(
     cells.into()
 }
 
+/// A Properties list's items as chips, left to right from `left` and
+/// wrapping before `right`, each row as tall as a chip and a gap; the first
+/// row centred on the key's. The figure and its size from the row's top-left.
+fn property_chips(
+    items: &[String],
+    input: &ShapeInput,
+    left: Pixels,
+    right: Pixels,
+    line_height: Pixels,
+    ts: &WindowTextSystem,
+) -> (Figure, Size<Pixels>) {
+    let size_ = input.font_size * CHIP_SCALE;
+    let pad = size_ * 0.45;
+    let chip_h = size_ * 1.45;
+    let row_h = chip_h + px(4.);
+    let first = (line_height - chip_h) / 2.;
+    let (mut x, mut y) = (left, first);
+    let mut chips = Vec::with_capacity(items.len());
+    for item in items {
+        let run = text_run(
+            item.len(),
+            &input.font,
+            input.palette.text,
+            Default::default(),
+        );
+        let shaped = ts.shape_line(item.clone().into(), size_, &[run], None);
+        let w = (shaped.width + pad * 2.).min(right - left);
+        if x > left && x + w > right {
+            x = left;
+            y += row_h;
+        }
+        chips.push((point(x, y), w, shaped));
+        x += w + px(4.);
+    }
+    // A figure is drawn under its row's text: the chips from the row's top.
+    let height = (y + chip_h + first).max(line_height);
+    for (at, _, _) in &mut chips {
+        at.y -= line_height;
+    }
+    (
+        Figure::Chips(chips.into()),
+        size(right, height - line_height),
+    )
+}
+
+/// A Properties list's chips, against the text's size.
+const CHIP_SCALE: f32 = 0.88;
+
 fn shape_line(
     input: &ShapeInput,
     range: Range<usize>,
@@ -1048,7 +1125,19 @@ fn shape_line(
         let cells = match p {
             PropertyLine::Row { key, value, .. } => vec![key.clone(), value.clone()],
             PropertyLine::Item { value, .. } => vec![value.start..value.start, value.clone()],
-            PropertyLine::Top | PropertyLine::Bottom => Vec::new(),
+            PropertyLine::List { key, .. } => vec![key.clone(), key.end..key.end],
+            PropertyLine::Top | PropertyLine::Bottom | PropertyLine::Folded => Vec::new(),
+        };
+        let figure = match p {
+            PropertyLine::List { items, .. } => Some(property_chips(
+                items,
+                input,
+                key_col + CELL_PAD,
+                width - CELL_PAD,
+                line_height,
+                ts,
+            )),
+            _ => None,
         };
         let cells = (!cells.is_empty()).then(|| {
             let row = TableRow {
@@ -1070,7 +1159,7 @@ fn shape_line(
             indent: px(0.),
             decoration: style.decoration.clone(),
             text_height: line_height,
-            figure: None,
+            figure,
             inserts: Rc::default(),
             formulas: Rc::default(),
             cells,

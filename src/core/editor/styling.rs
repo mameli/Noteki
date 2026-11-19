@@ -5,7 +5,7 @@ use std::ops::Range;
 use std::rc::Rc;
 
 use crate::core::diagram::Diagram;
-use crate::core::editor::properties::{property_lines, PropertyLine};
+use crate::core::editor::properties::{fold_lists, property_lines, PropertyLine};
 use crate::core::editor::table::{tables, RowKind, TableRow};
 use crate::core::markdown::{
     callout_marks, image_embed, is_setext_candidate, lines, list_item, parse_atx_heading,
@@ -247,7 +247,7 @@ pub fn style_lines(text: &str, spans: &[MdSpan], cx: Context) -> Vec<LineStyle> 
     }
     comment_lines(&lines, &mut clipped);
     let mut props: Vec<Option<PropertyLine>> = vec![None; lines.len()];
-    for (i, p) in property_lines(text, &lines) {
+    for (i, p) in fold_lists(&lines, property_lines(text, &lines)) {
         props[i] = Some(p);
     }
     let callouts = callouts(&lines);
@@ -292,11 +292,21 @@ pub fn style_lines(text: &str, spans: &[MdSpan], cx: Context) -> Vec<LineStyle> 
             if let Some(callout) = callouts[i].clone() {
                 style.decoration = Some(callout);
             }
+            if let Some(PropertyLine::Folded) = props[i] {
+                return LineStyle {
+                    decoration: Some(Decoration::Folded),
+                    hidden: vec![0..line.text.len()],
+                    ..LineStyle::default()
+                };
+            }
             if let Some(p) = props[i].clone() {
                 // Only the keys and values show, in their columns; the Tags as chips.
                 let len = line.text.len();
                 style.hidden = match &p {
-                    PropertyLine::Top | PropertyLine::Bottom => vec![0..len],
+                    PropertyLine::Top | PropertyLine::Bottom | PropertyLine::Folded => {
+                        vec![0..len]
+                    }
+                    PropertyLine::List { key, .. } => outside(std::slice::from_ref(key), len, &[]),
                     PropertyLine::Row {
                         key, value, marks, ..
                     } => outside(&[key.clone(), value.clone()], len, marks),

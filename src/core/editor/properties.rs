@@ -24,6 +24,16 @@ pub enum PropertyLine {
     Item { value: Range<usize>, tag: bool },
     /// The closing `---`: the table's bottom.
     Bottom,
+    /// A key whose list (one item per line, not `tags`) is drawn side by
+    /// side on its row, as chips wrapping in the value's column, while the
+    /// cursor is out of the Frontmatter: `participants:` and fifty names
+    /// under it. The items as shown, without their quotes.
+    List {
+        key: Range<usize>,
+        items: Vec<String>,
+    },
+    /// A line of a `List` drawn on its key's row: not drawn.
+    Folded,
 }
 
 fn trimmed(line: &str, from: usize) -> Range<usize> {
@@ -134,6 +144,55 @@ pub fn property_lines(text: &str, lines: &[Line]) -> Vec<(usize, PropertyLine)> 
     out
 }
 
+/// `rows` with each list written one item per line under its key (not
+/// `tags`, which has its chips) drawn on the key's row: the SPEC's one place
+/// where the Properties change height on entering, as a long list one item
+/// per line is too tall to read. The lines from the key to its last item
+/// (blank lines and comments between them too) fold.
+pub fn fold_lists(lines: &[Line], rows: Vec<(usize, PropertyLine)>) -> Vec<(usize, PropertyLine)> {
+    let mut out: Vec<(usize, PropertyLine)> = Vec::with_capacity(rows.len());
+    let mut i = 0;
+    while i < rows.len() {
+        let (at, row) = &rows[i];
+        let list_key = match row {
+            PropertyLine::Row {
+                key, value, tags, ..
+            } if value.is_empty() && tags.is_empty() && &lines[*at].text[key.clone()] != "tags" => {
+                Some(key.clone())
+            }
+            _ => None,
+        };
+        let items = rows[i + 1..]
+            .iter()
+            .take_while(|(_, r)| matches!(r, PropertyLine::Item { tag: false, .. }))
+            .count();
+        let Some(key) = list_key.filter(|_| items > 0) else {
+            out.push(rows[i].clone());
+            i += 1;
+            continue;
+        };
+        let shown: Vec<String> = rows[i + 1..=i + items]
+            .iter()
+            .filter_map(|(j, r)| match r {
+                PropertyLine::Item { value, .. } => {
+                    let v = &lines[*j].text[value.clone()];
+                    let unquoted = [('"', '"'), ('\'', '\'')]
+                        .iter()
+                        .find_map(|(a, b)| v.strip_prefix(*a)?.strip_suffix(*b))
+                        .unwrap_or(v);
+                    (!unquoted.is_empty()).then(|| unquoted.to_string())
+                }
+                _ => None,
+            })
+            .collect();
+        out.push((*at, PropertyLine::List { key, items: shown }));
+        let last = rows[i + items].0;
+        out.extend((at + 1..=last).map(|j| (j, PropertyLine::Folded)));
+        i += items + 1;
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -192,5 +251,40 @@ mod tests {
         )
         .is_empty());
         assert!(property_lines("niente", &lines("niente")).is_empty());
+    }
+
+    #[test]
+    fn a_list_under_its_key_is_drawn_on_the_key_s_row() {
+        let text = "---\nparticipants:\n  - \"Anna Rossi\"\n\n  - Bruno\n  - ''\ntags:\n  - a\nempty:\ntitle: x\n---\n";
+        let l = lines(text);
+        let rows = fold_lists(&l, property_lines(text, &l));
+        match &rows[1] {
+            (1, PropertyLine::List { key, items }) => {
+                assert_eq!(&l[1].text[key.clone()], "participants");
+                assert_eq!(items, &vec!["Anna Rossi".to_string(), "Bruno".into()]);
+            }
+            other => panic!("{other:?}"),
+        }
+        let folded: Vec<usize> = rows
+            .iter()
+            .filter(|(_, r)| *r == PropertyLine::Folded)
+            .map(|(i, _)| *i)
+            .collect();
+        assert_eq!(
+            folded,
+            vec![2, 3, 4, 5],
+            "the items and the blank line between"
+        );
+        assert!(
+            matches!(
+                rows.iter().find(|(i, _)| *i == 7),
+                Some((_, PropertyLine::Item { tag: true, .. }))
+            ),
+            "tags keep their chips"
+        );
+        assert!(matches!(
+            rows.iter().find(|(i, _)| *i == 8),
+            Some((_, PropertyLine::Row { .. }))
+        ));
     }
 }

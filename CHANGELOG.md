@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- A list in the Properties (the participants of a Meeting, not the Tags) is drawn on its key's row, its items side by side and wrapping, as 0.3 drew it; one item per line again when the cursor goes into the Frontmatter.
+
 ## 0.4.1 — 19 November 2026
 
 Lighter and faster: half the memory at rest, typing in long Notes takes half the time.
