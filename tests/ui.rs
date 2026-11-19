@@ -2842,6 +2842,16 @@ fn a_search_result_line_opens_its_note_there(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
+fn the_search_button_puts_the_cursor_in_its_field(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    ui(cx, &f, |window, cx| window.click("pane-search", cx));
+    frame(cx, &f);
+    ui(cx, &f, |window, cx| window.input("what ships", cx));
+    frame(cx, &f);
+    assert_eq!(app(cx, &f, |a, _, _| a.search_results().len()), 1);
+}
+
+#[gpui_kit::test]
 fn the_sidebar_shortcuts_are_the_swift_apps(cx: &mut TestAppContext) {
     use noteki::app::{LeftPane, RightPane};
     let f = fixture(cx);

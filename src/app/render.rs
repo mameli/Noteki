@@ -460,7 +460,11 @@ impl NotekiApp {
                 .small()
                 .tooltip(crate::keys::tooltip(tip));
             let b = if pane == p { b.primary() } else { b.ghost() };
-            b.on_click(cx.listener(move |this, _, w, cx| this.show_left_pane(p, w, cx)))
+            // Search's button gives its field the keyboard, as ⇧⌘F does.
+            b.on_click(cx.listener(move |this, _, w, cx| match p {
+                LeftPane::Search => this.show_search(w, cx),
+                _ => this.show_left_pane(p, w, cx),
+            }))
         };
         // In Files: a new Note, a new folder, and every folder opened or closed.
         let files_actions = (pane == LeftPane::Files && self.vault.is_some()).then(|| {

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- The Search button puts the cursor in the search field, as ⇧⌘F does: you can type right away.
+
 ## 0.4.2 — 19 November 2026
 
 The participants of a Meeting in a few lines, and typing that draws only the text.
