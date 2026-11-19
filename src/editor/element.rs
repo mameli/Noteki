@@ -815,11 +815,12 @@ fn paint_figure(
                         window.paint_image(bounds, bounds, Corners::all(px(4.)), image, 0, false);
                 }
                 Some(Err(_)) => {}
+                // GPUI draws the editor again once it is loaded (`use_asset`
+                // notifies the views that asked). Asking a frame at every
+                // frame until then made macOS keep five window-sized
+                // surfaces instead of two, 49 MB more.
                 None => {
                     window.paint_quad(fill(bounds, input.palette.code_bg).corner_radii(px(4.)));
-                    // Frames until it is ready, so it shows as soon as it is, whatever
-                    // GPUI notifies (only while an image in view is loading).
-                    window.request_animation_frame();
                 }
             }
         }
@@ -834,10 +835,9 @@ fn paint_figure(
             let image = diagrams
                 .get(&d.id)
                 .and_then(|i| i.clone().use_render_image(window, cx));
+            // Drawn again once rasterized, as an image file (above).
             if let Some(image) = image {
                 let _ = window.paint_image(bounds, bounds, Corners::default(), image, 0, false);
-            } else {
-                window.request_animation_frame();
             }
         }
     }
