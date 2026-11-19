@@ -55,9 +55,13 @@ fn not_prose(line: &markdown::Line) -> Vec<Range<usize>> {
 
 /// The misspelled words of `text` (byte ranges) as `check` finds them in its
 /// prose, `checked` keeping what each line gave; none touching `cursor`.
+/// While `typing`, the cursor's line is not checked (nor marked): it changes
+/// at every key, and the Mac's checker took a sixth of each; it is at the
+/// first pause.
 pub fn misspelled(
     text: &str,
     cursor: Option<usize>,
+    typing: bool,
     checked: &mut Checked,
     check: impl Fn(&str) -> Vec<Range<usize>>,
 ) -> Vec<Range<usize>> {
@@ -71,6 +75,11 @@ pub fn misspelled(
         lines
             .iter()
             .filter(|l| !checked.contains_key(l.text) && seen.insert(l.text))
+            .filter(|l| {
+                let being_typed =
+                    typing && cursor.is_some_and(|c| l.start <= c && c <= l.start + l.text.len());
+                !being_typed
+            })
             .collect()
     };
     if !new.is_empty() {
@@ -152,7 +161,7 @@ mod tests {
     fn only_the_prose_is_checked() {
         let text = "---\ntags: erore\n---\nUn erore qui `erore` [[erore]] #erore %%erore%% $erore$\n```\nerore\n```\nhttps://x.y/erore e [erore](https://erore.it)";
         let mut checked = Checked::new();
-        let found = misspelled(text, None, &mut checked, check);
+        let found = misspelled(text, None, false, &mut checked, check);
         let first = text.find("Un erore").unwrap() + 3;
         assert_eq!(found, vec![first..first + 5]);
     }
@@ -166,13 +175,19 @@ mod tests {
         };
         let mut checked = Checked::new();
         let text = "erore uno\nerore due";
-        assert_eq!(misspelled(text, None, &mut checked, counting).len(), 2);
+        assert_eq!(
+            misspelled(text, None, false, &mut checked, counting).len(),
+            2
+        );
         assert_eq!(calls.get(), 1, "both lines in one call");
         let text2 = "erore uno\nerore due e tre";
-        assert_eq!(misspelled(text2, None, &mut checked, counting).len(), 2);
+        assert_eq!(
+            misspelled(text2, None, false, &mut checked, counting).len(),
+            2
+        );
         assert_eq!(calls.get(), 2, "only the changed line again");
         assert_eq!(
-            misspelled(text2, Some(3), &mut checked, counting).len(),
+            misspelled(text2, Some(3), false, &mut checked, counting).len(),
             1,
             "the cursor's word left"
         );
@@ -199,5 +214,24 @@ mod tests {
             &text[sentence_around(text, w..w + 8)],
             " This sentense is wrong."
         );
+    }
+
+    #[test]
+    fn the_line_being_typed_is_checked_at_the_pause() {
+        let text = "Prima riga erorre\n\nSeconda erorre qui";
+        let asked = std::cell::RefCell::new(Vec::new());
+        let check = |t: &str| {
+            asked.borrow_mut().push(t.to_string());
+            t.match_indices("erorre")
+                .map(|(i, w)| i..i + w.len())
+                .collect::<Vec<_>>()
+        };
+        let mut checked = Checked::default();
+        let cursor = Some(text.len() - 1);
+        let typing = misspelled(text, cursor, true, &mut checked, check);
+        assert_eq!(typing.len(), 1, "only the other line: {typing:?}");
+        assert!(!asked.borrow().iter().any(|t| t.contains("Seconda")));
+        let paused = misspelled(text, cursor, false, &mut checked, check);
+        assert_eq!(paused.len(), 2);
     }
 }

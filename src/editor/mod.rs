@@ -292,7 +292,7 @@ pub struct NoteEditor {
     /// The misspelled words each line gave, and those marked in the last
     /// frame with the `(revision, cursor)` they were found at.
     spell_checked: crate::core::editor::spelling::Checked,
-    spell_marks: (Option<(u64, usize)>, Words),
+    spell_marks: (Option<(u64, usize, bool)>, Words),
     /// Where the last right click was, for its menu (a misspelled word's guesses).
     context_at: Option<usize>,
     /// The Note chosen in the `[[` list, and the link where Esc closed it.
@@ -630,15 +630,20 @@ impl NoteEditor {
         if !self.check_spelling || !spelling::AVAILABLE || text.len() > LIVE_PREVIEW_MAX_BYTES {
             return Rc::default();
         }
-        let key = (self.revision, self.buf.cursor());
+        let at = (self.revision, self.buf.cursor());
+        // Typing: a key came and the caret has not blinked since. Its line is
+        // checked at that first blink, half a second into a pause.
+        let typing = self.typed_at == Some(at) && self.blinks_left == BLINKS_AFTER_INPUT;
+        let key = (at.0, at.1, typing);
         if self.spell_marks.0 != Some(key) {
             // The word just typed is not marked yet; one the cursor was only
             // moved to (a click, the arrows, a right-click) is.
-            let cursor = (self.buf.selection().is_empty() && self.typed_at == Some(key))
+            let cursor = (self.buf.selection().is_empty() && self.typed_at == Some(at))
                 .then(|| self.buf.cursor());
             let found = crate::core::editor::spelling::misspelled(
                 text,
                 cursor,
+                typing,
                 &mut self.spell_checked,
                 spelling::misspelled,
             );
@@ -685,6 +690,7 @@ impl NoteEditor {
         if !crate::core::editor::spelling::misspelled(
             paragraph,
             None,
+            false,
             &mut Default::default(),
             spelling::misspelled,
         )
