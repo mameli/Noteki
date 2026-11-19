@@ -59,7 +59,7 @@ scripts/eval.sh                # every check, report in target/eval-report.md
 
 ### The Mac app
 
-`scripts/bundle.sh` builds `target/release/Noteki.app`: bundle id `app.noteki.noteki`, its icon and document types, and Sparkle 2.10.1 for updates. `scripts/release.sh --dry-run` builds it signed with the Developer ID, notarized, in its disk image, with the appcast; without `--dry-run` it then publishes the GitHub Release and the Homebrew cask, after asking. The version is `version` in `Cargo.toml`, the build number Sparkle compares `[package.metadata.noteki] build`.
+`scripts/bundle.sh` builds `target/release/Noteki.app`: bundle id `app.noteki.noteki`, its icon and document types, and Sparkle 2.10.1 for updates. `scripts/release.sh --dry-run` builds it with the `dist` profile (fat LTO: the smallest binary, slow to build; `release` is thin LTO, fast for every day), signed with the Developer ID, notarized, in its disk image, with the appcast; without `--dry-run` it then publishes the GitHub Release and the Homebrew cask, after asking. The version is `version` in `Cargo.toml`, the build number Sparkle compares `[package.metadata.noteki] build`.
 
 ### Linux
 

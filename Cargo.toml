@@ -75,10 +75,18 @@ opt-level = 1
 [profile.dev.package."*"]
 opt-level = 3
 
-# Release: 29 MB → 17 MB (SPEC › Budget: under 20), same speed in examples/perf.
+# Release, for every day (scripts/bundle.sh, tests in release): thin LTO,
+# 33 s after a small change instead of 105 s, a 30 MB binary instead of 24.
 # Unwinding stays: `markdown::reader_guard` catches markdown-rs's panics
 # (`panic = "abort"` would give 14 MB and crash the Reader instead).
 [profile.release]
 strip = true
+lto = "thin"
+codegen-units = 16
+
+# What is published (scripts/release.sh): the smallest binary, fat LTO in one
+# unit, the same speed in examples/perf; slow to build, so only there.
+[profile.dist]
+inherits = "release"
 lto = "fat"
 codegen-units = 1

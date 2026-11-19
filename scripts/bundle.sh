@@ -7,14 +7,17 @@
 #   scripts/bundle.sh --open F   build it, then open F with it
 # NOTEKI_IDENTITY signs it with that certificate instead, with the hardened
 # runtime and a secure timestamp, as notarization asks (scripts/release.sh).
+# NOTEKI_PROFILE builds with another Cargo profile: `dist` for what is
+# published (scripts/release.sh), `release` (fast to build) otherwise.
 set -eu
 cd "$(dirname "$0")/.."
 
-cargo build --release
+profile="${NOTEKI_PROFILE:-release}"
+cargo build --profile "$profile"
 app="target/release/Noteki.app"
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$app/Contents/Frameworks"
-cp target/release/noteki "$app/Contents/MacOS/noteki"
+cp "target/$profile/noteki" "$app/Contents/MacOS/noteki"
 
 icons="icons"
 iconset="$(mktemp -d)/AppIcon.iconset"

@@ -87,7 +87,7 @@ fi
 
 rm -rf "$out"
 mkdir -p "$out"
-NOTEKI_IDENTITY="$identity" scripts/bundle.sh
+NOTEKI_IDENTITY="$identity" NOTEKI_PROFILE=dist scripts/bundle.sh
 [[ $(codesign -dvv "$app" 2>&1) == *"Authority=$identity"* ]] || { echo "Not signed with the $identity certificate." >&2; exit 1; }
 [[ $(lipo -archs "$app/Contents/MacOS/noteki") == arm64 ]] || { echo "The binary is not arm64." >&2; exit 1; }
 sparkle_bin=$(ls -d target/sparkle-*/bin | tail -1)
