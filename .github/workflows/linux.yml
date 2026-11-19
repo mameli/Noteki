@@ -5,6 +5,8 @@ name: Noteki on Linux
 
 on:
   push:
+    # Branches only: the tag scripts/release.sh makes is the same commit again.
+    branches: ["**"]
     paths: ["src/**", "tests/**", "examples/**", "icons/**", "linux/**", "scripts/package-linux.sh", "Cargo.*", "docs/demo-vault/**", ".github/workflows/linux.yml"]
   workflow_dispatch:
 
@@ -14,9 +16,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Libraries GPUI links
+        # Ubuntu's mirrors sometimes drop the connection: apt tries again.
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libxkbcommon-x11-dev libwayland-dev libfontconfig-dev \
+          sudo apt-get update -o Acquire::Retries=5
+          sudo apt-get install -y -o Acquire::Retries=5 libxkbcommon-x11-dev libwayland-dev libfontconfig-dev \
             libfreetype-dev libx11-xcb-dev libvulkan1 libzstd-dev fonts-dejavu-core
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
