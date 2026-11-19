@@ -108,10 +108,17 @@ mod mac {
             .collect()
     }
 
-    /// The language of the text (the word's paragraph): a word in Italian is
-    /// corrected in Italian, whatever the Mac's first language.
-    fn language_of(checker: &NSSpellChecker, string: &NSString) -> Retained<NSString> {
+    /// The language of the word's sentence: a word in Italian is corrected in
+    /// Italian, whatever the Mac's first language, in a paragraph of both too.
+    fn language_of(
+        checker: &NSSpellChecker,
+        text: &str,
+        word: &Range<usize>,
+    ) -> Retained<NSString> {
         use objc2_foundation::NSTextCheckingType;
+        let sentence = crate::core::editor::spelling::sentence_around(text, word.clone());
+        let string = NSString::from_str(&text[sentence]);
+        let string = &*string;
         let mut orthography = None;
         // SAFETY: no options; the orthography found is written to a local.
         unsafe {
@@ -134,7 +141,7 @@ mod mac {
     pub fn guesses(text: &str, word: Range<usize>) -> Vec<String> {
         let checker = NSSpellChecker::sharedSpellChecker();
         let (string, range) = (NSString::from_str(text), utf16_range(text, &word));
-        let language = language_of(&checker, &string);
+        let language = language_of(&checker, text, &word);
         checker
             .guessesForWordRange_inString_language_inSpellDocumentWithTag(
                 range,
@@ -149,7 +156,7 @@ mod mac {
     pub fn correction(text: &str, word: Range<usize>) -> Option<String> {
         let checker = NSSpellChecker::sharedSpellChecker();
         let (string, range) = (NSString::from_str(text), utf16_range(text, &word));
-        let language = language_of(&checker, &string);
+        let language = language_of(&checker, text, &word);
         checker
             .correctionForWordRange_inString_language_inSpellDocumentWithTag(
                 range,
@@ -185,7 +192,7 @@ mod tests {
 
     #[test]
     fn a_word_is_corrected_in_the_language_of_its_sentence() {
-        let it = "Questo testo ha un errrore evidente e lo correggiamo subito.";
+        let it = "Questo testo ha un errrore evidente. This sentence is English.";
         let word = it.find("errrore").unwrap();
         assert_eq!(correction(it, word..word + 7).as_deref(), Some("errore"));
         let en = "This sentense is fine";

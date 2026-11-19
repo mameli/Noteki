@@ -125,6 +125,17 @@ pub fn word_before(text: &str, end: usize) -> Option<Range<usize>> {
     (start < end).then_some(start..end)
 }
 
+/// The sentence `word` is in: from after the last `.`, `!`, `?` or line
+/// break before it to the next one after it.
+pub fn sentence_around(text: &str, word: Range<usize>) -> Range<usize> {
+    let ends = |c: char| matches!(c, '.' | '!' | '?' | '\n');
+    let start = text[..word.start].rfind(ends).map_or(0, |i| i + 1);
+    let end = text[word.end..]
+        .find(ends)
+        .map_or(text.len(), |i| word.end + i + 1);
+    start..end
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -173,5 +184,20 @@ mod tests {
         assert_eq!(word_before("un erore", 8), Some(3..8));
         assert_eq!(word_before("l'erore", 7), Some(0..7));
         assert_eq!(word_before("fine. ", 6), None);
+    }
+
+    #[test]
+    fn a_word_s_sentence_is_found_between_its_full_stops() {
+        let text = "Questo ha un errrore. This sentense is wrong.\nFine";
+        let w = text.find("errrore").unwrap();
+        assert_eq!(
+            &text[sentence_around(text, w..w + 7)],
+            "Questo ha un errrore."
+        );
+        let w = text.find("sentense").unwrap();
+        assert_eq!(
+            &text[sentence_around(text, w..w + 8)],
+            " This sentense is wrong."
+        );
     }
 }
