@@ -7,6 +7,7 @@ Lighter and faster: half the memory at rest, typing in long Notes takes half the
 - A Note open and left alone uses about 90 MB less: the caret stops blinking ten seconds after the last key or click, and a window that draws nothing gets its graphics memory back. An idle window no longer uses any processor.
 - A key in a long Note takes half the time: Live preview styles again only the paragraph typed in, the Outline and Backlinks lay out only their rows in view, the window around the editor is drawn at a pause in typing, and the line being typed is spell-checked at that pause.
 - A Note with a Mermaid diagram or an image uses about 45 MB less while it loads, and diagrams are rasterized at the size they are shown.
+- A Note with a large integral, sum or radical uses about 20 MB less: they are drawn as small images, not as paths that took a window-sized texture.
 
 ## 0.4.0 — 19 November 2026
 
