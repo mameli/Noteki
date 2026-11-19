@@ -1,5 +1,7 @@
 # Tables are drawn in place, row by row, not by codemirror-markdown-tables
 
+> Since 0.4 ([ADR 0012](0012-rust-and-gpui.md)) Noteki's own editor element draws tables (`src/editor/element/cells.rs`), with no CodeMirror. The decision stands: each row is one line, and showing a table never changes the file.
+
 The SPEC planned tables "via codemirror-markdown-tables". That library turns a table into an interactive component: it replaces the Markdown with an HTML table of its own height, and it autoformats and prettifies the table while the user edits, and corrects the line breaks around it. Each of these rewrites text the user did not touch, which a Merge with Takku ([ADR 0005](0005-merge-external-changes.md)) and Obsidian on the same file ([ADR 0002](0002-coexist-with-obsidian.md)) then see as edits. A block of another height also makes the text jump when the cursor enters or leaves the table, against the SPEC's Live preview.
 
 Noteki draws a table in place instead, with the same decorations as the rest of Live preview: every row stays one line, its pipes are hidden, its cells are boxes of their column's width and alignment, and the delimiter row is a rule. The height is the same whether the table is shown or written, and the file is never changed by showing it.
@@ -12,5 +14,5 @@ Noteki draws a table in place instead, with the same decorations as the rest of 
 ## Consequences
 
 - Table lines never wrap while shown. A cell is cut at 40 characters, with an ellipsis. A table wider than the text has its columns shrunk to fit, each in proportion to its width, their text cut too (2 November 2026: at first a wide row scrolled sideways; the text must never scroll sideways).
-- Column widths are approximate in a proportional font (characters times 0.6 em).
+- ~~Column widths are approximate in a proportional font (characters times 0.6 em).~~ (0.4) Each column is as wide as its widest cell, measured with the font, up to 22 em (about 40 characters).
 - ~~Entering a table shows its source~~ (12 November 2026): the whole source was hard to edit. A table now stays drawn with the cursor in it, as in Obsidian: the cell the cursor is in shows all its text, its marks too, wrapped in its column, and its row grows to fit it (a flex line), only the cursor's line changing height. The cursor always stands in a cell; Tab, ⇧Tab, ↑, ↓ and Return go from cell to cell, and Tab after the last cell or Return on the last row adds a row. ⌫ and ⌦ never take a pipe. Adding a column or changing the alignment is done in Source mode. The Frontmatter's YAML still shows as source.

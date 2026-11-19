@@ -15,4 +15,4 @@ Takku rewrites the Meeting note after the stop, often while the user is still wr
 ## Consequences
 
 - Noteki keeps the base version of every open Note in memory.
-- Saving and merging are the riskiest code of the app and are tested in `NotekiCore` on real sequences of Takku's writes.
+- Saving and merging are the riskiest code of the app. They are tested on real sequences of Takku's writes in `src/core` (`merge.rs`, `document.rs`, `opening.rs`), and in `tests/robustness.rs`.

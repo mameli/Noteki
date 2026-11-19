@@ -1,5 +1,7 @@
 # Properties are read from a subset of YAML, by Noteki, and drawn in place
 
+> Since 0.4 ([ADR 0012](0012-rust-and-gpui.md)) the reader is `src/core/frontmatter.rs` and the editor is in the same process. The decision stands. The parts about NotekiCore, TypeScript and the round trip to the app are history, and are marked where they changed.
+
 The Properties table needs the Frontmatter read: which keys, which values, which lists. NotekiCore owns Frontmatter parsing (SPEC), and Noteki must never rewrite YAML it does not understand. A full YAML library would read anything, but it is a dependency several times the size of the code that uses it. It would also turn a Note's Frontmatter into values that no longer say where they are written, while the table must be drawn over the YAML itself.
 
 Noteki reads the YAML that Obsidian and Takku write, by hand, in NotekiCore:
@@ -7,9 +9,9 @@ Noteki reads the YAML that Obsidian and Takku write, by hand, in NotekiCore:
 - a list one item per line, or in brackets on one line;
 - blank lines and comments.
 
-Every key, value and item comes with where it is written: a line and its UTF-16 columns, as the editor counts them. Anything else is YAML Noteki cannot read: a map inside a Property, a block of text, anchors, a value over several lines, a key twice. It is shown as written, with a mark on the line where reading stopped, and never rewritten. All 159 Frontmatters of the user's Vault read.
+Every key, value and item comes with where it is written: a line and its UTF-16 columns, as the editor counts them. Anything else is YAML Noteki cannot read: a map inside a Property, a block of text, anchors, a value over several lines, a key twice. It is shown as written and never rewritten. ~~It has a mark on the line where reading stopped.~~ (0.4) The editor draws no mark yet. All 159 Frontmatters of the user's Vault read.
 
-The editor asks the app to read its Frontmatter whenever it changes (`readFrontmatter`). It draws the table only while the Frontmatter is still the text the answer was about. As tables are ([ADR 0008](0008-tables-drawn-in-place.md)), the table is drawn in place: each line of YAML stays one line of the table, never wrapped, so the text does not move up or down when the cursor enters the YAML or leaves it.
+~~The editor asks the app to read its Frontmatter whenever it changes (`readFrontmatter`). It draws the table only while the Frontmatter is still the text the answer was about.~~ (0.4) The editor reads the Frontmatter itself each time it styles the Note (`src/core/editor/properties.rs`), with no round trip. As tables are ([ADR 0008](0008-tables-drawn-in-place.md)), the table is drawn in place: each line of YAML stays one line of the table, never wrapped, so the text does not move up or down when the cursor enters the YAML or leaves it.
 
 ## Considered options
 
@@ -22,4 +24,4 @@ The editor asks the app to read its Frontmatter whenever it changes (`readFrontm
 - A list in brackets on one line shows its items side by side on that line, not one per line.
 - A quoted value shows what is between its quotes as written: `\"` and `''` are not undone.
 - Valid YAML outside the subset is shown as source with the error mark, as if broken. Obsidian would read it.
-- Until the app answers about the Frontmatter as it is now, it is shown as written: same height, so nothing jumps when the table arrives.
+- ~~Until the app answers about the Frontmatter as it is now, it is shown as written: same height, so nothing jumps when the table arrives.~~ (0.4) There is no answer to wait for.
