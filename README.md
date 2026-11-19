@@ -4,17 +4,19 @@
 
 <h1 align="center">Noteki</h1>
 
-<p align="center">macOS 15+ · Apple Silicon</p>
+<p align="center">macOS 15+ on Apple Silicon · Linux and Windows on the way</p>
 
 <p align="center"><a href="https://noteki.app">noteki.app</a> · <a href="https://github.com/mameli/Noteki/releases/latest/download/Noteki.dmg">Download</a> · <a href="CHANGELOG.md">What's new</a></p>
 
-A light native Mac app to read and write the Markdown vault you keep with **Obsidian**, a fraction of its weight. It works on the same files, side by side with Obsidian, and keeps the parts used every day. Written in Rust, drawn by [GPUI](https://www.gpui.rs): no web page inside.
+A light native app to read and write the Markdown vault you keep with **Obsidian**, a fraction of its weight. It works on the same files, side by side with Obsidian, and keeps the parts used every day. Written in Rust, drawn by [GPUI](https://www.gpui.rs): no web page inside.
+
+The Mac app is out. The same code builds on Linux, and Windows is next: both are still being tried out.
 
 <p align="center">
   <img src="docs/screenshots/latex.png" alt="Noteki showing a note with Maxwell's equations, a callout and Properties" width="640">
 </p>
 
-- **Live preview**: the Markdown syntax hides and shows again where the cursor is; formulas typeset as KaTeX does and Mermaid diagrams drawn in the note, tables edited cell by cell, callouts, task lists, footnotes, code coloured in its language, images in the text.
+- **Live preview**: the Markdown syntax hides and shows again where the cursor is; LaTeX formulas typeset and Mermaid diagrams drawn in the note, tables edited cell by cell, callouts, task lists, footnotes, code coloured in its language, images in the text.
 - **Frontmatter** shown as a Properties table, with Tags as chips.
 - **Wikilinks** resolved as Obsidian does, completed as you type, with **Backlinks** and an Outline in the sidebar.
 - **Tags** pane, **Search** across the vault, a Quick switcher, the Daily note, and a **Command palette** (⇧⌘P) with every command.

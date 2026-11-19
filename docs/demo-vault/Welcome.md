@@ -7,7 +7,7 @@ Noteki reads and writes the Markdown of an **Obsidian** vault: the same files, s
 
 ![[noteki.png|120]]
 
-- Open [[Maxwell's equations]] for formulas drawn with KaTeX.
+- Open [[Maxwell's equations]] for LaTeX formulas typeset in the note.
 - The [[Launch plan]] has a table and a Mermaid diagram.
 - A meeting note: [[2026-11-10 Product sync]].
 

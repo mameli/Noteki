@@ -5,7 +5,7 @@
 Noteki is rewritten in Rust, drawn by GPUI: no web page inside, the same Notes, Vault and shortcuts.
 
 - The whole window, the editor included, is native: it opens at once and types without delay on long Notes.
-- Formulas (`$…$`, `$$…$$`) are typeset as KaTeX does and Mermaid diagrams drawn in the Note, without a browser; the source comes back when the cursor goes into it.
+- LaTeX formulas (`$…$`, `$$…$$`) are typeset and Mermaid diagrams drawn in the Note, without a browser; the source comes back when the cursor goes into it.
 - Updating from 0.3 keeps the Vault, the theme, the text's font, size and line length, the Excluded folders, the Daily note and the recent Notes.
 - *Settings* is one page, with *Updates* and *Support*.
 - Return in a list writes the next item (`2.` after `1.`, the numbers below moving on; the same bullet, a new task, a quote); Return on an empty item ends the list, ⇧Return goes to a new line without one.
