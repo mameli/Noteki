@@ -5,7 +5,8 @@
 //!     cargo test --release --test keystroke_timing -- --ignored --nocapture
 use gpui_kit::test::TestWindowExt;
 use gpui_kit::{
-    px, size, AppContext as _, Bounds, Point, TestAppContext, WindowBounds, WindowOptions,
+    px, size, AppContext as _, Bounds, Keystroke, Point, TestAppContext, WindowBounds,
+    WindowOptions,
 };
 use noteki::app::{register_keybindings, AppConfig, NotekiApp};
 use noteki::core::tabs::OpenIn;
@@ -76,11 +77,14 @@ fn keystroke_timing(cx: &mut TestAppContext) {
         .ok()
         .and_then(|k| k.parse().ok())
         .unwrap_or(30);
+    // A key and the frame it asks for, as the app draws it: GPUI Kit's
+    // `input` and `press` draw three frames each with `refresh`, which
+    // ignores every cached view.
     let t = Instant::now();
     for _ in 0..n {
         cx.update_window(window, |_, w, cx| {
-            w.input("x", cx);
-            w.render_frame(cx)
+            w.dispatch_keystroke(key("x"), cx);
+            w.draw(cx).clear(cx);
         })
         .unwrap();
         cx.run_until_parked();
@@ -91,8 +95,11 @@ fn keystroke_timing(cx: &mut TestAppContext) {
     );
     let t = Instant::now();
     for _ in 0..n {
-        cx.update_window(window, |_, w, cx| w.press("right", cx))
-            .unwrap();
+        cx.update_window(window, |_, w, cx| {
+            w.dispatch_keystroke(key("right"), cx);
+            w.draw(cx).clear(cx);
+        })
+        .unwrap();
         cx.run_until_parked();
     }
     println!(
@@ -108,10 +115,19 @@ fn keystroke_timing(cx: &mut TestAppContext) {
         .unwrap();
     }
     println!(
-        "per idle frame: {:.2} ms",
+        "per frame of the whole window (refresh, nothing cached): {:.2} ms",
         t.elapsed().as_secs_f64() * 1e3 / n as f64
     );
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A key as the platform sends it: a character with its text.
+fn key(k: &'static str) -> Keystroke {
+    let mut key = Keystroke::parse(k).unwrap();
+    if k.chars().count() == 1 {
+        key.key_char = Some(k.to_string());
+    }
+    key
 }
 
 /// Time per keystroke in the Search pane on a 5,000-Note vault, results drawn.

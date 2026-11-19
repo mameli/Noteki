@@ -21,6 +21,7 @@ use gpui_kit::{
     StatefulInteractiveElement as _, Styled as _, TestSupportExt as _, Window,
 };
 
+use super::parts::{Part, PartKind};
 use super::settings::InterfaceSize;
 use super::*;
 use crate::core::vault::resolve_vault_path;
@@ -37,7 +38,12 @@ impl Render for NotekiApp {
                 resizable_panel()
                     .size(px(260.))
                     .size_range(px(180.)..px(480.))
-                    .child(self.render_left_sidebar(cx)),
+                    .child(
+                        self.parts
+                            .left
+                            .clone()
+                            .cached(Part::style(PartKind::LeftSidebar)),
+                    ),
             );
         }
         split = split.child(
@@ -50,7 +56,12 @@ impl Render for NotekiApp {
                 resizable_panel()
                     .size(px(250.))
                     .size_range(px(180.)..px(480.))
-                    .child(self.render_right_sidebar(cx)),
+                    .child(
+                        self.parts
+                            .right
+                            .clone()
+                            .cached(Part::style(PartKind::RightSidebar)),
+                    ),
             );
         }
 
@@ -231,11 +242,28 @@ impl Render for NotekiApp {
                     this.follow_link_under_cursor(window, cx)
                 }),
             )
-            .child(self.render_title_bar(cx))
+            .child(
+                self.parts
+                    .title
+                    .clone()
+                    .cached(Part::style(PartKind::TitleBar)),
+            )
             .child(div().flex_1().min_h_0().child(split))
-            .child(self.render_status_bar(cx))
+            .child(
+                self.parts
+                    .status
+                    .clone()
+                    .cached(Part::style(PartKind::StatusBar)),
+            )
     }
 }
+
+/// The tab bar's height: GPUI Kit's Tab (32) and the line under it. A cached
+/// view is laid out from it.
+pub(super) const TAB_BAR_HEIGHT: gpui_kit::Pixels = px(33.);
+
+/// The status bar's height (a cached view is laid out from it).
+pub(super) const STATUS_BAR_HEIGHT: gpui_kit::Pixels = px(24.);
 
 fn faded(c: Hsla, a: f32) -> Hsla {
     hsla(c.h, c.s, c.l, a)
@@ -244,7 +272,7 @@ fn faded(c: Hsla, a: f32) -> Hsla {
 impl NotekiApp {
     // ---- Chrome ----
 
-    fn render_title_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(super) fn render_title_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let (can_back, can_fwd) = self
             .tabs
             .active()
@@ -359,7 +387,7 @@ impl NotekiApp {
         )
     }
 
-    fn render_status_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(super) fn render_status_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
         let (muted, danger) = (theme.muted_foreground, theme.danger);
         let doc = self.active_path().and_then(|p| self.docs.get(p));
@@ -379,7 +407,8 @@ impl NotekiApp {
             .into();
         h_flex()
             .id("status-bar")
-            .h(px(24.))
+            .w_full()
+            .h(STATUS_BAR_HEIGHT)
             .px_3()
             .gap_3()
             .items_center()
@@ -414,7 +443,7 @@ impl NotekiApp {
 
     // ---- Left sidebar ----
 
-    fn render_left_sidebar(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(super) fn render_left_sidebar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let (bg, fg, border) = (
             cx.theme().sidebar,
             cx.theme().sidebar_foreground,
@@ -794,7 +823,7 @@ impl NotekiApp {
 
     // ---- Right sidebar ----
 
-    fn render_right_sidebar(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(super) fn render_right_sidebar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let (bg, fg, border, muted) = (
             cx.theme().sidebar,
             cx.theme().sidebar_foreground,
@@ -951,13 +980,18 @@ impl NotekiApp {
         };
         v_flex()
             .size_full()
-            .child(self.render_tab_bar(cx))
+            .child(
+                self.parts
+                    .tabs
+                    .clone()
+                    .cached(Part::style(PartKind::TabBar)),
+            )
             .child(self.render_banners(cx))
             .child(div().flex_1().min_h_0().child(content))
             .into_any_element()
     }
 
-    fn render_tab_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(super) fn render_tab_bar(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let entity = cx.entity();
         let mut bar = TabBar::new("tabs")
             .selected_index(self.tabs.active_index().unwrap_or(0))
@@ -1005,6 +1039,7 @@ impl NotekiApp {
         }
         h_flex()
             .w_full()
+            .h(TAB_BAR_HEIGHT)
             .bg(cx.theme().tab_bar)
             .border_b_1()
             .border_color(cx.theme().border)

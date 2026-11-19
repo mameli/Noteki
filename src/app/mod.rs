@@ -6,6 +6,7 @@
 mod format_bar;
 mod loose;
 pub mod menus;
+mod parts;
 pub mod print;
 mod render;
 pub mod settings;
@@ -461,7 +462,18 @@ pub struct NotekiApp {
     /// This view's window.
     window: gpui_kit::AnyWindowHandle,
 
+    /// The parts around the editor, cached views (`parts`).
+    parts: Parts,
+
     _subscriptions: Vec<Subscription>,
+}
+
+struct Parts {
+    title: Entity<parts::Part>,
+    left: Entity<parts::Part>,
+    right: Entity<parts::Part>,
+    tabs: Entity<parts::Part>,
+    status: Entity<parts::Part>,
 }
 
 impl Focusable for NotekiApp {
@@ -524,6 +536,14 @@ impl NotekiApp {
             }),
         ];
 
+        let me = cx.entity();
+        let parts = Parts {
+            title: parts::Part::new(&me, parts::PartKind::TitleBar, cx),
+            left: parts::Part::new(&me, parts::PartKind::LeftSidebar, cx),
+            right: parts::Part::new(&me, parts::PartKind::RightSidebar, cx),
+            tabs: parts::Part::new(&me, parts::PartKind::TabBar, cx),
+            status: parts::Part::new(&me, parts::PartKind::StatusBar, cx),
+        };
         let mut app = Self {
             config,
             settings,
@@ -554,6 +574,7 @@ impl NotekiApp {
             typing_redraw: None,
             settings_window: None,
             window: window.window_handle(),
+            parts,
             _subscriptions: subscriptions,
         };
 

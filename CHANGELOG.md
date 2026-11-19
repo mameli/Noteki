@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Typing and moving the cursor draw only the editor: the sidebars, the title, tab and status bars are drawn again only when what they show changes. An arrow key takes 0.5 ms instead of 1.3, a key in a long Note written in paragraphs 1.2 ms instead of 2.1.
 - A list in the Properties (the participants of a Meeting, not the Tags) is drawn on its key's row, its items side by side and wrapping, as 0.3 drew it; one item per line again when the cursor goes into the Frontmatter.
 
 ## 0.4.1 — 19 November 2026
