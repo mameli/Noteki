@@ -41,12 +41,9 @@ pub fn render(source: &str, dark: bool) -> Option<(String, f32, f32)> {
         .ok()?;
     let (w, h) = (attr(&svg, "width")?, attr(&svg, "height")?);
     let (width, height): (f32, f32) = (w.parse().ok()?, h.parse().ok()?);
-    // Twice as large, the viewBox unchanged: GPUI rasterizes an SVG at its size.
-    let svg = svg.replacen(
-        &format!("width=\"{w}\" height=\"{h}\""),
-        &format!("width=\"{}\" height=\"{}\"", width * 2., height * 2.),
-        1,
-    );
+    // At its own size: GPUI rasterizes an SVG image at twice it
+    // (`SMOOTH_SVG_SCALE_FACTOR`), what a Retina screen shows. Doubling it
+    // here too rasterized four times the pixels, for nothing sharper.
     Some((svg, width, height))
 }
 
@@ -68,8 +65,8 @@ mod tests {
     fn a_flowchart_is_drawn_twice_its_size() {
         let (svg, w, h) = render(FLOW, false).expect("drawn");
         assert!(w > 100. && h > 20., "{w}×{h}");
-        assert_eq!(attr(&svg, "width").unwrap().parse::<f32>(), Ok(w * 2.));
-        assert_eq!(attr(&svg, "height").unwrap().parse::<f32>(), Ok(h * 2.));
+        assert_eq!(attr(&svg, "width").unwrap().parse::<f32>(), Ok(w));
+        assert_eq!(attr(&svg, "height").unwrap().parse::<f32>(), Ok(h));
         assert!(svg.contains("Notarized?"));
         assert!(!svg.contains("#FFFFFF\"/>") || svg.contains("fill=\"none\""));
     }

@@ -2652,7 +2652,7 @@ fn the_caret_stops_blinking_when_nothing_is_typed(cx: &mut TestAppContext) {
     editor_with(cx, &f, "testo", 5);
     type_in_editor(cx, &f, "a");
     let shown = |cx: &mut TestAppContext| app(cx, &f, |a, _, cx| a.editor().read(cx).caret_shown());
-    let mut tick = |cx: &mut TestAppContext| {
+    let tick = |cx: &mut TestAppContext| {
         cx.executor().advance_clock(Duration::from_millis(500));
         cx.run_until_parked();
         shown(cx)
