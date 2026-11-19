@@ -9,7 +9,7 @@ Noteki reads the YAML that Obsidian and Takku write, by hand, in NotekiCore:
 - a list one item per line, or in brackets on one line;
 - blank lines and comments.
 
-Every key, value and item comes with where it is written: a line and its UTF-16 columns, as the editor counts them. Anything else is YAML Noteki cannot read: a map inside a Property, a block of text, anchors, a value over several lines, a key twice. It is shown as written and never rewritten. ~~It has a mark on the line where reading stopped.~~ (0.4) The editor draws no mark yet. All 159 Frontmatters of the user's Vault read.
+Every key, value and item comes with where it is written: a line and its UTF-16 columns, as the editor counts them. Anything else is YAML Noteki cannot read: a map inside a Property, a block of text, anchors, a value over several lines, a key twice. It is shown as written, with a mark on the line where reading stopped (a red wavy underline since 0.4), and never rewritten. All 159 Frontmatters of the user's Vault read.
 
 ~~The editor asks the app to read its Frontmatter whenever it changes (`readFrontmatter`). It draws the table only while the Frontmatter is still the text the answer was about.~~ (0.4) The editor reads the Frontmatter itself each time it styles the Note (`src/core/editor/properties.rs`), with no round trip. As tables are ([ADR 0008](0008-tables-drawn-in-place.md)), the table is drawn in place: each line of YAML stays one line of the table, never wrapped, so the text does not move up or down when the cursor enters the YAML or leaves it.
 

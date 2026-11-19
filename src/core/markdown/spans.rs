@@ -29,6 +29,9 @@ pub enum MdSpanKind {
     TagChip,
     /// A formula RaTeX cannot typeset, shown as written in red (SPEC).
     MathError,
+    /// The Frontmatter line where Noteki stopped reading its YAML, which then
+    /// stays as source (SPEC › Frontmatter, ADR 0009).
+    FrontmatterError,
     /// The parts of a code block's code, coloured by its language.
     CodeComment,
     CodeString,

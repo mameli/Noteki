@@ -3,6 +3,8 @@
 ## Unreleased
 
 - The Search button puts the cursor in the search field, as ⇧⌘F does: you can type right away.
+- A Note renamed, moved or put in the Trash in one window follows in the other windows of the Vault at once, a whole folder's Notes too. What you typed in the other windows is saved first, as 0.3 did.
+- YAML in the Frontmatter that Noteki cannot read has a red wavy line under the line where reading stopped, as 0.3 had.
 
 ## 0.4.2 — 19 November 2026
 

@@ -119,6 +119,10 @@ pub fn span_style(kind: MdSpanKind, p: &NotekiPalette) -> HighlightStyle {
             color: Some(p.error),
             ..Default::default()
         },
+        MdSpanKind::FrontmatterError => HighlightStyle {
+            underline: underline(p.error, true),
+            ..Default::default()
+        },
         MdSpanKind::Comment => HighlightStyle {
             color: Some(p.syntax),
             font_style: Some(FontStyle::Italic),

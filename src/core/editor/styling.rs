@@ -7,6 +7,7 @@ use std::rc::Rc;
 use crate::core::diagram::Diagram;
 use crate::core::editor::properties::{fold_lists, property_lines, PropertyLine};
 use crate::core::editor::table::{tables, RowKind, TableRow};
+use crate::core::frontmatter::{parse_frontmatter, FrontmatterReading};
 use crate::core::markdown::{
     callout_marks, image_embed, is_setext_candidate, lines, list_item, parse_atx_heading,
     quote_prefix, BlockKind, Line, ListKind, MdSpan, MdSpanKind,
@@ -261,6 +262,16 @@ pub fn style_lines(text: &str, spans: &[MdSpan], cx: Context) -> Vec<LineStyle> 
                 break;
             }
             push_clipped(&mut clipped[i], line, span);
+        }
+    }
+    // YAML Noteki cannot read: a mark on the line where reading stopped.
+    if let Some(FrontmatterReading::Unreadable { unreadable }) = parse_frontmatter(text) {
+        if let Some(line) = lines.get(unreadable.saturating_sub(1)) {
+            let start = line.text.len() - line.text.trim_start().len();
+            let end = line.text.trim_end().len();
+            if start < end {
+                clipped[unreadable - 1].push((start..end, MdSpanKind::FrontmatterError));
+            }
         }
     }
     for (i, part) in indented.into_iter().enumerate() {
@@ -642,6 +653,30 @@ mod tests {
                 image: &mut |_| None,
             },
         )
+    }
+
+    #[test]
+    fn unreadable_yaml_is_marked_on_the_line_where_reading_stopped() {
+        let s = styles("---\ntitle: x\n  key: {map: 1}\n---\ntesto", None);
+        let marked: Vec<_> = s
+            .iter()
+            .map(|l| {
+                l.segments
+                    .iter()
+                    .filter(|(_, k)| k.contains(&MdSpanKind::FrontmatterError))
+                    .map(|(r, _)| r.clone())
+                    .collect::<Vec<_>>()
+            })
+            .collect();
+        assert_eq!(marked[2], vec![2..15], "{marked:?}");
+        assert!(marked
+            .iter()
+            .enumerate()
+            .all(|(i, m)| i == 2 || m.is_empty()));
+        assert!(styles("---\ntitle: x\n---\n", None).iter().all(|l| l
+            .segments
+            .iter()
+            .all(|(_, k)| !k.contains(&MdSpanKind::FrontmatterError))));
     }
 
     #[test]

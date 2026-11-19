@@ -673,6 +673,64 @@ fn a_second_window_has_its_own_tabs_and_follows_the_file(cx: &mut TestAppContext
     );
 }
 
+/// ADR 0010: a rename or a move to the Trash made in one window reaches the
+/// others at once. A folder's move reaches the watcher as the folder alone.
+#[gpui_kit::test]
+fn a_rename_or_the_trash_in_one_window_reaches_the_others(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    app(cx, &f, |a, _, cx| a.open_another_window(cx));
+    cx.run_until_parked();
+    let (w2, b) = other_apps(cx, &[f.window])[0].clone();
+    let in_b = |cx: &mut TestAppContext,
+                run: &dyn Fn(&mut NotekiApp, &mut Window, &mut Context<NotekiApp>)| {
+        cx.update_window(w2, |_, window, cx| b.update(cx, |b, cx| run(b, window, cx)))
+            .unwrap();
+        cx.run_until_parked();
+    };
+    in_b(cx, &|b, w, cx| {
+        b.open_path("Physics/Euler's identity.md", OpenIn::CurrentTab, w, cx);
+        b.open_path("Ideas.md", OpenIn::NewTab, w, cx);
+    });
+    // Typed in the second window, not saved yet.
+    in_b(cx, &|b, w, cx| {
+        b.editor().clone().update(cx, |ed, cx| ed.focus(w, cx))
+    });
+    cx.update_window(w2, |_, window, cx| {
+        window.render_frame(cx);
+        window.input("Da B ", cx);
+    })
+    .unwrap();
+    cx.run_until_parked();
+
+    app(cx, &f, |a, w, cx| a.rename("Physics", "Science", w, cx)).unwrap();
+    cx.run_until_parked();
+    let tabs = tab_paths(cx, &b);
+    assert!(
+        tabs.contains(&"Science/Euler's identity.md".to_string()),
+        "the second window's Tab follows the folder: {tabs:?}"
+    );
+
+    app(cx, &f, |a, w, cx| a.trash("Ideas.md", w, cx)).unwrap();
+    cx.run_until_parked();
+    let trashed = std::fs::read_to_string(f.dir.join("Trash/Ideas.md")).unwrap();
+    assert!(
+        trashed.starts_with("Da B "),
+        "the second window's text saved before the move: {trashed}"
+    );
+    assert!(!tab_paths(cx, &b).contains(&"Ideas.md".to_string()));
+    let b_status = cx
+        .update_window(w2, |_, window, cx| {
+            window.render_frame(cx);
+            window
+                .find("status")
+                .label()
+                .unwrap_or_default()
+                .to_string()
+        })
+        .unwrap();
+    assert!(!b_status.contains("Deleted by another app"), "{b_status}");
+}
+
 #[gpui_kit::test]
 fn choosing_another_vault_closes_the_other_windows(cx: &mut TestAppContext) {
     let f = fixture(cx);

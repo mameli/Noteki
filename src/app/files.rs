@@ -2,6 +2,14 @@
 
 use super::*;
 
+/// What one window did to the Vault's files, told to its other windows.
+#[derive(Clone)]
+enum Moved {
+    /// From, to: a Note, an Attachment or a folder.
+    Renamed(String, String),
+    Trashed(String),
+}
+
 impl NotekiApp {
     /// Creates `name.md` in `folder` (vault root if empty) and opens it.
     pub fn create_note(
@@ -59,16 +67,10 @@ impl NotekiApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Result<String, String> {
-        // Unsaved text is saved first, under the old name (SPEC › Files).
-        let under: Vec<String> = self
-            .docs
-            .keys()
-            .filter(|p| rename_target(p, path, "").is_some())
-            .cloned()
-            .collect();
-        for p in &under {
-            self.save_note(p)?;
-        }
+        // Unsaved text is saved first, under the old name (SPEC › Files),
+        // in every window of the Vault.
+        self.save_under(path)?;
+        self.others_save_under(path, cx)?;
         let vault = self.vault.as_ref().ok_or("No vault open")?;
         let is_folder = vault.is_folder(path);
         let new_name = if is_folder {
@@ -80,6 +82,7 @@ impl NotekiApp {
         self.follow_rename(path, &new_path);
         self.refresh_vault(&HashSet::from([new_path.clone()]), cx);
         self.show_active(window, cx);
+        self.tell_others(Moved::Renamed(path.to_string(), new_path.clone()), cx);
         Ok(new_path)
     }
 
@@ -90,6 +93,19 @@ impl NotekiApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Result<(), String> {
+        self.save_under(path)?;
+        self.others_save_under(path, cx)?;
+        let vault = self.vault.as_ref().ok_or("No vault open")?;
+        move_to_trash(&vault.root, path, self.config.trash_dir.as_deref())?;
+        self.close_trashed(path);
+        self.refresh_vault(&HashSet::new(), cx);
+        self.show_active(window, cx);
+        self.tell_others(Moved::Trashed(path.to_string()), cx);
+        Ok(())
+    }
+
+    /// Saves the unsaved Notes at `path` or under it (a folder).
+    fn save_under(&mut self, path: &str) -> Result<(), String> {
         let under: Vec<String> = self
             .docs
             .keys()
@@ -99,8 +115,62 @@ impl NotekiApp {
         for p in &under {
             self.save_note(p)?;
         }
-        let vault = self.vault.as_ref().ok_or("No vault open")?;
-        move_to_trash(&vault.root, path, self.config.trash_dir.as_deref())?;
+        Ok(())
+    }
+
+    /// The other windows of this Vault (ADR 0010).
+    fn vault_windows(&self, cx: &Context<Self>) -> Vec<Entity<NotekiApp>> {
+        let root = self.vault.as_ref().map(|v| v.root.clone());
+        self.other_windows(cx)
+            .into_iter()
+            .filter(|o| root.is_some() && o.read(cx).vault.as_ref().map(|v| v.root.clone()) == root)
+            .collect()
+    }
+
+    fn others_save_under(&mut self, path: &str, cx: &mut Context<Self>) -> Result<(), String> {
+        for other in self.vault_windows(cx) {
+            other.update(cx, |o, _| o.save_under(path))?;
+        }
+        Ok(())
+    }
+
+    /// Tells the other windows of this Vault what this one moved, at once: a
+    /// folder's move reaches their watchers as the folder alone (ADR 0010).
+    fn tell_others(&self, moved: Moved, cx: &mut Context<Self>) {
+        for other in self.vault_windows(cx) {
+            let (handle, moved) = (other.read(cx).window, moved.clone());
+            cx.defer(move |cx| {
+                let _ = handle.update(cx, |_, window, cx| {
+                    other.update(cx, |o, cx| o.moved_elsewhere(&moved, window, cx))
+                });
+            });
+        }
+    }
+
+    fn moved_elsewhere(&mut self, moved: &Moved, window: &mut Window, cx: &mut Context<Self>) {
+        match moved {
+            Moved::Renamed(old, new) => {
+                self.follow_rename(old, new);
+                self.refresh_vault(&HashSet::from([new.clone()]), cx);
+            }
+            Moved::Trashed(path) => {
+                self.close_trashed(path);
+                self.refresh_vault(&HashSet::new(), cx);
+            }
+        }
+        self.show_active(window, cx);
+        self.persist_session();
+        cx.notify();
+    }
+
+    /// Closes the Tabs at `path` or under it, gone to the Trash, once saved.
+    fn close_trashed(&mut self, path: &str) {
+        let under: Vec<String> = self
+            .docs
+            .keys()
+            .filter(|p| rename_target(p, path, "").is_some())
+            .cloned()
+            .collect();
         // A note whose text is only on screen (a conflict) keeps its tab, as deleted.
         let mut keep = HashSet::new();
         for p in &under {
@@ -120,9 +190,6 @@ impl NotekiApp {
         }
         self.docs
             .retain(|p, _| rename_target(p, path, "").is_none() || keep.contains(p));
-        self.refresh_vault(&HashSet::new(), cx);
-        self.show_active(window, cx);
-        Ok(())
     }
 
     pub fn duplicate(
