@@ -79,16 +79,16 @@ What differs from the Mac, all from `src/keys.rs` and a few `cfg!` checks:
 |---|---|---|
 | `src/core/vault.rs` | Scanning, atomic writes, create/rename/copy/trash, daily-note paths | no |
 | `src/core/wikilink.rs` | Wikilink parsing, Obsidian resolution, link completions | no |
-| `src/core/markdown.rs` | The only Markdown scanner: blocks, inline tokens, live-preview spans, the HTML conversion for Export | no |
+| `src/core/markdown/` | The only Markdown scanner: `blocks`, `inline` tokens, Live preview `spans`, the `html` for Export | no |
 | `src/core/index.rs` | `Corpus` of note texts; outline, tags, backlinks, search, quick switcher | no |
 | `src/core/document.rs` | `NoteDoc`: saving, Merge, Conflict, Deleted (SPEC › External changes) | no |
 | `src/core/tabs.rs` | Tabs, per-tab Back/Forward, closed tabs, rename/remove | no |
 | `src/core/editor/` | The editor's rules: text with selection and composed text, movement by grapheme/word/line, UTF-16 for macOS input, line geometry for lines of different heights, Live preview styles and Heading levels per line, the display map (marks hidden by Live preview), code colours (syntect), tables, undo history, format commands | no |
 | `src/core/math.rs`, `diagram.rs`, `editor/figures.rs` | Formulas typeset by RaTeX (KaTeX's layout, in Rust), Mermaid diagrams drawn as SVG by mermaid-rs-renderer, and which `$$` blocks, `mermaid` fences and `$…$` Live preview draws in place of their source | no |
 | `src/core/merge.rs`, `frontmatter.rs`, `embeds.rs` | Merge, Frontmatter and embeds | no |
-| `src/editor/` | `NoteEditor`, Noteki's own editor element: shapes and paints each line on its own, keys, mouse, native text input; formulas painted glyph by glyph in the KaTeX fonts (`math.rs`), diagrams as images | yes |
-| `src/app/mod.rs` | `NotekiApp`: state, file watching, wiring of `core` to GPUI | yes |
-| `src/app/render.rs` | All drawing, with stable element IDs for UI tests | yes |
+| `src/editor/` | `NoteEditor`, Noteki's own editor: Live preview `styles`, `editing`, `mouse`, `actions` (keys), `input_handler` (native text input); `element/` shapes (`layout`), lays out tables (`cells`) and paints (`paint`) each line on its own; formulas painted glyph by glyph in the KaTeX fonts (`math.rs`), diagrams as images | yes |
+| `src/app/mod.rs` | `NotekiApp`: its state and windows; what it does by subject in `vault`, `opening`, `editing`, `external` (file watching, merges), `links`, `files`, `preferences` | yes |
+| `src/app/render/` | All drawing, with stable element IDs for UI tests: the root, `chrome`, `left_sidebar`, `right_sidebar`, `center`, `dialogs`, `context_menus`; `src/app/parts.rs` keeps the parts around the editor as cached views | yes |
 | `src/app/settings.rs`, `src/editor/style.rs`, `src/theme.rs` | Preferences and per-vault sessions; live-preview styles; Ayu / Everforest / One Dark Pro | yes |
 | `src/app/updates.rs`, `swift_prefs.rs` | Sparkle, loaded from the bundle; the preferences of Noteki 0.3, taken once | yes |
 
