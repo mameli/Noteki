@@ -17,10 +17,15 @@ impl NotekiApp {
         };
         let tab = |id: &'static str,
                    label: String,
+                   tip: &'static str,
                    icon: AssetIcon,
                    p: RightPane,
                    cx: &mut Context<Self>| {
-            let b = Button::new(id).label(label).icon(Icon::new(icon)).xsmall();
+            let b = Button::new(id)
+                .label(label)
+                .icon(Icon::new(icon))
+                .xsmall()
+                .tooltip(crate::keys::tooltip(tip));
             let b = if pane == p { b.primary() } else { b.ghost() };
             b.on_click(cx.listener(move |this, _, _, cx| this.show_right_pane(p, cx)))
         };
@@ -33,6 +38,7 @@ impl NotekiApp {
             .child(tab(
                 "pane-outline",
                 "Outline".into(),
+                "Outline (⌥⌘1)",
                 AssetIcon::List,
                 RightPane::Outline,
                 cx,
@@ -40,6 +46,7 @@ impl NotekiApp {
             .child(tab(
                 "pane-backlinks",
                 backlinks_label,
+                "Backlinks (⌥⌘2)",
                 AssetIcon::Link,
                 RightPane::Backlinks,
                 cx,

@@ -375,6 +375,7 @@ impl NoteEditor {
                                 .label("Done")
                                 .xsmall()
                                 .ghost()
+                                .tooltip("Esc")
                                 .on_click(cx.listener(|ed, _, w, cx| ed.close_find(w, cx))),
                         ),
                 )

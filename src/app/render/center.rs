@@ -63,6 +63,7 @@ impl NotekiApp {
                             .icon(Icon::new(AssetIcon::X))
                             .xsmall()
                             .ghost()
+                            .tooltip(crate::keys::tooltip("Close tab (⌘W)"))
                             .on_click(move |_, window, cx| {
                                 cx.stop_propagation();
                                 entity.update(cx, |app, cx| app.close_tab(ix, window, cx));
