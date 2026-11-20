@@ -3348,3 +3348,126 @@ fn autosave_before_the_file_event_never_writes_over_a_conflict(cx: &mut TestAppC
     );
     assert!(status(cx, &f).contains("choose a version"));
 }
+
+/// Takku writes above the line you are typing on (its Summary goes above
+/// Personal notes): after the Merge the cursor is still where you were typing,
+/// not at the same offset, inside Takku's text.
+#[gpui_kit::test]
+fn the_cursor_stays_where_you_type_when_takku_writes_above_it(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let note = "Physics/Euler's identity.md";
+    app(cx, &f, |a, w, cx| {
+        a.open_path(note, OpenIn::CurrentTab, w, cx)
+    });
+    type_in_editor(cx, &f, "Mie note ");
+    let before = read(&f, note);
+    let takku = before.replacen("tags: [math]\n", "tags: [math]\nstatus: done\n", 1);
+    assert_ne!(takku, before);
+    // Heard as an event (FS_SETTLE passed)…
+    external_write(cx, &f, note, Some(&takku));
+    let (text, cursor) = app(cx, &f, |a, _, cx| {
+        (a.editor_text(cx), a.editor().read(cx).cursor())
+    });
+    assert!(text.contains("status: done"), "{text}");
+    assert_eq!(
+        &text[..cursor],
+        &text[..text.find("Mie note ").unwrap() + 9]
+    );
+    // …and found by the save itself, before the event.
+    type_in_editor(cx, &f, "ancora ");
+    let disk = read(&f, note);
+    std::fs::write(
+        f.vault.join(note),
+        disk.replacen("status: done\n", "status: done\nby: Takku\n", 1),
+    )
+    .unwrap();
+    wait_autosave(cx);
+    let (text, cursor) = app(cx, &f, |a, _, cx| {
+        (a.editor_text(cx), a.editor().read(cx).cursor())
+    });
+    assert!(text.contains("by: Takku"), "{text}");
+    assert!(
+        text[..cursor].ends_with("Mie note ancora "),
+        "cursor at {cursor} in {text:?}"
+    );
+}
+
+/// The Tab you leave is saved: if Takku wrote its Note meanwhile, unheard
+/// of yet, the save merges it, and the Note you go to is left untouched.
+#[gpui_kit::test]
+fn a_tab_left_behind_merges_takku_s_write_when_saved(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    app(cx, &f, |a, w, cx| {
+        a.open_path("Ideas.md", OpenIn::CurrentTab, w, cx);
+        a.open_path("Physics/Euler's identity.md", OpenIn::NewTab, w, cx);
+        a.activate_tab(0, w, cx);
+    });
+    cx.run_until_parked();
+    let euler_before = read(&f, "Physics/Euler's identity.md");
+    type_in_editor(cx, &f, "Mie note ");
+    let before = read(&f, "Ideas.md");
+    std::fs::write(
+        f.vault.join("Ideas.md"),
+        format!("{before}\n## Summary\nBy Takku\n"),
+    )
+    .unwrap();
+    app(cx, &f, |a, w, cx| a.activate_tab(1, w, cx)); // saves the Tab it leaves
+    cx.run_until_parked();
+    let disk = read(&f, "Ideas.md");
+    assert!(
+        disk.starts_with("Mie note ") && disk.contains("By Takku"),
+        "{disk}"
+    );
+    let euler_shown = app(cx, &f, |a, _, cx| a.editor_text(cx));
+    assert_eq!(
+        euler_shown, euler_before,
+        "the other Note is shown untouched"
+    );
+    assert_eq!(read(&f, "Physics/Euler's identity.md"), euler_before);
+    app(cx, &f, |a, w, cx| a.activate_tab(0, w, cx));
+    cx.run_until_parked();
+    assert_eq!(app(cx, &f, |a, _, cx| a.editor_text(cx)), disk);
+    wait_autosave(cx);
+    assert_eq!(read(&f, "Ideas.md"), disk);
+}
+
+/// A folder renamed in one window while Takku had just written a Note open,
+/// with unsaved text, in the other: the other window merges, then follows.
+#[gpui_kit::test]
+fn a_rename_in_one_window_merges_takku_s_write_in_the_other(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    app(cx, &f, |a, _, cx| a.open_another_window(cx));
+    cx.run_until_parked();
+    let (w2, b) = other_apps(cx, &[f.window])[0].clone();
+    cx.update_window(w2, |_, w, cx| {
+        b.update(cx, |b, cx| {
+            b.open_path("Physics/Euler's identity.md", OpenIn::CurrentTab, w, cx);
+            b.editor().clone().update(cx, |ed, cx| ed.focus(w, cx))
+        })
+    })
+    .unwrap();
+    cx.run_until_parked();
+    cx.update_window(w2, |_, window, cx| {
+        window.render_frame(cx);
+        window.input("Da B ", cx);
+    })
+    .unwrap();
+    cx.run_until_parked();
+    let before = read(&f, "Physics/Euler's identity.md");
+    std::fs::write(
+        f.vault.join("Physics/Euler's identity.md"),
+        format!("{before}\n## Summary\nBy Takku\n"),
+    )
+    .unwrap();
+    app(cx, &f, |a, w, cx| a.rename("Physics", "Science", w, cx)).unwrap();
+    cx.run_until_parked();
+    let disk = read(&f, "Science/Euler's identity.md");
+    assert!(
+        disk.contains("Da B ") && disk.contains("By Takku"),
+        "{disk}"
+    );
+    let shown = cx
+        .update_window(w2, |_, _, cx| b.read(cx).editor_text(cx))
+        .unwrap();
+    assert_eq!(shown, disk, "B shows the merge under the new name");
+}

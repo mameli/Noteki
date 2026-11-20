@@ -465,6 +465,16 @@ impl NoteEditor {
         cx.notify();
     }
 
+    /// The Note's text as another app changed it (a reload, a Merge), the
+    /// cursor following its line; emits no event.
+    pub fn follow_text(&mut self, text: &str, cx: &mut Context<Self>) {
+        self.buf.follow(text);
+        self.goal_x = None;
+        self.layout = None;
+        self.revision += 1;
+        cx.notify();
+    }
+
     /// Shows another Note: its text, its cursor, and its own undo history
     /// (SPEC › Tabs: each keeps its own), kept by `key` while others show.
     pub fn open_note(&mut self, key: &str, text: &str, cursor: usize, cx: &mut Context<Self>) {

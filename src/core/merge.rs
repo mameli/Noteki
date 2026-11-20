@@ -39,6 +39,53 @@ pub fn merge_three_way(base: &str, mine: &str, theirs: &str) -> Option<String> {
     Some(merged.join("\n"))
 }
 
+/// Where `offset` in `old` stands in `new`, after another app changed the
+/// text (a reload, a Merge): on the same line, at the same column, wherever
+/// that line went. On a line the change replaced, it goes to the start of
+/// what replaced it.
+pub fn follow_offset(old: &str, new: &str, offset: usize) -> usize {
+    let old_lines = split_lines(old);
+    let new_lines = split_lines(new);
+    let starts = |lines: &[&str]| {
+        let mut at = 0;
+        lines
+            .iter()
+            .map(|l| {
+                let start = at;
+                at += l.len() + 1;
+                start
+            })
+            .collect::<Vec<_>>()
+    };
+    let (old_starts, new_starts) = (starts(&old_lines), starts(&new_lines));
+    let offset = offset.min(old.len());
+    let line = old_starts
+        .partition_point(|&s| s <= offset)
+        .saturating_sub(1);
+    let column = offset - old_starts[line];
+    let diff = TextDiff::from_slices(&old_lines, &new_lines);
+    for op in diff.ops() {
+        let (old_range, new_range) = (op.old_range(), op.new_range());
+        if !old_range.contains(&line) {
+            continue;
+        }
+        let new_line = if op.tag() == similar::DiffTag::Equal {
+            new_range.start + (line - old_range.start)
+        } else {
+            new_range.start
+        };
+        let Some(&start) = new_starts.get(new_line) else {
+            return new.len();
+        };
+        let mut at = start + column.min(new_lines[new_line].len());
+        while !new.is_char_boundary(at) {
+            at -= 1;
+        }
+        return at;
+    }
+    offset.min(new.len())
+}
+
 fn resolve<'a>(
     base: &[&'a str],
     mine: &'a [&'a str],
@@ -75,6 +122,32 @@ fn split_lines(text: &str) -> Vec<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_cursor_follows_its_line_when_text_comes_above_it() {
+        let old = "# Meeting\n\n## Personal notes\nMie note";
+        let new = "# Meeting\n\n## Summary\nBy Takku\n\n## Personal notes\nMie note";
+        let at = old.len(); // after "Mie note"
+        assert_eq!(follow_offset(old, new, at), new.len());
+        let at = old.rfind("note").unwrap();
+        assert_eq!(&new[follow_offset(old, new, at)..], "note");
+    }
+
+    #[test]
+    fn the_cursor_stays_when_text_comes_below_it() {
+        let old = "Mie note\n\nEnd";
+        let new = "Mie note\n\nEnd\n## Summary\nBy Takku";
+        assert_eq!(follow_offset(old, new, 3), 3);
+    }
+
+    #[test]
+    fn on_a_replaced_line_the_cursor_goes_to_what_replaced_it() {
+        let old = "A\nold line\nC";
+        let new = "A\nnew\nC";
+        assert_eq!(follow_offset(old, new, 8), 2 + 3); // column clamped
+        assert_eq!(follow_offset("A\nB\nC", "A\nC", 2), 2); // line gone: the next
+        assert_eq!(follow_offset("abcdef\nx", "abè\nx", 3), 2); // never inside a character
+    }
 
     #[test]
     fn merges_disjoint_edits() {

@@ -114,6 +114,13 @@ impl EditBuffer {
         }
     }
 
+    /// Replaces the whole text with what another app made of it (a reload,
+    /// a Merge), as one undoable step; the cursor follows its line.
+    pub fn follow(&mut self, text: &str) {
+        let cursor = crate::core::merge::follow_offset(&self.text, text, self.cursor());
+        self.replace_all(text, cursor);
+    }
+
     /// The history, taken away (left empty), to keep while another Note shows.
     pub fn take_history(&mut self) -> History {
         std::mem::take(&mut self.history)

@@ -143,10 +143,7 @@ impl LooseFile {
         match self.doc.on_disk_changed(disk.as_deref()) {
             outcome @ (ExternalOutcome::Reloaded | ExternalOutcome::Merged) => {
                 let text = self.doc.text().to_string();
-                self.editor.update(cx, |ed, cx| {
-                    let cursor = ed.cursor().min(text.len());
-                    ed.set_text(&text, cursor, cx);
-                });
+                self.editor.update(cx, |ed, cx| ed.follow_text(&text, cx));
                 if outcome == ExternalOutcome::Merged {
                     self.save(cx);
                 }

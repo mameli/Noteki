@@ -16,4 +16,6 @@ Takku rewrites the Meeting note after the stop, often while the user is still wr
 
 - Noteki keeps the base version of every open Note in memory.
 - Noteki hears of an External change only once the file has been quiet for 250 ms (`FS_SETTLE`), so each save reads the file first. When the file is no longer the base, the save handles it as an External change before it writes (20 November 2026: until then a save in that quarter of a second wrote over Takku's Summary, a path found with a TLA+ model of this flow). Another app can still write between that read and the write, a few microseconds. Only a lock shared by the apps would close that gap.
+- *Keep mine* saves through the same read, so it writes over the version shown in the banner and no other: if the app wrote again before the click, the banner shows the new version and a second click keeps mine.
+- After a reload or a Merge the cursor stays on its line, wherever that line went, not at the same offset (20 November 2026: Takku's Summary comes above the Personal notes, and the cursor landed in it).
 - Saving and merging are the riskiest code of the app. They are tested on real sequences of Takku's writes in `src/core` (`merge.rs`, `document.rs`, `opening.rs`), and in `tests/robustness.rs`.

@@ -93,10 +93,7 @@ impl NotekiApp {
                 && self.editor_path.as_deref() == Some(path)
             {
                 let text = doc.text().to_string();
-                self.editor.update(cx, |ed, cx| {
-                    let cursor = ed.cursor();
-                    ed.set_text(&text, cursor, cx)
-                });
+                self.editor.update(cx, |ed, cx| ed.follow_text(&text, cx));
             }
             if outcome == ExternalOutcome::Conflict {
                 self.set_error(format!(

@@ -67,7 +67,7 @@ impl NotekiApp {
     pub fn handle_fs_changes(
         &mut self,
         abs_paths: &[PathBuf],
-        window: &mut Window,
+        _window: &mut Window,
         cx: &mut Context<Self>,
     ) {
         let Some(vault) = &self.vault else { return };
@@ -102,8 +102,7 @@ impl NotekiApp {
                 ExternalOutcome::Reloaded | ExternalOutcome::Merged => {
                     if self.editor_path.as_deref() == Some(path.as_str()) {
                         let text = doc.text().to_string();
-                        let cursor = self.editor.read(cx).cursor();
-                        self.set_editor_text(&text, cursor, window, cx);
+                        self.editor.update(cx, |ed, cx| ed.follow_text(&text, cx));
                     }
                     if outcome == ExternalOutcome::Merged {
                         to_save.push(path.clone());
@@ -196,8 +195,7 @@ impl NotekiApp {
         if doc.take_theirs() {
             let text = doc.text().to_string();
             if self.editor_path.as_deref() == Some(path) {
-                let cursor = self.editor.read(cx).cursor();
-                self.set_editor_text(&text, cursor, window, cx);
+                self.editor.update(cx, |ed, cx| ed.follow_text(&text, cx));
             }
             self.status = None;
             self.after_text_change(window, cx);

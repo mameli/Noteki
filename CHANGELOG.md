@@ -6,6 +6,7 @@
 - Takku's Summary is no longer lost when Noteki saves by itself in the quarter of a second after Takku wrote it, before Noteki had noticed: Noteki reads the file before each save, and merges what Takku wrote, or shows the Conflict.
 - A Note renamed, moved or put in the Trash in one window follows in the other windows of the Vault at once, a whole folder's Notes too. What you typed in the other windows is saved first, as 0.3 did.
 - YAML in the Frontmatter that Noteki cannot read has a red wavy line under the line where reading stopped, as 0.3 had.
+- When Takku or another app writes above the line you are typing on, the cursor stays where you were typing. It no longer jumps into the new text.
 
 ## 0.4.2 — 19 November 2026
 
