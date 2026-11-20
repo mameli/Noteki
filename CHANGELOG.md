@@ -1,11 +1,15 @@
 # Changelog
 
-## Unreleased
+## 0.4.4 — 20 November 2026
+
+Calm windows, lighter scrolling, and a line that stays put while Takku writes.
 
 - In a Note longer than the window, the line you are typing on stays where it is on screen when Takku writes above it: the Summary goes above, out of view.
 - A Note Takku or the Finder hands over opens in a Noteki window that is open, or in a new one: with the first window closed, nothing happened.
 - With every window closed, clicking Noteki in the Dock opens a window, with the Vault and its Tabs as you left them.
 - Closing a window saves what you typed in it in the last second, and frees it: a closed window stayed in memory, with its Notes and editor, until Noteki quit (about 5 MB each on a Vault of 700 Notes).
+- Tooltips on a Tab's close button (⌘W), the Outline and Backlinks panes (⌥⌘1, ⌥⌘2) and the find bar's Done (Esc) show their shortcut.
+- Faster scrolling in long Notes: list numbers, checked tasks, code-block languages and the Properties header are shaped once instead of at every frame, and painting and highlighting only look at the lines in view.
 
 ## 0.4.3 — 20 November 2026
 
