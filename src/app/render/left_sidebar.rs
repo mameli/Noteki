@@ -109,7 +109,9 @@ impl NotekiApp {
 
     pub(in crate::app) fn render_files_pane(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let (muted, primary) = (cx.theme().muted_foreground, cx.theme().primary);
-        let entity = cx.entity();
+        // The tree keeps its closures in `file_tree`, which this window owns:
+        // they hold the window weakly, or a closed window is never freed.
+        let entity = cx.entity().downgrade();
         let active = self.active_path().map(str::to_string);
 
         let empty = self.empty_folders.clone();
@@ -125,7 +127,7 @@ impl NotekiApp {
                 _ => AssetIcon::Image,
             };
             let selected = tree_selected || active.as_deref() == Some(id.as_str());
-            let entity = entity.clone();
+            let entity = entity.upgrade();
             ListItem::new(("file", ix))
                 .selected(selected)
                 .rounded(px(5.))
@@ -151,15 +153,20 @@ impl NotekiApp {
                         ),
                 )
                 // Folders expand through the tree itself; only files open on click.
-                .when(!is_folder, |li| opens_note(li, entity, id, None))
+                .when_some(entity.filter(|_| !is_folder), |li, entity| {
+                    opens_note(li, entity, id, None)
+                })
         });
 
-        let menu_app = cx.entity();
+        let menu_app = cx.entity().downgrade();
         let empty = self.empty_folders.clone();
         let file_tree = file_tree.context_menu(move |_, entry, menu, _, _| {
+            let Some(app) = menu_app.upgrade() else {
+                return menu;
+            };
             let path = entry.item().id.to_string();
             let is_folder = entry.is_folder() || empty.contains(&path);
-            file_menu(menu, &menu_app, path, is_folder)
+            file_menu(menu, &app, path, is_folder)
         });
         v_flex().size_full().child(
             div()

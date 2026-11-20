@@ -454,14 +454,19 @@ impl NotekiApp {
             });
         let me = cx.entity().downgrade();
         cx.default_global::<OpenWindows>().0.push(me);
-        if app.config.slot > 0 {
-            // Closed by the user, it does not come back at the next launch.
-            let this = cx.entity().downgrade();
-            window.on_window_should_close(cx, move |_, cx| {
-                let _ = this.update(cx, |app, _| app.forget_session());
-                true
+        // Closed by the user: what was typed in the last second is saved
+        // (the autosave goes with the window), and a window other than the
+        // first does not come back at the next launch.
+        let this = cx.entity().downgrade();
+        window.on_window_should_close(cx, move |_, cx| {
+            let _ = this.update(cx, |app, cx| {
+                app.flush_all(cx);
+                if app.config.slot > 0 {
+                    app.forget_session();
+                }
             });
-        }
+            true
+        });
         if let Some(root) = initial {
             let _ = app.open_vault(&root, window, cx);
         }

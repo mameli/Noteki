@@ -3,6 +3,7 @@
 ## Unreleased
 
 - In a Note longer than the window, the line you are typing on stays where it is on screen when Takku writes above it: the Summary goes above, out of view.
+- Closing a window saves what you typed in it in the last second, and frees it: a closed window stayed in memory, with its Notes and editor, until Noteki quit (about 5 MB each on a Vault of 700 Notes).
 
 ## 0.4.3 — 20 November 2026
 

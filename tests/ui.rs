@@ -3532,3 +3532,48 @@ fn the_line_you_type_on_stays_on_screen_when_takku_writes_above_it(cx: &mut Test
     });
     assert_eq!(line, "Mie note");
 }
+
+/// Closes `w` as the user does (the red button): its should-close handler,
+/// then the window goes.
+fn close_window_as_user(cx: &mut TestAppContext, w: AnyWindowHandle) {
+    let closes = gpui_kit::VisualTestContext::from_window(w, cx).simulate_close();
+    assert!(closes, "the window refused to close");
+    cx.update_window(w, |_, window, _| window.remove_window())
+        .unwrap();
+    cx.run_until_parked();
+}
+
+/// Closing a window within a second of typing in it: the text is saved at
+/// once (the window's autosave goes with it), and the window is freed, its
+/// Notes and editor too (the file tree held it, gpui-base keeping the row
+/// closure in its state).
+#[gpui_kit::test]
+fn closing_a_window_saves_its_text_and_frees_it(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    app(cx, &f, |a, _, cx| a.open_another_window(cx));
+    cx.run_until_parked();
+    let (w2, b) = other_apps(cx, &[f.window])[0].clone();
+    cx.update_window(w2, |_, w, cx| {
+        b.update(cx, |b, cx| {
+            b.open_path("Ideas.md", OpenIn::CurrentTab, w, cx);
+            b.editor().clone().update(cx, |ed, cx| ed.focus(w, cx))
+        })
+    })
+    .unwrap();
+    cx.run_until_parked();
+    cx.update_window(w2, |_, window, cx| {
+        window.render_frame(cx);
+        window.input("Scritto e chiuso ", cx);
+    })
+    .unwrap();
+    cx.run_until_parked();
+    let (weak, editor) = cx.update(|cx| (b.downgrade(), b.read(cx).editor().downgrade()));
+    drop(b);
+    close_window_as_user(cx, w2);
+    assert!(
+        read(&f, "Ideas.md").contains("Scritto e chiuso"),
+        "saved when the window closed, not a second later"
+    );
+    assert!(weak.upgrade().is_none(), "the closed window is freed");
+    assert!(editor.upgrade().is_none(), "its editor too");
+}
