@@ -559,6 +559,12 @@ impl NoteEditor {
         self.scroll.offset()
     }
 
+    /// Sets the scroll offset (for tests and benchmarks).
+    pub fn set_scroll_offset(&mut self, offset: Point<Pixels>, cx: &mut Context<Self>) {
+        self.scroll.set_offset(offset);
+        cx.notify();
+    }
+
     pub fn set_selected_range(&mut self, range: Range<usize>, cx: &mut Context<Self>) {
         self.buf.set_selection(range.start, range.end);
         self.goal_x = None;

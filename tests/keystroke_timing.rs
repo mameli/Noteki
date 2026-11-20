@@ -199,3 +199,110 @@ fn search_timing(cx: &mut TestAppContext) {
     }
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// Time per frame while scrolling continuously through a ~120 KB Note rich in
+/// numbered lists, checked tasks, code blocks and Properties, with and without
+/// Find matches and Select All.
+///
+///     cargo test --release --test keystroke_timing scroll -- --ignored --nocapture
+#[gpui_kit::test]
+#[ignore]
+fn scroll_timing(cx: &mut TestAppContext) {
+    let dir = std::env::temp_dir().join(format!("noteki-scroll-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("vault")).unwrap();
+    let mut big = String::from("---\ntitle: Long note\ntags:\n  - perf\n  - scroll\n---\n# Titolo\n\n");
+    for i in 0..1500 {
+        match i % 5 {
+            0 => big.push_str(&format!("{}. Una riga numerata con **grassetto** e [[link]].\n", (i % 20) + 1)),
+            1 => big.push_str("- [x] Un task completato nella riga di test.\n"),
+            2 => big.push_str("- [ ] Un task aperto nella riga di test.\n"),
+            _ => big.push_str(&format!("{i} Una riga di testo con **grassetto** e #tag.\n")),
+        }
+        if i % 20 == 0 {
+            big.push_str("## Sezione\n```swift\nstruct Note {\n    let title: String\n}\nprint(\"Hello\")\n```\n");
+        }
+    }
+    std::fs::write(dir.join("vault/Big.md"), &big).unwrap();
+    let config = AppConfig {
+        settings_path: Some(dir.join("s.json")),
+        vault: Some(dir.join("vault")),
+        watch: false,
+        trash_dir: Some(dir.join("t")),
+        slot: 0,
+    };
+    let (window, app) = cx.update(|cx| {
+        gpui_kit::init(cx);
+        register_keybindings(cx);
+        let options = WindowOptions {
+            window_bounds: Some(WindowBounds::Windowed(Bounds {
+                origin: Point::default(),
+                size: size(px(1280.), px(800.)),
+            })),
+            ..Default::default()
+        };
+        gpui_kit::open_window(options, cx, |window, cx| {
+            cx.new(|cx| NotekiApp::new(config, window, cx))
+        })
+        .unwrap()
+    });
+    cx.update_window(window, |_, w, cx| {
+        app.update(cx, |a, cx| a.open_path("Big.md", OpenIn::CurrentTab, w, cx))
+    })
+    .unwrap();
+    cx.run_until_parked();
+    cx.update_window(window, |_, w, cx| w.render_frame(cx))
+        .unwrap();
+
+    let steps = 120usize;
+    let measure = |label: &str, cx: &mut TestAppContext| {
+        let t = Instant::now();
+        for s in 0..steps {
+            let y = px(-((s * 80) as f32));
+            cx.update_window(window, |_, w, cx| {
+                app.update(cx, |a, cx| {
+                    a.editor().clone().update(cx, |ed, cx| {
+                        ed.set_scroll_offset(gpui_kit::point(px(0.), y), cx)
+                    })
+                });
+                w.draw(cx).clear(cx);
+            })
+            .unwrap();
+        }
+        println!(
+            "{label}: {:.3} ms/frame ({steps} frames)",
+            t.elapsed().as_secs_f64() * 1e3 / steps as f64
+        );
+    };
+
+    println!("text: {} KB", big.len() / 1000);
+    measure("scroll plain", cx);
+
+    // Same scroll with Find highlighting ~1500 matches across the whole note.
+    cx.update_window(window, |_, w, cx| {
+        app.update(cx, |a, cx| {
+            a.editor().clone().update(cx, |ed, cx| {
+                ed.open_find(w, cx);
+            })
+        });
+        w.input("riga", cx);
+    })
+    .unwrap();
+    cx.run_until_parked();
+    measure("scroll with ~1500 Find matches", cx);
+
+    // Close Find, select all, and scroll.
+    cx.update_window(window, |_, w, cx| {
+        app.update(cx, |a, cx| {
+            a.editor().clone().update(cx, |ed, cx| {
+                ed.close_find(w, cx);
+                ed.set_selected_range(0..big.len(), cx);
+            })
+        });
+        w.draw(cx).clear(cx);
+    })
+    .unwrap();
+    measure("scroll with Select All", cx);
+
+    let _ = std::fs::remove_dir_all(&dir);
+}

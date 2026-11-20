@@ -128,6 +128,7 @@ pub(super) fn shape_line(
             shaped: Rc::default(),
             indent: px(0.),
             decoration: style.decoration.clone(),
+            decoration_label: shape_decoration_label(style.decoration.as_ref(), input, ts),
             text_height: line_height,
             figure,
             inserts: Rc::default(),
@@ -167,6 +168,7 @@ pub(super) fn shape_line(
             shaped: Rc::default(),
             indent: px(0.),
             decoration: style.decoration.clone(),
+            decoration_label: None,
             text_height,
             figure: None,
             inserts: Rc::default(),
@@ -269,6 +271,7 @@ pub(super) fn shape_line(
         shaped: Rc::new(shaped),
         indent,
         decoration: style.decoration.clone(),
+        decoration_label: shape_decoration_label(style.decoration.as_ref(), input, ts),
         text_height,
         figure,
         inserts: inserts.into(),
@@ -276,6 +279,43 @@ pub(super) fn shape_line(
         cells: None,
         columns: None,
     }
+}
+
+/// Shapes the small label a decoration draws (list number, checked-task tick,
+/// code-block language, or "Properties") once per layout instead of every frame.
+fn shape_decoration_label(
+    decoration: Option<&Decoration>,
+    input: &ShapeInput,
+    ts: &WindowTextSystem,
+) -> Option<Rc<gpui_kit::ShapedLine>> {
+    let palette = &input.palette;
+    let (label, font_size, color): (SharedString, Pixels, Hsla) = match decoration {
+        Some(Decoration::List {
+            kind: ListKind::Number { n, delim },
+            ..
+        }) => (
+            format!("{n}{}", *delim as char).into(),
+            input.font_size,
+            palette.syntax,
+        ),
+        Some(Decoration::List {
+            kind: ListKind::Task { checked: true, .. },
+            ..
+        }) => ("✓".into(), CHECKBOX - px(2.), palette.background),
+        Some(Decoration::Code(CodePart::Open { language })) if !language.is_empty() => (
+            language.to_string().into(),
+            input.font_size * 0.8,
+            palette.syntax,
+        ),
+        Some(Decoration::Property(PropertyLine::Top)) => (
+            "Properties".into(),
+            input.font_size * 0.85,
+            palette.syntax,
+        ),
+        _ => return None,
+    };
+    let run = text_run(label.len(), &input.font, color, Default::default());
+    Some(Rc::new(ts.shape_line(label, font_size, &[run], None)))
 }
 
 /// The inserts that make room for the line's formulas, and the formulas laid

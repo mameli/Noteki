@@ -56,6 +56,16 @@ impl LineTops {
     pub fn line_at(&self, y: f32) -> usize {
         self.tops.partition_point(|&t| t <= y).saturating_sub(1)
     }
+
+    /// The range of lines overlapping `top..bottom` (in content coordinates).
+    pub fn visible_range(&self, top: f32, bottom: f32) -> Range<usize> {
+        if self.tops.is_empty() || bottom < 0. || top > self.total {
+            return 0..0;
+        }
+        let first = self.line_at(top);
+        let last = self.line_at(bottom);
+        first..(last + 1).min(self.tops.len())
+    }
 }
 
 /// How far to scroll (from the top, never negative, at most `max`) so that
@@ -153,6 +163,18 @@ mod tests {
         assert_eq!(line_index_of(&lines, 2), 0);
         assert_eq!(line_index_of(&lines, 3), 1);
         assert_eq!(line_index_of(&lines, 5), 1);
+    }
+
+    #[test]
+    fn visible_range_narrows_to_overlapping_lines() {
+        let tops = LineTops::new([40., 0., 20., 20., 30.]);
+        // Tops: [0, 40, 40, 60, 80], total: 110.
+        assert_eq!(tops.visible_range(10., 50.), 0..3);
+        assert_eq!(tops.visible_range(40., 79.), 2..4);
+        assert_eq!(tops.visible_range(-20., 10.), 0..1);
+        assert_eq!(tops.visible_range(120., 200.), 0..0);
+        assert_eq!(tops.visible_range(-50., -1.), 0..0);
+        assert_eq!(LineTops::default().visible_range(0., 100.), 0..0);
     }
 
     #[test]

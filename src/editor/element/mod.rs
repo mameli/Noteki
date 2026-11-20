@@ -91,6 +91,10 @@ pub(super) struct LaidLine {
     /// How far the text starts from the left edge (a quote's bars).
     indent: Pixels,
     decoration: Option<Decoration>,
+    /// Pre-shaped label for the decoration (list number, task check, code
+    /// language, "Properties"), reused across frames instead of re-shaping in
+    /// `paint`.
+    decoration_label: Option<Rc<gpui_kit::ShapedLine>>,
     /// The height of the text's rows: none for an image whose source is hidden.
     text_height: Pixels,
     /// An image, formula or diagram drawn under the text, at the size it takes.
@@ -233,6 +237,12 @@ impl Layout {
         self.lines
             .partition_point(|l| l.range.start <= offset)
             .saturating_sub(1)
+    }
+
+    /// The range of lines overlapping `top..bottom` in window coordinates.
+    fn visible_lines(&self, top: Pixels, bottom: Pixels) -> Range<usize> {
+        self.tops
+            .visible_range(f32::from(top - self.origin.y), f32::from(bottom - self.origin.y))
     }
 
     /// In a table's row, ↑ from its cell's first row and ↓ from its last go to
@@ -610,6 +620,11 @@ impl Element for EditorElement {
             lines,
             tops,
         };
+        let visible = window.content_mask().bounds;
+        let vis = layout.visible_lines(visible.top(), visible.bottom());
+        let vis_bytes = (!vis.is_empty()).then(|| {
+            layout.lines[vis.start].range.start..layout.lines[vis.end - 1].range.end
+        });
         let ed = self.editor.read(cx);
         // Every selection (⌘D makes several), and a caret in each empty one.
         let mut selection = Vec::new();
@@ -623,23 +638,43 @@ impl Element for EditorElement {
                 }
                 continue;
             }
-            for i in layout.line_of(sel.start)..=layout.line_of(sel.end) {
-                selection.extend(layout.selection_rects(i, &sel));
+            if !vis.is_empty() {
+                let start = layout.line_of(sel.start).max(vis.start);
+                let end = layout.line_of(sel.end).min(vis.end - 1);
+                for i in start..=end {
+                    selection.extend(layout.selection_rects(i, &sel));
+                }
             }
         }
         let matches = self.editor.update(cx, |ed, _| ed.find_matches());
         let mut match_rects = Vec::new();
-        for m in &matches {
-            for i in layout.line_of(m.start)..=layout.line_of(m.end) {
-                match_rects.extend(layout.selection_rects(i, m));
+        if let Some(vb) = &vis_bytes {
+            let from = matches.partition_point(|m| m.end < vb.start);
+            for m in &matches[from..] {
+                if m.start > vb.end {
+                    break;
+                }
+                let start = layout.line_of(m.start).max(vis.start);
+                let end = layout.line_of(m.end).min(vis.end - 1);
+                for i in start..=end {
+                    match_rects.extend(layout.selection_rects(i, m));
+                }
             }
         }
         let matches = match_rects;
         let words = self.editor.update(cx, |ed, _| ed.misspelled());
         let mut misspelled = Vec::new();
-        for w in words.iter() {
-            for i in layout.line_of(w.start)..=layout.line_of(w.end) {
-                misspelled.extend(layout.selection_rects(i, w));
+        if let Some(vb) = &vis_bytes {
+            let from = words.partition_point(|w| w.end < vb.start);
+            for w in &words[from..] {
+                if w.start > vb.end {
+                    break;
+                }
+                let start = layout.line_of(w.start).max(vis.start);
+                let end = layout.line_of(w.end).min(vis.end - 1);
+                for i in start..=end {
+                    misspelled.extend(layout.selection_rects(i, w));
+                }
             }
         }
         PrepaintState {
@@ -694,10 +729,7 @@ impl Element for EditorElement {
         }
         let visible = window.content_mask().bounds;
         let layout = &state.layout;
-        let on_screen = |i: usize, line: &LaidLine| {
-            let top = layout.origin.y + layout.top_of(i);
-            (top <= visible.bottom() && top + line.height() >= visible.top()).then_some(top)
-        };
+        let vis = layout.visible_lines(visible.top(), visible.bottom());
         let clip = |cell: &Cell, top: Pixels, line: &LaidLine| ContentMask {
             bounds: Bounds::new(
                 point(layout.origin.x + cell.x, top),
@@ -706,10 +738,9 @@ impl Element for EditorElement {
         };
         // Backgrounds first (boxes, rules, inline code), then the selection
         // over them, then the text: selected code shows as selected.
-        for (i, line) in layout.lines.iter().enumerate() {
-            let Some(top) = on_screen(i, line) else {
-                continue;
-            };
+        for i in vis.clone() {
+            let line = &layout.lines[i];
+            let top = layout.origin.y + layout.top_of(i);
             paint_decoration(
                 line,
                 (layout.origin.x, top, layout.width),
@@ -756,10 +787,9 @@ impl Element for EditorElement {
         for r in state.selection.drain(..) {
             window.paint_quad(fill(r, palette.selection));
         }
-        for (i, line) in layout.lines.iter().enumerate() {
-            let Some(top) = on_screen(i, line) else {
-                continue;
-            };
+        for i in vis.clone() {
+            let line = &layout.lines[i];
+            let top = layout.origin.y + layout.top_of(i);
             paint_figure(
                 line,
                 (layout.origin.x, top, layout.width),
@@ -820,13 +850,12 @@ impl Element for EditorElement {
                 layout.line_of(cursor),
             );
             let veil = palette.background.opacity(0.7);
-            for (i, line) in layout.lines.iter().enumerate() {
+            for i in vis {
                 if paragraph.contains(&i) {
                     continue;
                 }
-                let Some(top) = on_screen(i, line) else {
-                    continue;
-                };
+                let line = &layout.lines[i];
+                let top = layout.origin.y + layout.top_of(i);
                 // Wider than the text: quote bars and list markers too.
                 let left = layout.origin.x - px(24.);
                 let veiled = Bounds::new(

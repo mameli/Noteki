@@ -72,18 +72,12 @@ pub(super) fn paint_decoration(
                         .corner_radii(d / 2.),
                     );
                 }
-                ListKind::Number { n, delim } => {
-                    let label = format!("{n}{}", delim as char);
-                    let run =
-                        text_run(label.len(), &input.font, palette.syntax, Default::default());
-                    let shaped = window.text_system().shape_line(
-                        label.into(),
-                        input.font_size,
-                        &[run],
-                        None,
-                    );
-                    let at = point(x + LIST_MARKER - shaped.width() - px(6.), top);
-                    let _ = shaped.paint(at, line.line_height, TextAlign::Left, None, window, cx);
+                ListKind::Number { .. } => {
+                    if let Some(shaped) = &line.decoration_label {
+                        let at = point(x + LIST_MARKER - shaped.width() - px(6.), top);
+                        let _ =
+                            shaped.paint(at, line.line_height, TextAlign::Left, None, window, cx);
+                    }
                 }
                 ListKind::Task { checked, .. } => {
                     let b = checkbox_bounds(x, mid);
@@ -99,23 +93,13 @@ pub(super) fn paint_decoration(
                             .border_color(border),
                     );
                     if checked {
-                        let run = text_run(
-                            "✓".len(),
-                            &input.font,
-                            palette.background,
-                            Default::default(),
-                        );
-                        let shaped = window.text_system().shape_line(
-                            "✓".into(),
-                            CHECKBOX - px(2.),
-                            &[run],
-                            None,
-                        );
-                        let at = point(
-                            b.left() + (CHECKBOX - shaped.width()) / 2.,
-                            b.top() - px(1.),
-                        );
-                        let _ = shaped.paint(at, CHECKBOX, TextAlign::Left, None, window, cx);
+                        if let Some(shaped) = &line.decoration_label {
+                            let at = point(
+                                b.left() + (CHECKBOX - shaped.width()) / 2.,
+                                b.top() - px(1.),
+                            );
+                            let _ = shaped.paint(at, CHECKBOX, TextAlign::Left, None, window, cx);
+                        }
                     }
                 }
             }
@@ -139,15 +123,8 @@ pub(super) fn paint_decoration(
                 )
                 .corner_radii(corners),
             );
-            if let CodePart::Open { language } = part {
-                if !language.is_empty() {
-                    let label: SharedString = language.to_string().into();
-                    let font_size = input.font_size * 0.8;
-                    let run =
-                        text_run(label.len(), &input.font, palette.syntax, Default::default());
-                    let shaped = window
-                        .text_system()
-                        .shape_line(label, font_size, &[run], None);
+            if matches!(part, CodePart::Open { .. }) {
+                if let Some(shaped) = &line.decoration_label {
                     let at = point(left + width - shaped.width() - CODE_PAD, top);
                     let _ = shaped.paint(at, line.line_height, TextAlign::Left, None, window, cx);
                 }
@@ -206,20 +183,16 @@ pub(super) fn paint_decoration(
                 }),
             );
             if *p == PropertyLine::Top {
-                let label: SharedString = "Properties".into();
-                let run = text_run(label.len(), &input.font, palette.syntax, Default::default());
-                let shaped =
-                    window
-                        .text_system()
-                        .shape_line(label, input.font_size * 0.85, &[run], None);
-                let _ = shaped.paint(
-                    point(left + CELL_PAD, top),
-                    line.line_height,
-                    TextAlign::Left,
-                    None,
-                    window,
-                    cx,
-                );
+                if let Some(shaped) = &line.decoration_label {
+                    let _ = shaped.paint(
+                        point(left + CELL_PAD, top),
+                        line.line_height,
+                        TextAlign::Left,
+                        None,
+                        window,
+                        cx,
+                    );
+                }
             }
         }
         // Painted after the text, in `paint`.
