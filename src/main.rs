@@ -1,6 +1,8 @@
 use std::path::PathBuf;
 
-use noteki::app::{open_noteki_window, register_keybindings, set_app_menus, AppConfig};
+use noteki::app::{
+    hand_over, open_noteki_window, register_keybindings, reopen, set_app_menus, AppConfig,
+};
 use noteki::core::opening::url_to_path;
 
 /// Environment overrides, used by `scripts/eval.sh` for a smoke run that
@@ -34,23 +36,20 @@ fn main() {
     app.on_open_urls(move |urls| {
         let _ = opened_tx.send_blocking(urls);
     });
+    let dock_config = config.clone();
+    app.on_reopen(move |cx| reopen(&dock_config, cx));
     app.run(move |cx| {
         gpui_kit::init(cx);
         register_keybindings(cx);
         set_app_menus(cx);
         noteki::app::updates::start();
 
-        let (window, noteki) =
-            open_noteki_window(config, cx).expect("failed to open the Noteki window");
+        open_noteki_window(config.clone(), cx).expect("failed to open the Noteki window");
         cx.activate(true);
         cx.spawn(async move |cx| {
             while let Ok(urls) = opened_rx.recv().await {
-                let _ = window.update(cx, |_, window, cx| {
-                    window.activate_window();
-                    for path in urls.iter().filter_map(|u| url_to_path(u)) {
-                        noteki.update(cx, |app, cx| app.open_external(&path, window, cx));
-                    }
-                });
+                let paths: Vec<PathBuf> = urls.iter().filter_map(|u| url_to_path(u)).collect();
+                cx.update(|cx| hand_over(&paths, &config, cx));
             }
         })
         .detach();

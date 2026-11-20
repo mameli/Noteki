@@ -211,6 +211,49 @@ pub fn open_noteki_window(
     .ok()
 }
 
+/// Files handed over by the Finder, Takku or `open`: to the Noteki window in
+/// front, else to any open one, else to a new window (the first window may
+/// have been closed, or all of them, Noteki still running).
+pub fn hand_over(paths: &[PathBuf], config: &AppConfig, cx: &mut App) {
+    let open: Vec<Entity<NotekiApp>> = cx
+        .try_global::<OpenWindows>()
+        .map(|w| w.0.iter().filter_map(|a| a.upgrade()).collect())
+        .unwrap_or_default();
+    let open: Vec<Entity<NotekiApp>> = open
+        .into_iter()
+        .filter(|a| cx.windows().contains(&a.read(cx).window))
+        .collect();
+    let front = cx.active_window();
+    let target = open
+        .iter()
+        .find(|a| Some(a.read(cx).window) == front)
+        .or(open.first())
+        .map(|a| (a.read(cx).window, a.clone()))
+        .or_else(|| open_noteki_window(config.clone(), cx));
+    let Some((handle, app)) = target else { return };
+    let _ = handle.update(cx, |_, window, cx| {
+        window.activate_window();
+        for path in paths {
+            app.update(cx, |a, cx| a.open_external(path, window, cx));
+        }
+    });
+}
+
+/// A click on the Dock icon: a new window when none is open (all closed,
+/// Noteki still running), as Mac apps do; with windows open, nothing.
+pub fn reopen(config: &AppConfig, cx: &mut App) {
+    let any_open = cx.try_global::<OpenWindows>().is_some_and(|w| {
+        w.0.iter()
+            .filter_map(|a| a.upgrade())
+            .any(|a| cx.windows().contains(&a.read(cx).window))
+    });
+    if !any_open {
+        if let Some((handle, _)) = open_noteki_window(config.clone(), cx) {
+            let _ = handle.update(cx, |_, window, _| window.activate_window());
+        }
+    }
+}
+
 /// SPEC › Saving: about one second after the last change.
 pub const AUTOSAVE_DELAY: Duration = Duration::from_millis(1000);
 /// How long typing stops before the window around the editor is drawn again.

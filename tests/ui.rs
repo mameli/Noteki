@@ -3577,3 +3577,77 @@ fn closing_a_window_saves_its_text_and_frees_it(cx: &mut TestAppContext) {
     assert!(weak.upgrade().is_none(), "the closed window is freed");
     assert!(editor.upgrade().is_none(), "its editor too");
 }
+
+/// A Note Takku (or the Finder) hands over reaches a window that is open:
+/// the second one when the first was closed, a new one when none is left.
+#[gpui_kit::test]
+fn a_handed_over_note_reaches_an_open_window(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    app(cx, &f, |a, _, cx| a.open_another_window(cx));
+    cx.run_until_parked();
+    let (w2, b) = other_apps(cx, &[f.window])[0].clone();
+    close_window_as_user(cx, f.window);
+    let config = AppConfig {
+        settings_path: Some(f.dir.join("settings.json")),
+        vault: None,
+        watch: false,
+        trash_dir: Some(f.dir.join("Trash")),
+        slot: 0,
+    };
+    let note = f.vault.join("Ideas.md");
+    cx.update(|cx| noteki::app::hand_over(std::slice::from_ref(&note), &config, cx));
+    cx.run_until_parked();
+    let shown = cx.update(|cx| b.read(cx).active_path().map(str::to_string));
+    assert_eq!(
+        shown.as_deref(),
+        Some("Ideas.md"),
+        "the second window shows it"
+    );
+
+    drop(b);
+    close_window_as_user(cx, w2);
+    assert!(cx.update(|cx| cx.windows().is_empty()));
+    cx.update(|cx| noteki::app::hand_over(std::slice::from_ref(&note), &config, cx));
+    cx.run_until_parked();
+    let opened = other_apps(cx, &[]);
+    assert_eq!(opened.len(), 1, "a new window opens");
+    let shown = cx.update(|cx| opened[0].1.read(cx).active_path().map(str::to_string));
+    assert_eq!(shown.as_deref(), Some("Ideas.md"));
+}
+
+/// The Dock icon clicked with every window closed opens one, with the
+/// Vault and its Tabs as they were left; with a window open, none more.
+#[gpui_kit::test]
+fn the_dock_icon_opens_a_window_when_none_is_left(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    app(cx, &f, |a, w, cx| {
+        a.open_path("Ideas.md", OpenIn::CurrentTab, w, cx)
+    });
+    let config = AppConfig {
+        settings_path: Some(f.dir.join("settings.json")),
+        vault: None,
+        watch: false,
+        trash_dir: Some(f.dir.join("Trash")),
+        slot: 0,
+    };
+    cx.update(|cx| noteki::app::reopen(&config, cx));
+    cx.run_until_parked();
+    assert_eq!(
+        other_apps(cx, &[]).len(),
+        1,
+        "no second window while one is open"
+    );
+
+    close_window_as_user(cx, f.window);
+    assert!(cx.update(|cx| cx.windows().is_empty()));
+    cx.update(|cx| noteki::app::reopen(&config, cx));
+    cx.run_until_parked();
+    let opened = other_apps(cx, &[]);
+    assert_eq!(opened.len(), 1, "a window opens");
+    let shown = cx.update(|cx| opened[0].1.read(cx).active_path().map(str::to_string));
+    assert_eq!(
+        shown.as_deref(),
+        Some("Ideas.md"),
+        "the Vault as it was left"
+    );
+}
