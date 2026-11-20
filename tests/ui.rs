@@ -3471,3 +3471,64 @@ fn a_rename_in_one_window_merges_takku_s_write_in_the_other(cx: &mut TestAppCont
         .unwrap();
     assert_eq!(shown, disk, "B shows the merge under the new name");
 }
+
+/// In a Note longer than the window, Takku's Summary comes above the line
+/// you are typing on: that line stays where it is on screen, the Summary
+/// goes above it, out of view.
+#[gpui_kit::test]
+fn the_line_you_type_on_stays_on_screen_when_takku_writes_above_it(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let mut text = String::from("# Meeting\n\n");
+    for i in 0..80 {
+        text.push_str(&format!("Riga {i}\n"));
+    }
+    text.push_str("\n## Personal notes\nMie note");
+    external_write(cx, &f, "Long.md", Some(&text));
+    app(cx, &f, |a, w, cx| {
+        a.open_path("Long.md", OpenIn::CurrentTab, w, cx)
+    });
+    cx.run_until_parked();
+    app(cx, &f, |a, _, cx| {
+        a.editor().clone().update(cx, |ed, cx| {
+            let end = ed.text().len();
+            ed.set_selected_range(end..end, cx);
+            ed.reveal_cursor(cx);
+        })
+    });
+    frame(cx, &f);
+    frame(cx, &f);
+    let caret_y = |cx: &mut TestAppContext| {
+        app(cx, &f, |a, _, cx| {
+            let ed = a.editor().read(cx);
+            (ed.caret_bounds(ed.cursor()).unwrap().top(), ed.viewport())
+        })
+    };
+    let (before, view) = caret_y(cx);
+    assert!(before >= view.top() && before < view.bottom());
+    let mut summary = String::from("## Summary\n");
+    for i in 0..40 {
+        summary.push_str(&format!("Takku {i}\n"));
+    }
+    let takku = text.replacen(
+        "## Personal notes",
+        &format!("{summary}\n## Personal notes"),
+        1,
+    );
+    external_write(cx, &f, "Long.md", Some(&takku));
+    frame(cx, &f);
+    frame(cx, &f);
+    let (after, _) = caret_y(cx);
+    assert!(
+        (after - before).abs() < px(1.),
+        "the caret moved on screen: {before:?} → {after:?}"
+    );
+    let line = app(cx, &f, |a, _, cx| {
+        let ed = a.editor().read(cx);
+        ed.text()[..ed.cursor()]
+            .lines()
+            .last()
+            .unwrap_or_default()
+            .to_string()
+    });
+    assert_eq!(line, "Mie note");
+}

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- In a Note longer than the window, the line you are typing on stays where it is on screen when Takku writes above it: the Summary goes above, out of view.
+
 ## 0.4.3 — 20 November 2026
 
 Takku's Summary kept while you type, and renames that reach every window.

@@ -840,6 +840,21 @@ impl Element for EditorElement {
             window.paint_quad(fill(c, palette.caret));
         }
         let layout = state.layout.clone();
+        let held = self.editor.update(cx, |ed, _| {
+            ed.hold_caret.take().and_then(|before| {
+                let now = layout.caret(ed.buf.text(), ed.buf.cursor())?.top();
+                Some((ed.scroll.clone(), now - before))
+            })
+        });
+        if let Some((scroll, moved)) = held {
+            // Text came above the caret: scroll as much, so it stays put.
+            let offset = scroll.offset();
+            let y = (offset.y - moved).clamp(-scroll.max_offset().y, px(0.));
+            if (y - offset.y).abs() > px(0.5) {
+                scroll.set_offset(point(offset.x, y));
+                window.refresh();
+            }
+        }
         let reveal = self.editor.update(cx, |ed, _| {
             ed.layout = Some(layout.clone());
             std::mem::take(&mut ed.reveal).then(|| {

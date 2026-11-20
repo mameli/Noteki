@@ -286,6 +286,9 @@ pub struct NoteEditor {
     blinks_left: u8,
     /// Scroll the cursor into view at the next frame (keys and edits, not clicks).
     reveal: bool,
+    /// Where the caret was on screen before another app changed the text: the
+    /// next frame scrolls so it stays there (`follow_text`).
+    hold_caret: Option<Pixels>,
     /// The pointer is over a link that a click would open.
     over_clickable: bool,
     /// The text's size, from the settings (⌘+, ⌘−, ⌘0).
@@ -394,6 +397,7 @@ impl NoteEditor {
             cursor_on: true,
             blinks_left: BLINKS_AFTER_INPUT,
             reveal: false,
+            hold_caret: None,
             over_clickable: false,
             find: None,
             completion_pick: 0,
@@ -467,7 +471,16 @@ impl NoteEditor {
 
     /// The Note's text as another app changed it (a reload, a Merge), the
     /// cursor following its line; emits no event.
+    /// A caret in view stays where it is on screen: text another app wrote
+    /// above it goes above, out of view, not under the line being typed.
     pub fn follow_text(&mut self, text: &str, cx: &mut Context<Self>) {
+        let view = self.scroll.bounds();
+        self.hold_caret = self
+            .layout
+            .as_ref()
+            .and_then(|l| l.caret(self.buf.text(), self.buf.cursor()))
+            .map(|c| c.top())
+            .filter(|&y| y >= view.top() && y < view.bottom());
         self.buf.follow(text);
         self.goal_x = None;
         self.layout = None;
