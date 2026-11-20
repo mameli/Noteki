@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 0.4.3 — 20 November 2026
+
+Takku's Summary kept while you type, and renames that reach every window.
 
 - The Search button puts the cursor in the search field, as ⇧⌘F does: you can type right away.
 - Takku's Summary is no longer lost when Noteki saves by itself in the quarter of a second after Takku wrote it, before Noteki had noticed: Noteki reads the file before each save, and merges what Takku wrote, or shows the Conflict.
