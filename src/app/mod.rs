@@ -211,18 +211,56 @@ pub fn open_noteki_window(
     .ok()
 }
 
-/// Files handed over by the Finder, Takku or `open`: to the Noteki window in
-/// front, else to any open one, else to a new window (the first window may
-/// have been closed, or all of them, Noteki still running).
-pub fn hand_over(paths: &[PathBuf], config: &AppConfig, cx: &mut App) {
+/// The Vault's windows still open (not the Loose files').
+fn vault_windows(cx: &App) -> Vec<Entity<NotekiApp>> {
     let open: Vec<Entity<NotekiApp>> = cx
         .try_global::<OpenWindows>()
         .map(|w| w.0.iter().filter_map(|a| a.upgrade()).collect())
         .unwrap_or_default();
-    let open: Vec<Entity<NotekiApp>> = open
-        .into_iter()
+    open.into_iter()
         .filter(|a| cx.windows().contains(&a.read(cx).window))
-        .collect();
+        .collect()
+}
+
+/// The Vault a new window of `config` opens, before it is opened.
+fn vault_to_open(config: &AppConfig, settings: &Settings) -> Option<PathBuf> {
+    config
+        .vault
+        .clone()
+        .or_else(|| settings.vault_path.as_deref().map(PathBuf::from))
+        .map(|p| std::fs::canonicalize(&p).unwrap_or(p))
+}
+
+/// Files handed over by the Finder, Takku or `open`: to the Noteki window in
+/// front, else to any open one, else to a new window (the first window may
+/// have been closed, or all of them, Noteki still running). With no window
+/// of the Vault open, a Markdown file outside the Vault opens in its Loose
+/// file's window alone, without opening the Vault (SPEC › Takku): Noteki
+/// launched to edit one file shows it at once.
+pub fn hand_over(paths: &[PathBuf], config: &AppConfig, cx: &mut App) {
+    let open = vault_windows(cx);
+    let mut paths = paths.to_vec();
+    if open.is_empty() {
+        let settings = settings::load(config.settings_path.as_deref());
+        let root = vault_to_open(config, &settings);
+        let mut rest = Vec::new();
+        for path in paths {
+            let path = std::fs::canonicalize(&path).unwrap_or(path);
+            let opened = match route(root.as_deref(), &path, |_| None) {
+                Opened::Loose(loose) => loose::LooseFile::open(loose, None, &settings, cx).is_ok(),
+                _ => false,
+            };
+            // Not a Loose file, or one that cannot be read: the Vault's window
+            // opens for it (and says why).
+            if !opened {
+                rest.push(path);
+            }
+        }
+        if rest.is_empty() {
+            return;
+        }
+        paths = rest;
+    }
     let front = cx.active_window();
     let target = open
         .iter()
@@ -231,12 +269,43 @@ pub fn hand_over(paths: &[PathBuf], config: &AppConfig, cx: &mut App) {
         .map(|a| (a.read(cx).window, a.clone()))
         .or_else(|| open_noteki_window(config.clone(), cx));
     let Some((handle, app)) = target else { return };
+    // `open_external` brings this window forward, unless the file opens in a
+    // Loose file's window of its own.
     let _ = handle.update(cx, |_, window, cx| {
-        window.activate_window();
-        for path in paths {
+        for path in &paths {
             app.update(cx, |a, cx| a.open_external(path, window, cx));
         }
     });
+}
+
+/// From a Loose file's window, the commands of the Vault's window (New Note,
+/// New Window, the Quick switcher, Today's Note, Open Vault) bring the
+/// Vault's window forward, opening it when Noteki was launched for the Loose
+/// file alone. In the Vault's window they are its own.
+pub fn register_vault_commands(config: AppConfig, cx: &mut App) {
+    fn bring_vault(config: &AppConfig, cx: &mut App) {
+        let open = vault_windows(cx);
+        let front = cx.active_window();
+        if open.iter().any(|a| Some(a.read(cx).window) == front) {
+            return;
+        }
+        let handle = match open.first() {
+            Some(a) => Some(a.read(cx).window),
+            None => open_noteki_window(config.clone(), cx).map(|(h, _)| h),
+        };
+        if let Some(handle) = handle {
+            let _ = handle.update(cx, |_, window, _| window.activate_window());
+        }
+    }
+    let c = config.clone();
+    cx.on_action(move |_: &NewNoteAction, cx| bring_vault(&c, cx));
+    let c = config.clone();
+    cx.on_action(move |_: &NewWindowAction, cx| bring_vault(&c, cx));
+    let c = config.clone();
+    cx.on_action(move |_: &OpenQuickSwitcher, cx| bring_vault(&c, cx));
+    let c = config.clone();
+    cx.on_action(move |_: &DailyNoteAction, cx| bring_vault(&c, cx));
+    cx.on_action(move |_: &OpenVaultAction, cx| bring_vault(&config, cx));
 }
 
 /// A click on the Dock icon: a new window when none is open (all closed,

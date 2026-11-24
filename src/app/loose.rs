@@ -29,10 +29,12 @@ pub struct LooseFile {
 }
 
 impl LooseFile {
-    /// Opens `path` in a new window; an error when it cannot be read.
+    /// Opens `path` in a new window; an error when it cannot be read. With no
+    /// `palette` (no window of the Vault open, which sets the theme), the
+    /// window sets the theme of `settings` itself.
     pub fn open(
         path: PathBuf,
-        palette: NotekiPalette,
+        palette: Option<NotekiPalette>,
         settings: &Settings,
         cx: &mut gpui_kit::App,
     ) -> Result<(), String> {
@@ -47,11 +49,22 @@ impl LooseFile {
             window_min_size: Some(size(px(420.), px(300.))),
             ..Default::default()
         };
-        gpui_kit::open_window(options, cx, |window, cx| {
+        let (handle, _) = gpui_kit::open_window(options, cx, |window, cx| {
+            let palette = palette.unwrap_or_else(|| {
+                let p = crate::theme::apply_noteki_theme(
+                    settings.theme_name,
+                    settings.appearance,
+                    window,
+                    cx,
+                );
+                crate::theme::set_interface_size(settings.interface_size.rem(), cx);
+                p
+            });
             cx.new(|cx| Self::new(path, text, palette, &settings, window, cx))
         })
-        .map(|_| ())
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+        let _ = handle.update(cx, |_, window, _| window.activate_window());
+        Ok(())
     }
 
     fn new(

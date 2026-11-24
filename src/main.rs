@@ -1,7 +1,8 @@
 use std::path::PathBuf;
 
 use noteki::app::{
-    hand_over, open_noteki_window, register_keybindings, reopen, set_app_menus, AppConfig,
+    hand_over, open_noteki_window, register_keybindings, register_vault_commands, reopen,
+    set_app_menus, AppConfig,
 };
 use noteki::core::opening::url_to_path;
 
@@ -43,8 +44,24 @@ fn main() {
         register_keybindings(cx);
         set_app_menus(cx);
         noteki::app::updates::start();
+        register_vault_commands(config.clone(), cx);
 
-        open_noteki_window(config.clone(), cx).expect("failed to open the Noteki window");
+        // Launched to open files (the Mac hands them over before launching
+        // finishes): they open first, and the Vault's window only if one of
+        // them belongs there. A Loose file alone opens without the Vault.
+        let mut launch_urls = Vec::new();
+        while let Ok(urls) = opened_rx.try_recv() {
+            launch_urls.extend(urls);
+        }
+        if launch_urls.is_empty() {
+            open_noteki_window(config.clone(), cx).expect("failed to open the Noteki window");
+        } else {
+            let paths: Vec<PathBuf> = launch_urls.iter().filter_map(|u| url_to_path(u)).collect();
+            hand_over(&paths, &config, cx);
+            if cx.windows().is_empty() {
+                open_noteki_window(config.clone(), cx).expect("failed to open the Noteki window");
+            }
+        }
         cx.activate(true);
         cx.spawn(async move |cx| {
             while let Ok(urls) = opened_rx.recv().await {

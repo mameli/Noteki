@@ -63,6 +63,12 @@ impl NotekiApp {
                 v.contains(rel).then(|| v.is_folder(rel))
             })
         };
+        // A Loose file comes forward in its own window. On the Mac this
+        // window's activation lands after that window opens, so activating
+        // it here too would cover the Loose file.
+        if !matches!(opened, Opened::Loose(_)) {
+            window.activate_window();
+        }
         match opened {
             Opened::File(rel) => {
                 self.open_path(&rel, OpenIn::NewTab, window, cx);
@@ -78,7 +84,7 @@ impl NotekiApp {
                 cx.notify();
             }
             Opened::Loose(path) => {
-                if let Err(e) = loose::LooseFile::open(path, self.palette, &self.settings, cx) {
+                if let Err(e) = loose::LooseFile::open(path, Some(self.palette), &self.settings, cx) {
                     self.set_error(e);
                     cx.notify();
                 }

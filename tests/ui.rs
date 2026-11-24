@@ -3615,6 +3615,104 @@ fn a_handed_over_note_reaches_an_open_window(cx: &mut TestAppContext) {
     assert_eq!(shown.as_deref(), Some("Ideas.md"));
 }
 
+/// A Markdown file outside the Vault handed over while the Vault's window is
+/// open comes forward in its own window: the Vault's window is not brought
+/// forward over it (on the Mac the activation lands after the new window,
+/// and the bigger Vault's window covered the Loose file's).
+#[gpui_kit::test]
+fn a_handed_over_loose_file_comes_forward_alone(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let config = AppConfig {
+        settings_path: Some(f.dir.join("settings.json")),
+        vault: None,
+        watch: false,
+        trash_dir: Some(f.dir.join("Trash")),
+        slot: 0,
+    };
+    let loose = f.dir.join("Fuori.md");
+    std::fs::write(&loose, "fuori").unwrap();
+    cx.update(|cx| noteki::app::hand_over(std::slice::from_ref(&loose), &config, cx));
+    cx.run_until_parked();
+    let windows = cx.update(|cx| cx.windows());
+    assert_eq!(windows.len(), 2, "a window of its own");
+    let loose_window = *windows.iter().find(|w| **w != f.window).unwrap();
+    assert_eq!(
+        cx.update(|cx| cx.active_window()),
+        Some(loose_window),
+        "the Loose file's window in front, not the Vault's"
+    );
+
+    // A Note of the Vault still brings the Vault's window forward.
+    let note = f.vault.join("Ideas.md");
+    cx.update(|cx| noteki::app::hand_over(std::slice::from_ref(&note), &config, cx));
+    cx.run_until_parked();
+    assert_eq!(cx.update(|cx| cx.active_window()), Some(f.window));
+}
+
+/// With no window of the Vault open (Noteki launched for the file, or every
+/// window closed), a Markdown file outside the Vault opens alone, without the
+/// Vault; ⌘N there brings the Vault's window. A Note of the Vault opens it.
+#[gpui_kit::test]
+fn a_loose_file_opens_without_the_vault(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let config = AppConfig {
+        settings_path: Some(f.dir.join("settings.json")),
+        vault: Some(f.vault.clone()),
+        watch: false,
+        trash_dir: Some(f.dir.join("Trash")),
+        slot: 0,
+    };
+    cx.update(|cx| noteki::app::register_vault_commands(config.clone(), cx));
+    close_window_as_user(cx, f.window);
+    assert!(cx.update(|cx| cx.windows().is_empty()));
+
+    let loose = f.dir.join("Fuori.md");
+    std::fs::write(&loose, "fuori").unwrap();
+    cx.update(|cx| noteki::app::hand_over(std::slice::from_ref(&loose), &config, cx));
+    cx.run_until_parked();
+    let windows = cx.update(|cx| cx.windows());
+    assert_eq!(windows.len(), 1, "the Loose file's window alone");
+    assert!(other_apps(cx, &[]).is_empty(), "no window of the Vault");
+    let loose_window = windows[0];
+    assert_eq!(cx.update(|cx| cx.active_window()), Some(loose_window));
+    cx.update_window(loose_window, |_, window, cx| window.render_frame(cx))
+        .unwrap();
+    cx.update_window(loose_window, |_, window, cx| window.input("Ecco ", cx))
+        .unwrap();
+    wait_autosave(cx);
+    assert_eq!(std::fs::read_to_string(&loose).unwrap(), "Ecco fuori");
+
+    // ⌘N in the Loose file's window: the Vault's window opens, in front.
+    cx.update_window(loose_window, |_, window, cx| {
+        window.dispatch_action(Box::new(noteki::app::NewNoteAction), cx)
+    })
+    .unwrap();
+    cx.run_until_parked();
+    let vault = other_apps(cx, &[]);
+    assert_eq!(vault.len(), 1, "the Vault's window opens");
+    assert_eq!(cx.update(|cx| cx.active_window()), Some(vault[0].0));
+    // Again from the Loose file: the same window comes back, no other.
+    cx.update_window(loose_window, |_, window, cx| {
+        window.dispatch_action(Box::new(noteki::app::NewWindowAction), cx)
+    })
+    .unwrap();
+    cx.run_until_parked();
+    assert_eq!(other_apps(cx, &[]).len(), 1);
+    let (w, b) = vault[0].clone();
+    drop(vault);
+    drop(b);
+    close_window_as_user(cx, w);
+
+    // A Note of the Vault, with only the Loose file open: the Vault opens.
+    let note = f.vault.join("Ideas.md");
+    cx.update(|cx| noteki::app::hand_over(std::slice::from_ref(&note), &config, cx));
+    cx.run_until_parked();
+    let vault = other_apps(cx, &[]);
+    assert_eq!(vault.len(), 1);
+    let shown = cx.update(|cx| vault[0].1.read(cx).active_path().map(str::to_string));
+    assert_eq!(shown.as_deref(), Some("Ideas.md"));
+}
+
 /// The Dock icon clicked with every window closed opens one, with the
 /// Vault and its Tabs as they were left; with a window open, none more.
 #[gpui_kit::test]
