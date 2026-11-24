@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.5 — 24 November 2026
+
+A Markdown file from outside the Vault opens on its own, and in front.
+
+- A Markdown file outside the Vault, opened from the Finder (*Open With → Noteki*) with Noteki already open, comes forward in its own window: the Vault's window came back in front of it and hid it.
+- With Noteki closed, or every window closed, such a file opens alone, without opening the Vault, so it shows at once. ⌘N, ⇧⌘N, ⌘O, Today's Note and *Open Vault…* in its window, or the Dock icon, bring the Vault's window.
+
 ## 0.4.4 — 20 November 2026
 
 Calm windows, lighter scrolling, and a line that stays put while Takku writes.
