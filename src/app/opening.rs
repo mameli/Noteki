@@ -56,13 +56,25 @@ impl NotekiApp {
     /// A file or folder the system asks to open (the Finder, Takku, `open`).
     pub fn open_external(&mut self, path: &Path, window: &mut Window, cx: &mut Context<Self>) {
         let path = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-        let opened = {
-            let vault = self.vault.as_ref();
+        let route_now = |app: &Self| {
+            let vault = app.vault.as_ref();
             route(vault.map(|v| v.root.as_path()), &path, |rel| {
                 let v = vault?;
                 v.contains(rel).then(|| v.is_folder(rel))
             })
         };
+        let mut opened = route_now(self);
+        // A file just made in the Vault (by the `noteki` command, or another
+        // app) before the watcher has told: listed now, unless it is in an
+        // Excluded folder.
+        let in_vault = self
+            .vault
+            .as_ref()
+            .is_some_and(|v| v.relative(&path).is_some());
+        if opened == Opened::Nothing && in_vault && path.exists() {
+            self.handle_fs_changes(std::slice::from_ref(&path), window, cx);
+            opened = route_now(self);
+        }
         // A Loose file comes forward in its own window. On the Mac this
         // window's activation lands after that window opens, so activating
         // it here too would cover the Loose file.
@@ -84,7 +96,8 @@ impl NotekiApp {
                 cx.notify();
             }
             Opened::Loose(path) => {
-                if let Err(e) = loose::LooseFile::open(path, Some(self.palette), &self.settings, cx) {
+                if let Err(e) = loose::LooseFile::open(path, Some(self.palette), &self.settings, cx)
+                {
                     self.set_error(e);
                     cx.notify();
                 }

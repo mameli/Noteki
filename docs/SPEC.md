@@ -203,6 +203,15 @@ Noteki works with Takku without changes to Takku:
 - Opening a Note or Attachment of the Vault shows it; a folder equal to or inside the Vault is selected in *Files*; a file in an Excluded folder only brings the window forward. A Markdown or text file outside the Vault opens as a **Loose file** in its own window, in front, without indexing anything around it. With no window of the Vault open (Noteki launched for the file, or every window closed) it opens alone: the Vault's window does not open, so the file shows at once. Any other folder asks whether to switch Vault.
 - During Processing Takku writes the Meeting note several times and renames it: [External changes](#external-changes) covers both.
 
+## Opening from the terminal
+
+The `noteki` command opens files in Noteki as the Finder does, by the rules above: `noteki Idea.md`, `noteki a.md b.md`, `noteki .`. With no argument, Noteki opens, or comes to the front.
+
+- A Markdown or text file (`.md`, `.markdown`, `.txt`) that is missing is created, empty, then opened: in the Vault a new Note, in a Tab even before the watcher has told Noteki; outside it a Loose file. Its folder must exist: none is created.
+- Anything else outside the Vault is refused, said on stderr; the other files still open, and the command ends with status 1. Attachments of the Vault open.
+- The command does not wait for the file's window to close: it is not an `$EDITOR`.
+- On the Mac the command is a script in the app's Resources that runs the app's binary with `--open`: the binary applies the rules without a window and hands the files to Noteki with `open`, which starts it or reaches the one running. The Homebrew cask links it into the PATH; otherwise `ln -s /Applications/Noteki.app/Contents/Resources/noteki /opt/homebrew/bin/noteki`. On Linux the `noteki` binary takes the files itself, and starts a new Noteki each time.
+
 ## Project structure
 
 Since 0.4 Noteki is one Rust program drawn by GPUI ([ADR 0012](adr/0012-rust-and-gpui.md)); up to 0.3 it was SwiftUI with CodeMirror in a web view, and the parts of this document that name WebKit, SwiftUI or CodeMirror describe that version until they are rewritten. The layout of the code is in the README.

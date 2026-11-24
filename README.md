@@ -23,6 +23,7 @@ The Mac app is out. The same code builds on Linux, and Windows is next: both are
 - **Paste** from the web, Mail or Word as Markdown; **export** a note to HTML or PDF, or print it.
 - **External changes** merged while you type: written for the Meeting notes [Takku](https://github.com/mameli/Takku) writes during a call.
 - **Updates itself**, and installs with Homebrew: `brew tap mameli/noteki && brew trust mameli/noteki && brew install --cask noteki`.
+- **Opens from the terminal**: `noteki Idea.md` (a missing Markdown file is created), `noteki .`. Homebrew links the command; otherwise `ln -s /Applications/Noteki.app/Contents/Resources/noteki /opt/homebrew/bin/noteki`.
 
 <table>
   <tr>
@@ -90,6 +91,7 @@ What differs from the Mac, all from `src/keys.rs` and a few `cfg!` checks:
 | `src/app/mod.rs` | `NotekiApp`: its state and windows; what it does by subject in `vault`, `opening`, `editing`, `external` (file watching, merges), `links`, `files`, `preferences` | yes |
 | `src/app/render/` | All drawing, with stable element IDs for UI tests: the root, `chrome`, `left_sidebar`, `right_sidebar`, `center`, `dialogs`, `context_menus`; `src/app/parts.rs` keeps the parts around the editor as cached views | yes |
 | `src/app/settings.rs`, `src/editor/style.rs`, `src/theme.rs` | Preferences and per-vault sessions; live-preview styles; Ayu / Everforest / One Dark Pro | yes |
+| `src/core/opening.rs`, `src/main.rs`, `macos/noteki` | Where a file handed over goes; the `noteki` command's rules (`--open`), and its script in the Mac app's Resources | no (`main.rs`: yes) |
 | `src/app/updates.rs`, `swift_prefs.rs` | Sparkle, loaded from the bundle; the preferences of Noteki 0.3, taken once | yes |
 
 The rules live in `core` and are tested there; `app` only connects them to the window and the file system.

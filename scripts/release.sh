@@ -175,6 +175,11 @@ echo "Published: $(gh release view "$tag" --json url --jq .url)"
 sha=$(shasum -a 256 "$dmg" | cut -d ' ' -f 1)
 git -C "$tap" pull --ff-only -q
 sed -i '' -e "s/^  version \".*\"/  version \"$version\"/" -e "s/^  sha256 \".*\"/  sha256 \"$sha\"/" "$cask"
+# The `noteki` command (SPEC › Opening from the terminal), linked into the PATH.
+if ! grep -q '^  binary ' "$cask"; then
+    sed -i '' -e 's|^  app "Noteki.app"$|  app "Noteki.app"\
+  binary "#{appdir}/Noteki.app/Contents/Resources/noteki"|' "$cask"
+fi
 git -C "$tap" commit -q -am "Noteki $version"
 git -C "$tap" -c credential.helper= -c 'credential.helper=!gh auth git-credential' push -q origin main
 echo "Homebrew cask updated to $version."

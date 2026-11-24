@@ -18,6 +18,8 @@ app="target/release/Noteki.app"
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources" "$app/Contents/Frameworks"
 cp "target/$profile/noteki" "$app/Contents/MacOS/noteki"
+# The `noteki` command, linked into the PATH by the Homebrew cask or by hand.
+cp macos/noteki "$app/Contents/Resources/noteki"
 
 icons="icons"
 iconset="$(mktemp -d)/AppIcon.iconset"

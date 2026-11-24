@@ -222,6 +222,12 @@ fn vault_windows(cx: &App) -> Vec<Entity<NotekiApp>> {
         .collect()
 }
 
+/// The Vault a window of `config` opens, read from the preferences: the
+/// `noteki` command tells with it what is in the Vault.
+pub fn remembered_vault(config: &AppConfig) -> Option<PathBuf> {
+    vault_to_open(config, &settings::load(config.settings_path.as_deref()))
+}
+
 /// The Vault a new window of `config` opens, before it is opened.
 fn vault_to_open(config: &AppConfig, settings: &Settings) -> Option<PathBuf> {
     config

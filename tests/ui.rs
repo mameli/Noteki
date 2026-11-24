@@ -3649,6 +3649,32 @@ fn a_handed_over_loose_file_comes_forward_alone(cx: &mut TestAppContext) {
     assert_eq!(cx.update(|cx| cx.active_window()), Some(f.window));
 }
 
+/// A Note the `noteki` command has just made in the Vault opens in a Tab,
+/// before the watcher has told Noteki about it.
+#[gpui_kit::test]
+fn a_note_just_made_in_the_vault_opens(cx: &mut TestAppContext) {
+    let f = fixture(cx);
+    let made = f.vault.join("Daily").join("Appena fatta.md");
+    std::fs::write(&made, "").unwrap();
+    app(cx, &f, |a, w, cx| a.open_external(&made, w, cx));
+    frame(cx, &f);
+    assert_eq!(
+        app(cx, &f, |a, _, _| a.active_path().map(str::to_string)).as_deref(),
+        Some("Daily/Appena fatta.md")
+    );
+    // In an Excluded folder it is still not listed: the window only comes forward.
+    let hidden = f.vault.join(".hidden");
+    std::fs::create_dir_all(&hidden).unwrap();
+    let excluded = hidden.join("Nascosta.md");
+    std::fs::write(&excluded, "").unwrap();
+    app(cx, &f, |a, w, cx| a.open_external(&excluded, w, cx));
+    frame(cx, &f);
+    assert_eq!(
+        app(cx, &f, |a, _, _| a.active_path().map(str::to_string)).as_deref(),
+        Some("Daily/Appena fatta.md")
+    );
+}
+
 /// With no window of the Vault open (Noteki launched for the file, or every
 /// window closed), a Markdown file outside the Vault opens alone, without the
 /// Vault; ⌘N there brings the Vault's window. A Note of the Vault opens it.

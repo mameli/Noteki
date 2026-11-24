@@ -1,0 +1,7 @@
+#!/bin/sh
+# The `noteki` command (SPEC › Opening from the terminal), in the app's
+# Resources: the app's own binary applies the rules and hands the files to
+# Noteki. Put it in the PATH with a link, which it follows to find the app:
+#   ln -s /Applications/Noteki.app/Contents/Resources/noteki /opt/homebrew/bin/noteki
+self=$(readlink -f "$0")
+exec "$(dirname "$self")/../MacOS/noteki" --open "$@"
