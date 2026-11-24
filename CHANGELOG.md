@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.6 — 24 November 2026
+
+Noteki from the terminal.
+
+- The `noteki` command opens files in Noteki as the Finder does: `noteki Idea.md`, `noteki a.md b.md`, `noteki .`; with no argument Noteki opens. A Markdown or text file that is missing is created, empty: in the Vault it opens as a new Note, outside it as a file of its own. Other kinds of files outside the Vault are refused, with a message. Homebrew links the command; otherwise `ln -s /Applications/Noteki.app/Contents/Resources/noteki /opt/homebrew/bin/noteki`.
+- A Note made in the Vault by another app opens at once when handed to Noteki, before Noteki has noticed the new file.
+
 ## 0.4.5 — 24 November 2026
 
 A Markdown file from outside the Vault opens on its own, and in front.
